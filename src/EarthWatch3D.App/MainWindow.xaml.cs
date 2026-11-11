@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -6,7 +6,9 @@ using System.Windows.Media.Imaging;
 using System.Windows.Media.Media3D;
 using AstroCore.Astronomy;
 using AstroCore.Earth;
+using System.Windows.Threading;
 using EarthWatch3D.App.Rendering;
+using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Globe;
 using HelixToolkit.Wpf;
@@ -21,6 +23,23 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        timer.Tick += (_, _) => (DataContext as MainViewModel)?.Tick();
+        timer.Start();
+    }
+
+    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.OldValue is MainViewModel old) old.SunMoon.FaceRequested -= OnFaceRequested;
+        if (e.NewValue is MainViewModel vm) vm.SunMoon.FaceRequested += OnFaceRequested;
+    }
+
+    private void OnFaceRequested(object? sender, GeoPosition p)
+    {
+        double distance = ((Vector3D)Camera.Position).Length;
+        var (pos, look, up) = CameraRules.LookDownOn(p, distance);
+        CameraHelper.AnimateTo(Camera, pos, look, up, 700);
     }
 
     private PerspectiveCamera Camera => (PerspectiveCamera?)Viewport.Camera ?? throw new InvalidOperationException("No camera.");
