@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    Windows' 260-character path limit breaks builds when the solution lives in a very deep folder.
+    In that case only, redirect bin/obj to a short folder under %TEMP%. In a normal location
+    (e.g. C:\Users\you\source\repos\EarthWatch3D) the standard bin/obj folders are used.
+  -->
+  <PropertyGroup Condition="$(MSBuildProjectDirectory.Length) &gt; 110">
+    <_ShortBuildRoot>$([System.IO.Path]::GetTempPath())EarthWatch3D.build\</_ShortBuildRoot>
+    <BaseIntermediateOutputPath>$(_ShortBuildRoot)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(_ShortBuildRoot)bin\$(MSBuildProjectName)\</BaseOutputPath>
+  </PropertyGroup>
+</Project>

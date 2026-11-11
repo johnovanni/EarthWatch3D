@@ -1,0 +1,3 @@
+[submodule "external/AstroCore"]
+	path = external/AstroCore
+	url = ../AstroCore
