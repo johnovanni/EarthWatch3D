@@ -11,7 +11,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = vm;
-        Scene = new SceneController(Viewport, Overlay, vm, clock, this);
+        Scene = new SceneController(Viewport, Overlay, Card, vm, clock, this);
     }
 
     public SceneController Scene { get; }

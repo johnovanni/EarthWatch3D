@@ -11,7 +11,10 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        var clock = new SystemClock();
+        var options = LaunchOptions.Parse(e.Args);
+        // --snapshot-recompose moves the app's time forward part-way through, so it runs on an adjustable clock.
+        OffsetClock? offsetClock = options.SnapshotRecompose ? new OffsetClock(new SystemClock()) : null;
+        IClock clock = offsetClock is null ? new SystemClock() : offsetClock;
         var vm = new MainViewModel(clock);
         vm.Tick();   // show real values immediately
         var window = new MainWindow(vm, clock);
@@ -20,8 +23,7 @@ public partial class App : Application
         window.Closed += (_, _) => timer.Stop();
         timer.Start();
 
-        var options = LaunchOptions.Parse(e.Args);
-        if (options.Any) _ = SnapshotDiagnostic.RunAsync(window, window.Scene, vm, options);
+        if (options.Any) _ = SnapshotDiagnostic.RunAsync(window, window.Scene, vm, options, offsetClock);
 #if PERF_LOG
         PerfRun.Start(window.Scene, e.Args);
 #endif

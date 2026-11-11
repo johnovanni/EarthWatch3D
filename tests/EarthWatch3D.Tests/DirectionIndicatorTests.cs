@@ -40,4 +40,25 @@ public class DirectionIndicatorTests
     [InlineData(0, 0)] [InlineData(50, 50)]
     public void TinyViewportHidesWithoutNaN(double w, double h)
     { var r = DirectionIndicator.Place(new(1, 0, 0), P(w, h), 40); Assert.False(r.Visible); }
+
+    // IsOccludedByEarth: a ray from the eye against the unit sphere, the target treated as at infinity.
+    [Fact] public void DirectionThroughEarthCentreIsOccluded() =>
+        Assert.True(DirectionIndicator.IsOccludedByEarth(new Point3D(0, -5, 0), new Vector3D(0, 1, 0)));
+
+    [Fact] public void DirectionAwayFromEarthIsNotOccluded() =>
+        Assert.False(DirectionIndicator.IsOccludedByEarth(new Point3D(0, -5, 0), new Vector3D(0, -1, 0)));
+
+    [Fact] public void SidewaysDirectionIsNotOccluded() =>
+        Assert.False(DirectionIndicator.IsOccludedByEarth(new Point3D(0, -5, 0), new Vector3D(1, 0, 0)));
+
+    [Theory] // the ray passes the Earth's centre at distance 5·sin(θ)
+    [InlineData(1.001, false)] [InlineData(0.999, true)]
+    public void GrazingDirection(double missDistance, bool occluded)
+    {
+        double s = missDistance / 5, c = Math.Sqrt(1 - s * s);
+        Assert.Equal(occluded, DirectionIndicator.IsOccludedByEarth(new Point3D(0, -5, 0), new Vector3D(s * 3, c * 3, 0)));
+    }
+
+    [Fact] public void ZeroDirectionIsNotOccluded() =>
+        Assert.False(DirectionIndicator.IsOccludedByEarth(new Point3D(0, -5, 0), new Vector3D(0, 0, 0)));
 }

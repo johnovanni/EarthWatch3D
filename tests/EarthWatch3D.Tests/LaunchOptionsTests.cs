@@ -26,4 +26,18 @@ public class LaunchOptionsTests
         var o = LaunchOptions.Parse(["--bench", "--delay-ms", "soon", "--snapshot"]);
         Assert.Equal(new LaunchOptions(null, false, LaunchOptions.DefaultDelayMs), o);
     }
+
+    [Fact]
+    public void ParsesSnapshotRecompose()
+    {
+        var o = LaunchOptions.Parse(["--snapshot", "x.png", "--snapshot-recompose"]);
+        Assert.Equal(new LaunchOptions("x.png", false, LaunchOptions.DefaultDelayMs, SnapshotRecompose: true), o);
+        Assert.False(LaunchOptions.Parse(["--snapshot", "x.png"]).SnapshotRecompose);
+    }
+
+    [Theory]
+    [InlineData(@"C:\tmp\earth.png", "a", @"C:\tmp\earth-a.png")]
+    [InlineData("shot", "b", "shot-b")]
+    public void SuffixedPathGoesBeforeTheExtension(string path, string suffix, string expected) =>
+        Assert.Equal(expected, LaunchOptions.WithSuffix(path, suffix));
 }

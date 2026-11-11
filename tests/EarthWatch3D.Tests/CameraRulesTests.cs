@@ -83,4 +83,17 @@ public class CameraRulesTests
                 foreach (var v in new[] { p.X, p.Y, p.Z, l.X, l.Y, l.Z, u.X, u.Y, u.Z }) Assert.False(double.IsNaN(v));
             }
     }
+
+    [Theory] // the look direction turned by `deg` away from the origin about +Z
+    [InlineData(0, true)] [InlineData(0.3, true)] [InlineData(1, false)] [InlineData(90, false)] [InlineData(180, false)]
+    public void AimsAtOriginWithinHalfADegree(double deg, bool expected)
+    {
+        double r = deg * Math.PI / 180;
+        var look = new Vector3D(-3 * Math.Sin(r), 3 * Math.Cos(r), 0);   // camera at (0,-3,0); deg = 0 looks along +Y
+        Assert.Equal(expected, CameraRules.AimsAtOrigin(new Point3D(0, -3, 0), look));
+    }
+
+    [Fact]
+    public void ZeroLookDirectionDoesNotAimAtOrigin() =>
+        Assert.False(CameraRules.AimsAtOrigin(new Point3D(0, -3, 0), new Vector3D(0, 0, 0)));
 }

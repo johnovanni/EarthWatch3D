@@ -11,6 +11,22 @@ public readonly record struct IndicatorPlacement(bool Visible, bool OnScreen, Po
 public static class DirectionIndicator
 {
     /// <summary>
+    /// True if the ray from <paramref name="eye"/> along <paramref name="fromEye"/> hits the Earth (the unit sphere at the origin)
+    /// in front of the eye. The target is treated as at infinity, which suits the Sun and the Moon (both far beyond the camera's
+    /// greatest distance). An eye inside the sphere counts as occluded; a zero direction does not.
+    /// </summary>
+    public static bool IsOccludedByEarth(Point3D eye, Vector3D fromEye)
+    {
+        double len = fromEye.Length;
+        if (!(len > 1e-15)) return false;
+        var e = (Vector3D)eye;
+        double c = e.LengthSquared - 1;
+        if (c <= 0) return true;
+        double b = Vector3D.DotProduct(e, fromEye) / len;   // |d| = 1: hits where t² + 2bt + c = 0 has a root t > 0
+        return b < 0 && b * b - c > 0;
+    }
+
+    /// <summary>
     /// Places an indicator for a target at <paramref name="fromEye"/> (a vector from the eye; a direction for objects at infinity).
     /// If the target projects inside the inset rectangle it is on screen; otherwise an arrow is placed on the rectangle's border.
     /// </summary>

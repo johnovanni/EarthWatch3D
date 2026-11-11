@@ -28,6 +28,16 @@ public static class CameraRules
         return Math.Clamp(d, MinDistance, MaxDistance);
     }
 
+    /// <summary>True if <paramref name="look"/> points from <paramref name="position"/> at the origin within <paramref name="toleranceDeg"/>.</summary>
+    public static bool AimsAtOrigin(Point3D position, Vector3D look, double toleranceDeg = 0.5)
+    {
+        var toOrigin = -(Vector3D)position;
+        double denom = toOrigin.Length * look.Length;
+        if (!(denom > 1e-24)) return false;
+        double cos = Vector3D.DotProduct(toOrigin, look) / denom;
+        return cos >= Math.Cos(toleranceDeg * Math.PI / 180);
+    }
+
     public static double RotationSensitivity(double distance) => Math.Clamp((distance - 1) / 2, 0.02, 1.0);
 
     public static (Point3D Position, Vector3D LookDirection, Vector3D UpDirection) LookDownOn(GeoPosition p, double distance)

@@ -19,7 +19,7 @@ On a PC with a separate graphics card the working set would be lower.
   distinct `CompositionTarget.Rendering` frames.
 
 ```
-dotnet build src/EarthWatch3D.App -c Release -p:DefineConstants=PERF_LOG
+dotnet build src/EarthWatch3D.App -c Release "-p:DefineConstants=TRACE%3BRELEASE%3BPERF_LOG"
 src\EarthWatch3D.App\bin\Release\net10.0-windows\EarthWatch3D.App.exe --bench
 type %TEMP%\EarthWatch3D-perf.log
 ```

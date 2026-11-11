@@ -30,9 +30,9 @@ internal static class PerfRun
             await Task.Delay(10_000);
             PerfLog.Write("10 s after load: " + PerfLog.Memory());
 
-            if (bench)
+            if (bench && scene.Camera is { } camera)
             {
-                var (frames, seconds) = await RotateAsync(scene.Camera, TimeSpan.FromSeconds(5));
+                var (frames, seconds) = await RotateAsync(camera, TimeSpan.FromSeconds(5));
                 PerfLog.Write(string.Create(CultureInfo.InvariantCulture,
                     $"bench: {frames} frames in {seconds:F2} s = {frames / seconds:F1} fps (360° about +Z) {PerfLog.Memory()}"));
             }

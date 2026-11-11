@@ -41,6 +41,8 @@ public sealed class SceneController
     private static readonly GeoPosition HomeView = new(20, -40);
 
     private readonly HelixViewport3D _viewport;
+    private readonly Canvas _overlayCanvas;
+    private readonly FrameworkElement _card;
     private readonly MainViewModel _vm;
     private readonly IClock _clock;
     private readonly Window _window;
@@ -66,16 +68,19 @@ public sealed class SceneController
     private int _composeCount;
 #endif
 
+    /// <param name="overlay">The canvas over the viewport for the Sun/Moon icons and edge arrows.</param>
+    /// <param name="card">The Sun &amp; Moon card, which the edge arrows keep clear of. It and <paramref name="overlay"/> must share a parent.</param>
     /// <param name="window">The window hosting the viewport: its Loaded, Closed, StateChanged and PreviewKeyDown events drive the scene.</param>
-    public SceneController(HelixViewport3D viewport, Canvas overlay, MainViewModel vm, IClock clock, Window window)
+    public SceneController(HelixViewport3D viewport, Canvas overlay, FrameworkElement card, MainViewModel vm, IClock clock, Window window)
     {
         _viewport = viewport ?? throw new ArgumentNullException(nameof(viewport));
+        _overlayCanvas = overlay ?? throw new ArgumentNullException(nameof(overlay));
+        _card = card ?? throw new ArgumentNullException(nameof(card));
         _vm = vm ?? throw new ArgumentNullException(nameof(vm));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _window = window ?? throw new ArgumentNullException(nameof(window));
-        ArgumentNullException.ThrowIfNull(overlay);
 
-        _animator = new CameraAnimator(Camera);
+        _animator = new CameraAnimator(() => Camera);
         _overlay = new SunMoonOverlay(overlay);
         _markers = new SunMoonGlobeMarkers();
         _viewport.Children.Add(_globeVisual);
@@ -89,6 +94,7 @@ public sealed class SceneController
         _viewport.PreviewMouseWheel += OnPreviewMouseWheel;
         _viewport.PreviewMouseDown += OnPreviewMouseDown;
         _viewport.SizeChanged += OnViewportSizeChanged;
+        _card.SizeChanged += OnViewportSizeChanged;   // collapsing the card changes the area the arrows avoid
         _vm.Ticked += OnTicked;
         _vm.SunMoon.PropertyChanged += OnSunMoonChanged;
         _vm.SunMoon.FaceRequested += OnFaceRequested;
@@ -99,9 +105,13 @@ public sealed class SceneController
     /// <summary>Completes once the first composed globe image is on the globe (cancelled if the window closes first).</summary>
     public Task FirstComposeDisplayed => _firstCompose.Task;
 
+    /// <summary>Raised on the UI thread each time a composed globe image is put on the globe, with the UTC time it shows.</summary>
+    public event EventHandler<DateTime>? ComposeDisplayed;
+
     public bool IsCameraAnimating => _animator.IsRunning;
 
-    internal PerspectiveCamera Camera => (PerspectiveCamera?)_viewport.Camera ?? throw new InvalidOperationException("No camera.");
+    /// <summary>The viewport's camera, or null if something replaced it with a non-perspective camera.</summary>
+    internal PerspectiveCamera? Camera => _viewport.Camera as PerspectiveCamera;
 
     // ---------------------------------------------------------------- globe image
 
@@ -145,6 +155,7 @@ public sealed class SceneController
                     $"compose #{++_composeCount} utc={now:yyyy-MM-ddTHH:mm:ss.fffZ} subsolar lat={subSolar.LatitudeDeg:F3} lon={subSolar.LongitudeDeg:F3} compose={composeMs} ms total={sw.ElapsedMilliseconds} ms {PerfLog.Memory()}"));
 #endif
                 _firstCompose.TrySetResult();
+                ComposeDisplayed?.Invoke(this, now);
             } while (_recomposePending && !_closed);
         }
         catch (Exception ex)
@@ -161,7 +172,9 @@ public sealed class SceneController
         if (_schedule.IsDue(_clock.UtcNow)) Recompose();
     }
 
-    // SystemEvents raise on their own thread.
+    // SystemEvents calls each handler through the SynchronizationContext that was current when it subscribed (here the
+    // UI thread's, from the constructor), so this normally runs on the UI thread already. The BeginInvoke lets the
+    // resume notification return first, and would also cover a subscription made where there was no context.
     private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
     {
         if (e.Mode != PowerModes.Resume) return;
@@ -177,8 +190,11 @@ public sealed class SceneController
     {
         try
         {
-            SetDefaultView(FitDistanceForViewport());
-            ApplyRotationSensitivity();
+            if (Camera is { } camera)
+            {
+                SetDefaultView(camera, FitDistanceForViewport(camera));
+                ApplyRotationSensitivity(camera);
+            }
 #if PERF_LOG
             var load = Stopwatch.StartNew();
 #endif
@@ -281,43 +297,65 @@ public sealed class SceneController
         var moon = sm.SubLunar.ToUnitVector();
         double moonR = sm.MoonDistanceKm / EarthRadiusKm;
         _overlay.Update(projector, new Vector3D(sun.X, sun.Y, sun.Z),
-            new Point3D(moon.X * moonR, moon.Y * moonR, moon.Z * moonR), fraction, sm.MoonWaxing);
+            new Point3D(moon.X * moonR, moon.Y * moonR, moon.Z * moonR), fraction, sm.MoonWaxing, CardBounds());
+    }
+
+    /// <summary>The card's rectangle in overlay coordinates, or Rect.Empty if it is not shown. Allocation-free.</summary>
+    private Rect CardBounds()
+    {
+        if (!_card.IsVisible || _card.ActualWidth <= 0 || _card.ActualHeight <= 0) return Rect.Empty;
+        // Both are children of the same grid, so the difference of their offsets in it is the card's offset in the overlay.
+        var o = VisualTreeHelper.GetOffset(_card) - VisualTreeHelper.GetOffset(_overlayCanvas);
+        return new Rect(o.X, o.Y, _card.ActualWidth, _card.ActualHeight);
     }
 
     // ---------------------------------------------------------------- camera
 
-    private void SetDefaultView(double distance)
+    // Camera access tolerates a missing or non-perspective camera: the Helix gestures that could swap one in are
+    // switched off in MainWindow.xaml, but nothing here should throw if one appears.
+
+    private void SetDefaultView(PerspectiveCamera camera, double distance)
     {
         var (p, l, u) = CameraRules.LookDownOn(HomeView, distance);
-        Camera.Position = p; Camera.LookDirection = l; Camera.UpDirection = u;
+        camera.Position = p; camera.LookDirection = l; camera.UpDirection = u;
     }
 
-    private double FitDistanceForViewport() =>
-        CameraRules.FitDistance(Camera.FieldOfView, _viewport.ActualWidth / Math.Max(1, _viewport.ActualHeight));
+    private double FitDistanceForViewport(PerspectiveCamera camera) =>
+        CameraRules.FitDistance(camera.FieldOfView, _viewport.ActualWidth / Math.Max(1, _viewport.ActualHeight));
 
-    private void ApplyRotationSensitivity() =>
-        _viewport.RotationSensitivity = CameraRules.RotationSensitivity(((Vector3D)Camera.Position).Length);
+    private void ApplyRotationSensitivity(PerspectiveCamera camera) =>
+        _viewport.RotationSensitivity = CameraRules.RotationSensitivity(((Vector3D)camera.Position).Length);
 
     private void OnFaceRequested(object? sender, GeoPosition p)
     {
-        double distance = ((Vector3D)Camera.Position).Length;
+        if (Camera is not { } camera) return;
+        double distance = ((Vector3D)camera.Position).Length;
         _animator.AnimateTo(CameraRules.LookDownOn(p, distance).Position);
     }
 
     private void OnCameraChanged(object? sender, RoutedEventArgs e)
     {
         _overlayDirty = true;
-        if (_adjustingCamera) return;
+        if (_adjustingCamera || Camera is not { } camera) return;
         _adjustingCamera = true;
         try
         {
-            var clamped = CameraRules.ClampDistance(Camera.Position);
-            if (clamped != Camera.Position)
+            var clamped = CameraRules.ClampDistance(camera.Position);
+            if (clamped != camera.Position)
             {
-                Camera.Position = clamped;
-                Camera.LookDirection = -(Vector3D)clamped;
+                camera.Position = clamped;
+                camera.LookDirection = -(Vector3D)clamped;
             }
-            ApplyRotationSensitivity();
+            else if (!CameraRules.AimsAtOrigin(camera.Position, camera.LookDirection))
+            {
+                // Belt and braces: something moved Helix's target off the Earth's centre. Look back at the centre from
+                // where the camera is (same distance), north up; the full-length look direction puts the target there.
+                var v = (Vector3D)camera.Position;
+                var (_, look, up) = CameraRules.LookDownOn(GeoPosition.FromVector(new Vector3d(v.X, v.Y, v.Z)), v.Length);
+                camera.LookDirection = look;
+                camera.UpDirection = up;
+            }
+            ApplyRotationSensitivity(camera);
         }
         finally { _adjustingCamera = false; }
     }
@@ -326,28 +364,31 @@ public sealed class SceneController
     {
         e.Handled = true;
         _animator.Cancel();
+        if (Camera is not { } camera) return;
         double notches = e.Delta / 120.0;
-        var pos = (Vector3D)Camera.Position;
+        var pos = (Vector3D)camera.Position;
         var next = CameraRules.ClampDistance(new Point3D(0, 0, 0) + pos * Math.Pow(CameraRules.ZoomPerNotch, -notches));
-        Camera.Position = next;
-        Camera.LookDirection = -(Vector3D)next;
+        camera.Position = next;
+        camera.LookDirection = -(Vector3D)next;
     }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Home) return;
         e.Handled = true;
-        _animator.AnimateTo(CameraRules.LookDownOn(HomeView, FitDistanceForViewport()).Position);
+        if (Camera is not { } camera) return;
+        _animator.AnimateTo(CameraRules.LookDownOn(HomeView, FitDistanceForViewport(camera)).Position);
     }
 
     private void OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left || e.ClickCount != 2) return;
         e.Handled = true;   // keep Helix's own double-click (look-at) out of it
+        if (Camera is not { } camera) return;
         var pt = e.GetPosition(_viewport);
         if (!_viewport.FindNearest(pt, out Point3D hit, out _, out _)) return;
         var geo = GeoPosition.FromVector(new Vector3d(hit.X, hit.Y, hit.Z));
-        double distance = ((Vector3D)Camera.Position).Length;
+        double distance = ((Vector3D)camera.Position).Length;
         _animator.AnimateTo(CameraRules.LookDownOn(geo, distance).Position);
     }
 
@@ -367,6 +408,7 @@ public sealed class SceneController
         _viewport.PreviewMouseWheel -= OnPreviewMouseWheel;
         _viewport.PreviewMouseDown -= OnPreviewMouseDown;
         _viewport.SizeChanged -= OnViewportSizeChanged;
+        _card.SizeChanged -= OnViewportSizeChanged;
         _vm.Ticked -= OnTicked;
         _vm.SunMoon.PropertyChanged -= OnSunMoonChanged;
         _vm.SunMoon.FaceRequested -= OnFaceRequested;

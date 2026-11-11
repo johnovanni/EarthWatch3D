@@ -13,7 +13,9 @@ A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is
 - **Sun and Moon markers:** the points directly under the Sun and the Moon are marked on the globe. The Moon marker
   shows the current phase.
 - **Arrows:** when the Sun or Moon is off screen, an arrow at the window edge points toward it
-  ("Sun (behind)" / "Moon (behind)" when it is behind the globe).
+  ("Sun (behind)" / "Moon (behind)" when it is behind you, the camera: for example the Sun while you look at the day
+  side). Arrows keep clear of the Sun & Moon card. When the Sun or Moon is in view but the Earth is in the way, its icon
+  is dimmed and labelled "Sun (behind Earth)" / "Moon (behind Earth)".
 - **Sun & Moon card** (top right): the sub-solar and sub-lunar points, the Moon's distance and how much of it is lit,
   updated every second, with **Face Sun** and **Face Moon** buttons. The chevron collapses the card.
 
@@ -60,18 +62,26 @@ These command-line options are for checking the app without a screen capture too
 | `--snapshot <png path>` | Once the globe image is shown, saves a picture of the window (rendered by the app itself, at the window's DPI) as a PNG and exits. Exit code 1 if saving failed. |
 | `--face-sun` | Once the globe image is shown, turns the camera to the Sun (as the Face Sun button does). With `--snapshot`, the picture is taken after the turn. |
 | `--delay-ms <N>` | With `--snapshot`: wait N milliseconds before the picture (default 1500). |
+| `--snapshot-recompose` | With `--snapshot <png path>`: saves two pictures instead of one, `<name>-a.png` and `<name>-b.png`. The second is taken after the app's clock is moved 6 hours ahead and the globe image recomposed and shown, so the night side should have moved about 90° west. This checks that a later recompose reaches the screen, not only the first. |
 
 For example:
 
 ```
 dotnet run --project src/EarthWatch3D.App -c Release -- --face-sun --snapshot %TEMP%\earth.png
+dotnet run --project src/EarthWatch3D.App -c Release -- --face-sun --snapshot %TEMP%\earth.png --snapshot-recompose
 ```
+
+The second command writes `earth-a.png` (the day side, facing the Sun) and `earth-b.png` (6 hours later: the
+terminator runs down the middle of the view, with the night side on the right).
 
 Performance logging is compiled in only when you ask for it:
 
 ```
-dotnet build src/EarthWatch3D.App -c Release -p:DefineConstants=PERF_LOG
+dotnet build src/EarthWatch3D.App -c Release "-p:DefineConstants=TRACE%3BRELEASE%3BPERF_LOG"
 ```
+
+`%3B` is an escaped `;`. Setting `DefineConstants` replaces the SDK's own list, so the command repeats `TRACE` and
+`RELEASE` (the .NET SDK has no `ExtraDefineConstants` property to add to the list instead).
 
 That build appends load and compose timings and memory use to `%TEMP%\EarthWatch3D-perf.log`, and accepts
 `--bench`, which spins the globe once (360° over 5 s) and logs the frame rate. Rebuild normally afterwards. The
