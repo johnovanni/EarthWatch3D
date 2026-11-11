@@ -77,14 +77,14 @@ Summary:
   - Event `source` is the agency; NOAA events here are the same storms as NHC (Pena in the sample is NHC `cp042026`).
   - Longitudes are cut at +-180 (the cone is a MultiPolygon, min/max = -180/180). NHC KMZ files are not cut. See section 3.
 - Samples: `tests/Samples/gdacs_events_tc.json`, `gdacs_geometry.json` (event 1001348, episode 20).
+- Cadence (observed in the feed's own fields; GDACS publishes no schedule that we found): episodes follow the agency advisories. PENA-26 is on episode 20 and ran from `fromdate`
+  2026-11-06T21:00 to `todate` 2026-11-11T15:00 (114 h; 114 h / 19 episode steps = 6 h per episode). CEMPAKA-26 is on episode 22 and ran from 2026-11-06T06:00 to 2026-11-11T12:00 (126 h; 126 h / 21 steps = 6 h per episode). `datemodified` was 14:51:55 for the 15:00 episode, i.e. the update appeared
+  before the nominal episode time. Another event (RSMC, `02-20262027-27`) had not changed since 2026-11-09T19:35. **Recommended poll: 15 min** (the spec value; 30 min would also be fine). The API's own caching could not be determined.
 
 ## 3. NHC tropical cyclones (spec 5.3)
 
 - URL: `https://www.nhc.noaa.gov/CurrentStorms.json`. 4,626 bytes, 0.27 s. A storm (Pena, `cp042026`) was active, so the live
   structure was recorded (no archive needed).
-- Cadence (observed in the feed's own fields; GDACS publishes no schedule that we found): episodes follow the agency advisories. PENA-26 is on episode 20 after
-  `fromdate` 2026-11-06T21:00 and `todate` 2026-11-11T15:00 (about 114 h, so about 6 h per episode); CEMPAKA-26 is on episode 22 after 126 h (about 6 h). `datemodified` was 14:51:55 for the 15:00 episode, i.e. the update appeared
-  before the nominal episode time. Another event (RSMC, `02-20262027-27`) had not changed since 2026-11-09T19:35. **Recommended poll: 15 min** (the spec value; 30 min would also be fine). The API's own caching could not be determined.
 - Cadence: `advNum` 020 for `cp042026` was issued 2026-11-11T15:00Z, and `fileUpdateTime` of the products was 14:35 to 14:38Z (about 25 min before the issue time). The storm has had 20 advisories since GDACS `fromdate`
   2026-11-06T21:00Z, which fits one every 6 h. Standard NHC practice (provider documentation, not re-verified here) is advisories every 6 h at 03/09/15/21 UTC (the example above is issued at 15Z),
   with 3 h intermediate advisories when a storm threatens land. `CurrentStorms.json` is served by a CDN with `Cache-Control: max-age=300` and `Last-Modified` 15:24 GMT when fetched at 20:26 GMT (content changes with advisories).
@@ -134,13 +134,13 @@ Summary:
   land zone `MIZ031`: 20 KB). Expect `MultiPolygon` for some zones. `properties` has `id`, `name`, `state`, `forecastOffice`, `effectiveDate`.
   An alert lists several zones (5 in the example), so one alert can mean several downloads. Cache them (spec `cache/zones/`).
 - Sample: `nws_active.json` (1.8 MB, untrimmed), `nws_zone.json` (from `affectedZones[0]` of the first geometry-less alert).
+- Cadence: the `updated` field of `/alerts/active` was 20:22:18 at one fetch and 20:25:06 at three fetches 20 s apart (it changed between fetches 3 min apart and stayed the same within 1 min; the count went 427 to 428).
+  Headers: `Cache-Control: public, max-age=1, s-maxage=5`, so the cache is not the limit. Alerts are issued by local offices at any time. The exact refresh rate of the endpoint was not determined beyond "under 3 min".
+  **Recommended poll: 2 min** (the spec value).
 
 ## 5. NASA EONET (spec 5.5)
 
 - URL: `https://eonet.gsfc.nasa.gov/api/v3/events?category=severeStorms&status=all&days=7`. 18,984 bytes, 4 events, 2.9 to 4.3 s (slow).
-- Cadence: the `updated` field of `/alerts/active` was 20:22:18 at one fetch and 20:25:06 at three fetches 20 s apart (it changed between fetches 3 min apart and stayed the same within 1 min; the count went 427 to 428).
-  Headers: `Cache-Control: public, max-age=1, s-maxage=5`, so the cache is not the limit. Alerts are issued by local offices at any time. The exact refresh rate of the endpoint was not determined beyond "under 3 min".
-  **Recommended poll: 2 min** (the spec value).
 - Cadence: the newest fix of each storm was 12:00Z or earlier on 2026-11-11 (fixes every 6 h: 00Z, 06Z, 12Z...), matching the JTWC 6-hourly schedule they come from (inference from the fix dates, not a provider statement). How often EONET itself refreshes
   could not be determined (the response carries `Cache-Control: no-cache, private` and no `Last-Modified`). **Recommended poll: 30 min** (the spec value; 60 min would lose nothing given 6-hourly fixes).
 - Structure: `{ title, description, link, events: [...] }`. Event: `id` (`EONET_26159`), `title`, `description` (often null), `link`,
@@ -200,6 +200,7 @@ Summary:
 - **Surprise 2:** flash times range from about **1.15 s before** the file start to 19.4 s after it (sample file: -1.148 to +19.358 s). A flash can belong to the file of the previous 20 s, so de-duplicate by time + position (or by `flash_id`, which is per-file), not by file window.
 - Sample (the numbers here, 757 flashes and 392,919 bytes, describe the **committed** files only; `capture-samples.ps1` re-captures from the previous UTC hour, so a re-run gives different numbers and regenerates the CSV to match, or warns if no Python is given): `tests/Samples/glm_g19_sample.nc` (G19, 19:00:00, 757 flashes, 392,919 bytes), `glm_g19_sample.csv` (`time_utc,lat,lon,energy`), and `glm_g18_sample.nc` (G18, 164,883 bytes).
 - Tool: `tools/dump_flashes.py <in.nc> <out.csv>` prints the flash count (757 for the sample) and writes the CSV. Needs `pip install netCDF4`.
+- Cadence: a new 20 s file every 20 s per satellite (180 per hour, from the key timestamps), appearing 6 to 55 s (median 10 s) after the file's end time (`LastModified`). **Recommended poll: 20 s** (spec).
 
 ## 7. PureHDF check (spec 5.7, step 7)
 
@@ -213,6 +214,7 @@ Summary:
   (5 decimals, 7 significant digits). The one difference seen: the energy `3.8285e-14` printed as `3.828500e-14` by PureHDF (double arithmetic) and `3.828499e-14` by Python
   (float32 arithmetic), which is rounding only. Scale and offset are float32 attributes; the app should compute in double.
 - Conclusion: spec 5.7 holds. PureHDF can read the GLM files. No change to the design.
+- Cadence: not applicable (a library check, not a feed).
 
 ## 8. EUMETSAT MTG LI (spec 5.7): deferred to plan 3
 
