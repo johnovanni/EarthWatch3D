@@ -30,7 +30,8 @@ Summary:
   - `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson`
   - `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson`
 - Size and latency: week = 1,314,164 bytes (1,850 features, 0.27 s). Hour = 5,214 bytes (7 features, 0.15 s;
-  a later capture was 3,826 bytes). - Cadence: USGS regenerates the feeds every minute (`metadata.generated` is in epoch ms; both feeds had `generated` equal to within 1 s).
+  a later capture was 3,826 bytes).
+- Cadence: USGS regenerates the feeds every minute (`metadata.generated` is in epoch ms; both feeds had `generated` equal to within 1 s; source: the feed's own `generated` stamp, not a provider statement). **Recommended poll: 60 s for the hour feed, 30 min for the week feed** (spec).
 - Structure: `FeatureCollection` with `metadata` (`generated`, `url`, `title`, `status`, `api`, `count`), `features`, `bbox`.
 - Fields confirmed on each feature:
   - `id` (string, e.g. `us7000txmx`), top level, next to `type`, `properties`, `geometry`.
@@ -81,6 +82,13 @@ Summary:
 
 - URL: `https://www.nhc.noaa.gov/CurrentStorms.json`. 4,626 bytes, 0.27 s. A storm (Pena, `cp042026`) was active, so the live
   structure was recorded (no archive needed).
+- Cadence (observed in the feed's own fields; GDACS publishes no schedule that we found): episodes follow the agency advisories. PENA-26 is on episode 20 after
+  `fromdate` 2026-11-06T21:00 and `todate` 2026-11-11T15:00 (about 114 h, so about 6 h per episode); CEMPAKA-26 is on episode 22 after 126 h (about 6 h). `datemodified` was 14:51:55 for the 15:00 episode, i.e. the update appeared
+  before the nominal episode time. Another event (RSMC, `02-20262027-27`) had not changed since 2026-11-09T19:35. **Recommended poll: 15 min** (the spec value; 30 min would also be fine). The API's own caching could not be determined.
+- Cadence: `advNum` 020 for `cp042026` was issued 2026-11-11T15:00Z, and `fileUpdateTime` of the products was 14:35 to 14:38Z (about 25 min before the issue time). The storm has had 20 advisories since GDACS `fromdate`
+  2026-11-06T21:00Z, which fits one every 6 h. Standard NHC practice (provider documentation, not re-verified here) is advisories every 6 h at 03/09/15/21 UTC (the example above is issued at 15Z),
+  with 3 h intermediate advisories when a storm threatens land. `CurrentStorms.json` is served by a CDN with `Cache-Control: max-age=300` and `Last-Modified` 15:24 GMT when fetched at 20:26 GMT (content changes with advisories).
+  **Recommended poll: 15 min** (nothing is gained below 5 min because of the cache).
 - Structure: `{ "activeStorms": [ ... ] }` (empty array when nothing is active). Each storm:
   - Identity: `id` (`cp042026` = basin + number + year), `binNumber`, `name` (capitalised, `Pena`), `classification` (`TS`, `HU`, `TD`...),
     `intensity` (knots, **string**), `pressure` (mb, string), `latitude`/`longitude` (strings like `9.9N`, `167.7W`),
@@ -130,6 +138,11 @@ Summary:
 ## 5. NASA EONET (spec 5.5)
 
 - URL: `https://eonet.gsfc.nasa.gov/api/v3/events?category=severeStorms&status=all&days=7`. 18,984 bytes, 4 events, 2.9 to 4.3 s (slow).
+- Cadence: the `updated` field of `/alerts/active` was 20:22:18 at one fetch and 20:25:06 at three fetches 20 s apart (it changed between fetches 3 min apart and stayed the same within 1 min; the count went 427 to 428).
+  Headers: `Cache-Control: public, max-age=1, s-maxage=5`, so the cache is not the limit. Alerts are issued by local offices at any time. The exact refresh rate of the endpoint was not determined beyond "under 3 min".
+  **Recommended poll: 2 min** (the spec value).
+- Cadence: the newest fix of each storm was 12:00Z or earlier on 2026-11-11 (fixes every 6 h: 00Z, 06Z, 12Z...), matching the JTWC 6-hourly schedule they come from (inference from the fix dates, not a provider statement). How often EONET itself refreshes
+  could not be determined (the response carries `Cache-Control: no-cache, private` and no `Last-Modified`). **Recommended poll: 30 min** (the spec value; 60 min would lose nothing given 6-hourly fixes).
 - Structure: `{ title, description, link, events: [...] }`. Event: `id` (`EONET_26159`), `title`, `description` (often null), `link`,
   **`closed`** (`null` while open, ISO `...Z` string when closed), `categories`, `sources` [{`id` (e.g. `JTWC`), `url`}],
   `geometry` (array).
@@ -185,7 +198,7 @@ Summary:
   Flash time = `product_time` + (`raw` x `scale_factor` + `add_offset`). Global attributes: `time_coverage_start/_end`, `platform_ID` (`G19`), `dataset_name`.
 - **Surprise 1:** `flash_lat` and `flash_lon` are **not** packed integers (the spec says they might be). Only `flash_energy` and `flash_time_offset_of_first_event` need scale/offset and unsigned handling.
 - **Surprise 2:** flash times range from about **1.15 s before** the file start to 19.4 s after it (sample file: -1.148 to +19.358 s). A flash can belong to the file of the previous 20 s, so de-duplicate by time + position (or by `flash_id`, which is per-file), not by file window.
-- Sample: `tests/Samples/glm_g19_sample.nc` (G19, 19:00:00, 757 flashes, 392,919 bytes), `glm_g19_sample.csv` (`time_utc,lat,lon,energy`), and `glm_g18_sample.nc` (G18, 164,883 bytes).
+- Sample (the numbers here, 757 flashes and 392,919 bytes, describe the **committed** files only; `capture-samples.ps1` re-captures from the previous UTC hour, so a re-run gives different numbers and regenerates the CSV to match, or warns if no Python is given): `tests/Samples/glm_g19_sample.nc` (G19, 19:00:00, 757 flashes, 392,919 bytes), `glm_g19_sample.csv` (`time_utc,lat,lon,energy`), and `glm_g18_sample.nc` (G18, 164,883 bytes).
 - Tool: `tools/dump_flashes.py <in.nc> <out.csv>` prints the flash count (757 for the sample) and writes the CSV. Needs `pip install netCDF4`.
 
 ## 7. PureHDF check (spec 5.7, step 7)

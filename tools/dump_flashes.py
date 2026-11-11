@@ -55,6 +55,8 @@ def read_glm(ds):
     base = GLM_EPOCH + dt.timedelta(seconds=float(ds.variables["product_time"][()]))
     rows = []
     for i in range(len(lat)):
+        if np.ma.is_masked(offs[i]) or not np.isfinite(float(offs[i])):
+            continue  # no valid time: skip the flash rather than invent one
         t = base + dt.timedelta(seconds=float(offs[i]))
         rows.append((_fmt_time(t), _val(lat[i]), _val(lon[i]), _e(energy[i])))
     return rows

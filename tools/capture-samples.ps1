@@ -82,15 +82,22 @@ Step 'glm' {
     }
     $nc = Join-Path $OutDir 'glm_g19_sample.nc'; $csv = Join-Path $OutDir 'glm_g19_sample.csv'
     $dump = Join-Path $PSScriptRoot 'dump_flashes.py'
-    if (Get-Command $Python -ErrorAction SilentlyContinue) { & $Python -I $dump $nc $csv } else { Write-Warning 'Python not found; GLM CSV skipped (use -Python).' }
+    if (Get-Command $Python -ErrorAction SilentlyContinue) {
+        if (Test-Path $csv) { Remove-Item $csv }  # never leave a CSV that belongs to an older .nc
+        & $Python -I $dump $nc $csv
+        if ($LASTEXITCODE -ne 0) { throw "dump_flashes.py failed (is netCDF4 installed for ${Python}?)" }
+    } else {
+        if (Test-Path $csv) { Remove-Item $csv }
+        Write-Warning 'Python not found: the new GLM .nc has NO matching CSV (the old one was removed so the pair cannot disagree). Re-run with -Python <path>.'
+    }
 }
 
-# 9. GIBS: GetCapabilities + one 4096x2048 GetMap of yesterday's (complete) VIIRS NOAA-21 true colour
+# 9. GIBS: one 4096x2048 GetMap (GetCapabilities is 2.6 MB and is not saved) of yesterday's (complete) VIIRS NOAA-21 true colour
 Step 'gibs' {
     $wms = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi'
     $day = $now.AddDays(-1).ToString('yyyy-MM-dd')
     Get-File "${wms}?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=4096&HEIGHT=2048&STYLES=&LAYERS=VIIRS_NOAA21_CorrectedReflectance_TrueColor&FORMAT=image/jpeg&TIME=$day" 'gibs_viirs_noaa21_truecolor_4096.jpg'
 }
 
-if ($failed.Count) { Write-Error "Failed steps: $($failed -join ', ')"; exit 1 }
+if ($failed.Count) { Write-Warning "Failed steps: $($failed -join ', ')"; exit 1 }
 Write-Host 'Done.'
