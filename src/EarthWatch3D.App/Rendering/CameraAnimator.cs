@@ -15,6 +15,8 @@ public sealed class CameraAnimator
 
     public CameraAnimator(PerspectiveCamera camera) => _camera = camera;
 
+    public bool IsRunning => _running;
+
     public void AnimateTo(Point3D target, double durationMs = 700)
     {
         Cancel();

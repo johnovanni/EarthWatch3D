@@ -3,16 +3,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:helix="http://helix-toolkit.org/wpf"
         xmlns:views="clr-namespace:EarthWatch3D.App.Views"
-        Title="EarthWatch3D" Height="720" Width="1100" Background="#04060E"
-        Loaded="OnLoaded" PreviewKeyDown="OnPreviewKeyDown">
-    <Grid>
+        Title="EarthWatch3D" Height="720" Width="1100" Background="#04060E">
+    <!-- The globe, markers, overlay and camera input are wired by Controllers/SceneController. -->
+    <Grid x:Name="Root">
         <helix:HelixViewport3D x:Name="Viewport" Background="#04060E"
                                CameraRotationMode="Turntable" ModelUpDirection="0,0,1"
                                ShowViewCube="False" ShowCoordinateSystem="False" ZoomAroundMouseDownPoint="False"
-                               IsPanEnabled="False" IsHeadLightEnabled="False" ShowFrameRate="False"
-                               CameraChanged="OnCameraChanged"
-                               PreviewMouseWheel="OnPreviewMouseWheel"
-                               PreviewMouseDown="OnPreviewMouseDown">
+                               IsPanEnabled="False" IsHeadLightEnabled="False" ShowFrameRate="False">
             <helix:HelixViewport3D.Camera>
                 <PerspectiveCamera Position="0,-3,1" LookDirection="0,3,-1" UpDirection="0,0,1" FieldOfView="45"
                                    NearPlaneDistance="0.01" FarPlaneDistance="100"/>
@@ -22,7 +19,6 @@
                     <AmbientLight Color="White"/>
                 </ModelVisual3D.Content>
             </ModelVisual3D>
-            <ModelVisual3D x:Name="GlobeVisual"/>
         </helix:HelixViewport3D>
         <views:SunMoonCard DataContext="{Binding SunMoon}"/>
         <Canvas x:Name="Overlay" IsHitTestVisible="False"/>

@@ -9,5 +9,12 @@ public partial class MainViewModel : ObservableObject
 
     public SunMoonViewModel SunMoon { get; }
 
-    public void Tick() => SunMoon.Refresh();
+    /// <summary>Raised after each <see cref="Tick"/> has refreshed the view models.</summary>
+    public event EventHandler? Ticked;
+
+    public void Tick()
+    {
+        SunMoon.Refresh();
+        Ticked?.Invoke(this, EventArgs.Empty);
+    }
 }
