@@ -9,7 +9,7 @@ public partial class SunMoonCard : UserControl
     public SunMoonCard() => InitializeComponent();
 }
 
-/// <summary>IsCollapsed -> chevron glyph (down when expanded, up... i.e. points to the action).</summary>
+/// <summary>IsCollapsed -> chevron glyph: up (collapse) when expanded, down (expand) when collapsed.</summary>
 public sealed class ChevronConverter : IValueConverter
 {
     public static readonly ChevronConverter Instance = new();

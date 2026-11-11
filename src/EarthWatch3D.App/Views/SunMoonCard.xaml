@@ -31,7 +31,17 @@
             <Setter Property="FontSize" Value="13"/>
         </Style>
     </UserControl.Resources>
-    <Border Background="#CC101624" CornerRadius="8" Padding="12,8" Width="230">
+    <Border Background="#CC101624" CornerRadius="8" Padding="12,8">
+        <Border.Style>
+            <Style TargetType="Border">
+                <Setter Property="Width" Value="230"/>
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsCollapsed}" Value="True">
+                        <Setter Property="Width" Value="Auto"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
         <StackPanel>
             <DockPanel LastChildFill="False">
                 <Button DockPanel.Dock="Right" Style="{StaticResource CardButton}" Padding="6,0"
@@ -62,7 +72,7 @@
                 </StackPanel.Style>
                 <TextBlock><Run Text="☀ "/><Run Text="{Binding SubSolarText, Mode=OneWay}"/></TextBlock>
                 <TextBlock Margin="0,2,0,0"><Run Text="☾ "/><Run Text="{Binding SubLunarText, Mode=OneWay}"/></TextBlock>
-                <TextBlock Margin="0,2,0,0" Text="{Binding MoonDistanceText}"/>
+                <TextBlock Margin="0,2,0,0"><Run Text="☾ distance "/><Run Text="{Binding MoonDistanceText, Mode=OneWay}"/></TextBlock>
                 <TextBlock Margin="0,2,0,0">
                     <Run Text="{Binding MoonIlluminatedPercent, Mode=OneWay}"/><Run Text="% lit, "/><Run Text="{Binding MoonWaxing, Mode=OneWay, Converter={x:Static local:PhaseConverter.Instance}}"/>
                 </TextBlock>

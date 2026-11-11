@@ -50,4 +50,37 @@ public class CameraRulesTests
         Assert.False(double.IsNaN(up.X + up.Y + up.Z));
         Assert.True(Vector3D.CrossProduct(look, up).Length > 0.1);
     }
+
+    [Fact]
+    public void OrbitStepHitsEndpoints()
+    {
+        var a = new Vector3D(3, 0, 1); var b = new Vector3D(-1, 2, 2);
+        var p0 = CameraRules.OrbitStep(a, b, 0).Position; var p1 = CameraRules.OrbitStep(a, b, 1).Position;
+        Assert.True(((Vector3D)p0 - a).Length < 1e-9);
+        Assert.True(((Vector3D)p1 - b).Length < 1e-9);
+    }
+
+    [Fact]
+    public void OrbitStepOppositeDirectionsNeverPassThroughGlobe()
+    {
+        var a = new Vector3D(0, -3, 0); var b = new Vector3D(0, 5, 0);
+        var (p, look, _) = CameraRules.OrbitStep(a, b, 0.5);
+        Assert.Equal(4.0, ((Vector3D)p).Length, 9);   // smoothstep(0.5) = 0.5 -> distance 3 + 2*0.5
+        Assert.True(((Vector3D)p).Length >= 1.047);
+        Assert.True((look + (Vector3D)p).Length < 1e-9);
+        for (double t = 0; t <= 1.0001; t += 0.05)
+            Assert.True(((Vector3D)CameraRules.OrbitStep(a, b, t).Position).Length >= 3 - 1e-9);
+    }
+
+    [Fact]
+    public void OrbitStepHasNoNaNAtPoles()
+    {
+        var pole = new Vector3D(0, 0, 3); var south = new Vector3D(0, 0, -3); var eq = new Vector3D(3, 0, 0);
+        foreach (var (f, g) in new[] { (pole, eq), (eq, pole), (pole, south), (south, pole), (pole, pole) })
+            for (double t = 0; t <= 1.0001; t += 0.1)
+            {
+                var (p, l, u) = CameraRules.OrbitStep(f, g, t);
+                foreach (var v in new[] { p.X, p.Y, p.Z, l.X, l.Y, l.Z, u.X, u.Y, u.Z }) Assert.False(double.IsNaN(v));
+            }
+    }
 }

@@ -39,4 +39,25 @@ public class SunMoonViewModelTests
         vm.FaceSunCommand.Execute(null);
         Assert.Equal(vm.SubSolar, got);
     }
+
+    [Fact]
+    public void FaceMoonRaisesWithSubLunarPoint()
+    {
+        var vm = new SunMoonViewModel(new FakeClock(new DateTime(2026, 6, 21, 12, 0, 0, DateTimeKind.Utc))); vm.Refresh();
+        GeoPosition? got = null; vm.FaceRequested += (_, p) => got = p;
+        vm.FaceMoonCommand.Execute(null);
+        Assert.Equal(vm.SubLunar, got);
+    }
+
+    [Fact]
+    public void RefreshRaisesPropertyChanged()
+    {
+        var vm = new SunMoonViewModel(new FakeClock(new DateTime(2026, 6, 21, 12, 0, 0, DateTimeKind.Utc)));
+        var names = new List<string?>();
+        vm.PropertyChanged += (_, e) => names.Add(e.PropertyName);
+        vm.Refresh();
+        foreach (var n in new[] { nameof(vm.SubSolar), nameof(vm.SubLunar), nameof(vm.SubSolarText), nameof(vm.SubLunarText),
+                                  nameof(vm.MoonDistanceText), nameof(vm.MoonDistanceKm), nameof(vm.MoonIlluminatedPercent) })
+            Assert.Contains(n, names);
+    }
 }

@@ -6,7 +6,6 @@ using System.Windows.Media.Imaging;
 using System.Windows.Media.Media3D;
 using AstroCore.Astronomy;
 using AstroCore.Earth;
-using System.Windows.Threading;
 using EarthWatch3D.App.Rendering;
 using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.Core.Geo;
@@ -24,9 +23,17 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        timer.Tick += (_, _) => (DataContext as MainViewModel)?.Tick();
-        timer.Start();
+        _animator = new CameraAnimator(Camera);
+        Closed += OnClosed;
+    }
+
+    private readonly CameraAnimator _animator;
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        _animator.Cancel();
+        if (DataContext is MainViewModel vm) vm.SunMoon.FaceRequested -= OnFaceRequested;
+        DataContextChanged -= OnDataContextChanged;
     }
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -38,8 +45,7 @@ public partial class MainWindow : Window
     private void OnFaceRequested(object? sender, GeoPosition p)
     {
         double distance = ((Vector3D)Camera.Position).Length;
-        var (pos, look, up) = CameraRules.LookDownOn(p, distance);
-        CameraHelper.AnimateTo(Camera, pos, look, up, 700);
+        _animator.AnimateTo(CameraRules.LookDownOn(p, distance).Position);
     }
 
     private PerspectiveCamera Camera => (PerspectiveCamera?)Viewport.Camera ?? throw new InvalidOperationException("No camera.");
@@ -132,6 +138,7 @@ public partial class MainWindow : Window
     private void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
         e.Handled = true;
+        _animator.Cancel();
         double notches = e.Delta / 120.0;
         var pos = (Vector3D)Camera.Position;
         var next = CameraRules.ClampDistance(new Point3D(0, 0, 0) + pos * Math.Pow(CameraRules.ZoomPerNotch, -notches));
@@ -143,7 +150,7 @@ public partial class MainWindow : Window
     {
         if (e.Key != Key.Home) return;
         e.Handled = true;
-        SetDefaultView(FitDistanceForWindow());
+        _animator.AnimateTo(CameraRules.LookDownOn(new GeoPosition(20, -40), FitDistanceForWindow()).Position);
     }
 
     private void OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
@@ -154,7 +161,6 @@ public partial class MainWindow : Window
         if (!Viewport.FindNearest(pt, out Point3D hit, out _, out _)) return;
         var geo = GeoPosition.FromVector(new Vector3d(hit.X, hit.Y, hit.Z));
         double distance = ((Vector3D)Camera.Position).Length;
-        var (p, l, u) = CameraRules.LookDownOn(geo, distance);
-        CameraHelper.AnimateTo(Camera, p, l, u, 700);
+        _animator.AnimateTo(CameraRules.LookDownOn(geo, distance).Position);
     }
 }

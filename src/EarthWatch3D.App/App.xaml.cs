@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Threading;
 using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.Core.Time;
 
@@ -11,6 +12,11 @@ public partial class App : Application
         base.OnStartup(e);
         var vm = new MainViewModel(new SystemClock());
         vm.Tick();   // show real values immediately
-        new MainWindow { DataContext = vm }.Show();
+        var window = new MainWindow { DataContext = vm };
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        timer.Tick += (_, _) => vm.Tick();
+        window.Closed += (_, _) => timer.Stop();
+        timer.Start();
+        window.Show();
     }
 }

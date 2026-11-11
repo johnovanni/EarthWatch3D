@@ -36,10 +36,45 @@ public static class CameraRules
         var n = new Vector3D(u.X, u.Y, u.Z);
         var position = new Point3D(n.X * distance, n.Y * distance, n.Z * distance);
         var look = -(Vector3D)position;
+        return (position, look, UpFor(n));
+    }
+
+    private static Vector3D UpFor(Vector3D n)
+    {
         var up = Perp(new Vector3D(0, 0, 1), n);
         if (up.Length < 1e-6) up = Perp(new Vector3D(0, 1, 0), n);
         up.Normalize();
-        return (position, look, up);
+        return up;
+    }
+
+    /// <summary>One frame of an orbit between two camera positions: slerped direction, linear distance, smoothstep easing.</summary>
+    public static (Point3D Position, Vector3D LookDirection, Vector3D UpDirection) OrbitStep(Vector3D fromPos, Vector3D toPos, double t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        double s = t * t * (3 - 2 * t);
+        double d0 = fromPos.Length, d1 = toPos.Length;
+        var a = fromPos; a.Normalize();
+        var b = toPos; b.Normalize();
+        double dot = Math.Clamp(Vector3D.DotProduct(a, b), -1, 1);
+        Vector3D dir;
+        if (dot > 1 - 1e-12) dir = b;
+        else if (dot < -1 + 1e-9)
+        {
+            var axis = Vector3D.CrossProduct(a, new Vector3D(0, 0, 1));
+            if (axis.Length < 1e-6) axis = Vector3D.CrossProduct(a, new Vector3D(1, 0, 0));
+            axis.Normalize();
+            double ang = Math.PI * s;
+            dir = a * Math.Cos(ang) + Vector3D.CrossProduct(axis, a) * Math.Sin(ang);
+        }
+        else
+        {
+            double th = Math.Acos(dot), sin = Math.Sin(th);
+            dir = (a * Math.Sin((1 - s) * th) + b * Math.Sin(s * th)) / sin;
+        }
+        dir.Normalize();
+        double d = d0 + (d1 - d0) * s;
+        var pos = dir * d;
+        return (new Point3D(pos.X, pos.Y, pos.Z), -pos, UpFor(dir));
     }
 
     private static Vector3D Perp(Vector3D v, Vector3D n) => v - Vector3D.DotProduct(v, n) * n;
