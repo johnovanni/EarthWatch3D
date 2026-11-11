@@ -1,0 +1,2 @@
+src/EarthWatch3D.App/Assets/*.geojson -text
+src/EarthWatch3D.App/Assets/*.jpg binary
