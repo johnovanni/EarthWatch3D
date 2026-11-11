@@ -51,7 +51,7 @@ package, so it has to work without developer tools and explain itself to non-tec
 ## 2. Repositories and projects
 
 ```
-C:\repos\AstroCore                     new repo: shared astronomy library (net8.0, no UI)
+C:\repos\AstroCore                     new repo: shared astronomy library (net10.0, no UI)
   src/AstroCore                        Vector3d, Matrix3d, AstroTime, Frames, Conic,
                                        IOrbitModel, PlanetOrbit, LunarOrbit, EarthOrbit,
                                        + new: Precession, EarthRotation, SubPoints, Terminator
@@ -59,13 +59,15 @@ C:\repos\AstroCore                     new repo: shared astronomy library (net8.
 
 C:\repos\EarthWatch3D                  new repo
   external/AstroCore                   git submodule (pinned commit)
-  src/EarthWatch3D.Core                net8.0, no UI: events, feeds, store, lightning, geo helpers
-  src/EarthWatch3D.App                 net8.0-windows WPF app (HelixToolkit.Wpf, CommunityToolkit.Mvvm)
+  src/EarthWatch3D.Core                net10.0, no UI: events, feeds, store, lightning, geo helpers
+  src/EarthWatch3D.App                 net10.0-windows WPF app (HelixToolkit.Wpf, CommunityToolkit.Mvvm)
   packaging/                           AppxManifest.xml template, MSIX logos, .appinstaller template
   tests/EarthWatch3D.Tests             feed parser, store, replay, lightning tests; tests/Samples
   tools/                               scripts: image preparation, sample capture, signing
 ```
 
+- **.NET 10** (LTS) for everything. .NET 8 reached end of support on 2026-11-10, so a newly shipped app should not
+  target it. SolarSystem3D moves to .NET 10 as part of its switch to AstroCore.
 - Both repos are created locally. Nothing is pushed to GitHub until the user asks.
 - The AstroCore code is copied from SolarSystem3D's `Astronomy/` and `Orbits/` folders: `Vector3d`, `Matrix3d`,
   `AstroTime`, `Frames`, `Conic`, `IOrbitModel`, `OrbitSummary`, `PlanetOrbit`, `LunarOrbit` and `EarthOrbit`.
