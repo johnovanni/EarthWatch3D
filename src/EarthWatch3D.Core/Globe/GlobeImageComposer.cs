@@ -7,10 +7,13 @@ public sealed record GlobeLayers(
     double NightMaxOpacity,
     Bgra32Image? Clouds = null,
     Bgra32Image? Areas = null,
-    Bgra32Image? Lines = null);
+    Bgra32Image? Lines = null,
+    SparseOverlay? SparseLines = null);
 
 /// <summary>
 /// Composes the globe texture: base, clouds, areas, night shade, lines (each straight-alpha blended).
+/// Lines may be given dense (<see cref="GlobeLayers.Lines"/>) or sparse (<see cref="GlobeLayers.SparseLines"/>,
+/// same result, far less memory); if both are given, the sparse lines are drawn after the dense ones.
 /// Pixel (x, y) is centred at lon = -180 + (x+0.5)*360/W, lat = 90 - (y+0.5)*180/H.
 /// </summary>
 public sealed class GlobeImageComposer(Bgra32Image baseImage)
@@ -36,6 +39,8 @@ public sealed class GlobeImageComposer(Bgra32Image baseImage)
         Check(layers.Clouds, nameof(layers.Clouds));
         Check(layers.Areas, nameof(layers.Areas));
         Check(layers.Lines, nameof(layers.Lines));
+        if (layers.SparseLines is { } sl && (sl.Width != w || sl.Height != h))
+            throw new ArgumentException($"SparseLines must be {w}x{h}, got {sl.Width}x{sl.Height}.", nameof(layers));
 
         double max = Math.Clamp(layers.NightMaxOpacity, 0.0, 1.0);
         double deg = Math.PI / 180.0;
@@ -61,6 +66,7 @@ public sealed class GlobeImageComposer(Bgra32Image baseImage)
         var clouds = layers.Clouds?.Pixels;
         var areas = layers.Areas?.Pixels;
         var lines = layers.Lines?.Pixels;
+        var sparse = layers.SparseLines;
         bool shade = max > 0.0;
 
         Parallel.For(0, h, y =>
@@ -98,6 +104,7 @@ public sealed class GlobeImageComposer(Bgra32Image baseImage)
             }
 
             if (lines != null) Blend(lines, dst, row, w);
+            if (sparse != null) BlendSparse(sparse, dst, y);
 
             for (int p = row + 3, end = row + w * 4; p < end; p += 4) dst[p] = 255;
         });
@@ -121,6 +128,26 @@ public sealed class GlobeImageComposer(Bgra32Image baseImage)
             dst[p] = Mix(layer[p], dst[p], a);
             dst[p + 1] = Mix(layer[p + 1], dst[p + 1], a);
             dst[p + 2] = Mix(layer[p + 2], dst[p + 2], a);
+        }
+    }
+
+    private static void BlendSparse(SparseOverlay layer, byte[] dst, int y)
+    {
+        var idx = layer.PixelIndices;
+        var col = layer.Bgra;
+        for (int n = layer.RowStarts[y], end = layer.RowStarts[y + 1]; n < end; n++)
+        {
+            int p = idx[n] * 4, c = n * 4;
+            int al = col[c + 3];
+            if (al == 255)
+            {
+                dst[p] = col[c]; dst[p + 1] = col[c + 1]; dst[p + 2] = col[c + 2];
+                continue;
+            }
+            double a = al / 255.0;
+            dst[p] = Mix(col[c], dst[p], a);
+            dst[p + 1] = Mix(col[c + 1], dst[p + 1], a);
+            dst[p + 2] = Mix(col[c + 2], dst[p + 2], a);
         }
     }
 

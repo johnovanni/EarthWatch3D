@@ -8,11 +8,30 @@ namespace EarthWatch3D.App.Rendering;
 
 public static class ImageConversions
 {
-    /// <summary>Decodes a JPEG/PNG into straight BGRA. Safe to call off the UI thread.</summary>
-    public static Bgra32Image DecodeToBgra32(Stream jpegOrPng)
+    /// <summary>
+    /// Decodes a JPEG/PNG into straight BGRA, optionally scaled to <paramref name="width"/> pixels wide (aspect kept).
+    /// Safe to call off the UI thread.
+    /// </summary>
+    public static Bgra32Image DecodeToBgra32(Stream jpegOrPng, int? width = null)
     {
-        var decoder = BitmapDecoder.Create(jpegOrPng, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-        var converted = new FormatConvertedBitmap(decoder.Frames[0], PixelFormats.Bgra32, null, 0);
+        BitmapSource frame;
+        if (width is { } wanted)
+        {
+            // Let the decoder scale while decoding (WIC's JPEG decoder does this cheaply) rather than holding a full-size copy.
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.StreamSource = jpegOrPng;
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
+            image.DecodePixelWidth = wanted;
+            image.EndInit();
+            frame = image;
+        }
+        else
+        {
+            frame = BitmapDecoder.Create(jpegOrPng, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad).Frames[0];
+        }
+        var converted = new FormatConvertedBitmap(frame, PixelFormats.Bgra32, null, 0);
         int w = converted.PixelWidth, h = converted.PixelHeight;
         var pixels = new byte[checked(w * h * 4)];
         converted.CopyPixels(pixels, w * 4, 0);
