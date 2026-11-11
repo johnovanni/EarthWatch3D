@@ -19,6 +19,15 @@ public static class CameraRules
         return new Point3D(v.X, v.Y, v.Z);
     }
 
+    /// <summary>Distance at which the globe fits the window (WPF FieldOfView is horizontal), with margin.</summary>
+    public static double FitDistance(double horizontalFovDeg, double aspect, double margin = 0.9)
+    {
+        double hHalf = horizontalFovDeg * Math.PI / 360;
+        double vHalf = Math.Atan(Math.Tan(hHalf) / aspect);
+        double d = 1 / Math.Sin(margin * Math.Min(hHalf, vHalf));
+        return Math.Clamp(d, MinDistance, MaxDistance);
+    }
+
     public static double RotationSensitivity(double distance) => Math.Clamp((distance - 1) / 2, 0.02, 1.0);
 
     public static (Point3D Position, Vector3D LookDirection, Vector3D UpDirection) LookDownOn(GeoPosition p, double distance)

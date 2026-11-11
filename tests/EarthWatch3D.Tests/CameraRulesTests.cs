@@ -17,6 +17,28 @@ public class CameraRulesTests
     public void SensitivityScalesWithAltitude(double d, double expected) =>
         Assert.Equal(expected, CameraRules.RotationSensitivity(d), 4);
 
+    [Fact]
+    public void FitDistanceFitsGlobeInVerticalHalfFov()
+    {
+        double d = CameraRules.FitDistance(45, 16.0 / 9);
+        double vHalf = Math.Atan(Math.Tan(22.5 * Math.PI / 180) / (16.0 / 9));
+        Assert.True(Math.Asin(1 / d) <= 0.9 * vHalf + 1e-9);
+    }
+
+    [Fact]
+    public void FitDistanceUsesHorizontalHalfForTallWindow()
+    {
+        double d = CameraRules.FitDistance(45, 0.5);
+        Assert.Equal(1 / Math.Sin(0.9 * 22.5 * Math.PI / 180), d, 9);
+    }
+
+    [Theory] [InlineData(45, 0.01)] [InlineData(45, 100)] [InlineData(120, 1)] [InlineData(5, 1)]
+    public void FitDistanceStaysWithinLimits(double fov, double aspect)
+    {
+        double d = CameraRules.FitDistance(fov, aspect);
+        Assert.InRange(d, CameraRules.MinDistance, CameraRules.MaxDistance);
+    }
+
     [Theory] // Review Focus 3: poles must not degenerate
     [InlineData(0, 0)] [InlineData(90, 0)] [InlineData(-90, 45)] [InlineData(23.44, 179.9)]
     public void LookDownOnPointsAtCentreWithValidUp(double lat, double lon)
