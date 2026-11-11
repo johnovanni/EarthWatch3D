@@ -15,6 +15,21 @@ public class MoonPhaseGlyphTests
     }
 
     [Fact]
+    public void WaningLightsLeftSide()
+    {
+        var g = MoonPhaseGlyph.CreateGeometry(0.3, waxing: false, radius: 100);
+        Assert.True(g.FillContains(new Point(-90, 0))); Assert.False(g.FillContains(new Point(90, 0)));
+    }
+
+    [Fact]
+    public void WaningLitAreaMatchesFraction()
+    {
+        var g = MoonPhaseGlyph.CreateGeometry(0.3, waxing: false, radius: 100);
+        double disc = Math.PI * 100 * 100;
+        Assert.InRange(g.GetArea(0.01, ToleranceType.Absolute) - 0.3 * disc, -0.005 * disc, 0.005 * disc);
+    }
+
+    [Fact]
     public void WaxingLightsRightSide()
     {
         var g = MoonPhaseGlyph.CreateGeometry(0.3, waxing: true, radius: 100);

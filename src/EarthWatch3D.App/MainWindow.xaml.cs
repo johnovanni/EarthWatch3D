@@ -42,12 +42,20 @@ public partial class MainWindow : Window
     {
         CompositionTarget.Rendering += OnRendering;
         Viewport.SizeChanged += OnViewportSizeChanged;
+        StateChanged += OnWindowStateChanged;
+    }
+
+    private void OnWindowStateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized) _overlay.HideAll();
+        else _overlayDirty = true;
     }
 
     private void StopOverlayUpdates()
     {
         CompositionTarget.Rendering -= OnRendering;
         Viewport.SizeChanged -= OnViewportSizeChanged;
+        StateChanged -= OnWindowStateChanged;
         WatchSunMoon(null);
     }
 
@@ -64,6 +72,7 @@ public partial class MainWindow : Window
 
     private void OnRendering(object? sender, EventArgs e)
     {
+        if (WindowState == WindowState.Minimized) { _overlay.HideAll(); _overlayDirty = true; return; }
         NoteCameraChange();
         if (!_overlayDirty) return;
         _overlayDirty = false;

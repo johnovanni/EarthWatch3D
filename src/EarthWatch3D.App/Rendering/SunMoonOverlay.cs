@@ -12,7 +12,7 @@ namespace EarthWatch3D.App.Rendering;
 /// </summary>
 public sealed class SunMoonOverlay
 {
-    public const double Inset = 40, IconSize = 18, ArrowSize = 22, LabelWidth = 40, LabelHeight = 14;
+    public const double Inset = 40, IconSize = 18, ArrowSize = 22, LabelWidth = 84, LabelHeight = 14;
     public static readonly Color SunColor = Color.FromRgb(0xFF, 0xC9, 0x40);
     public static readonly Color MoonColor = Color.FromRgb(0xD0, 0xD4, 0xDC);
     public static readonly Color MoonDark = Color.FromRgb(0x30, 0x34, 0x3C);
@@ -26,6 +26,7 @@ public sealed class SunMoonOverlay
         public required Path Arrow;
         public required RotateTransform Rotation;
         public required TextBlock Label;
+        public required string Text, BehindText;
     }
 
     private readonly Marker _sun, _moon;
@@ -47,6 +48,13 @@ public sealed class SunMoonOverlay
         };
         moonIcon.Children.Add(_moonLit);
         _moon = CreateMarker(overlay, moonIcon, MoonColor, "Moon");
+    }
+
+    /// <summary>Hides every element (used while the window is minimised).</summary>
+    public void HideAll()
+    {
+        foreach (var m in new[] { _sun, _moon })
+            m.Icon.Visibility = m.Arrow.Visibility = m.Label.Visibility = Visibility.Collapsed;
     }
 
     public void Update(Projector projector, Vector3D sunDirection, Point3D moonPosition, double moonFraction, bool waxing)
@@ -80,7 +88,11 @@ public sealed class SunMoonOverlay
         m.Rotation.Angle = p.AngleDeg;
         Canvas.SetLeft(m.Arrow, p.Position.X);
         Canvas.SetTop(m.Arrow, p.Position.Y);
-        double rad = p.AngleDeg * Math.PI / 180, inward = ArrowSize / 2 + LabelHeight + 6;
+        var text = p.Behind ? m.BehindText : m.Text;
+        if (!ReferenceEquals(m.Label.Text, text)) m.Label.Text = text;
+        // Distance along the inward direction that clears the chevron: half the label's extent along that direction.
+        double rad = p.AngleDeg * Math.PI / 180;
+        double inward = ArrowSize / 2 + 6 + Math.Abs(Math.Cos(rad)) * LabelWidth / 2 + Math.Abs(Math.Sin(rad)) * LabelHeight / 2;
         Canvas.SetLeft(m.Label, p.Position.X - Math.Cos(rad) * inward - LabelWidth / 2);
         Canvas.SetTop(m.Label, p.Position.Y - Math.Sin(rad) * inward - LabelHeight / 2);
     }
@@ -98,11 +110,11 @@ public sealed class SunMoonOverlay
         var label = new TextBlock
         {
             Text = text, Foreground = brush, FontSize = 11, Width = LabelWidth, Height = LabelHeight,
-            TextAlignment = TextAlignment.Center, Visibility = Visibility.Collapsed,
+            TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.NoWrap, Visibility = Visibility.Collapsed,
         };
         icon.Visibility = Visibility.Collapsed;
         overlay.Children.Add(icon); overlay.Children.Add(arrow); overlay.Children.Add(label);
-        return new Marker { Icon = icon, Arrow = arrow, Rotation = rotation, Label = label };
+        return new Marker { Icon = icon, Arrow = arrow, Rotation = rotation, Label = label, Text = text, BehindText = text + " (behind)" };
     }
 
     // 22 px chevron pointing along +x, centred on the origin.

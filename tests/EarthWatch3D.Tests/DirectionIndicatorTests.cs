@@ -24,6 +24,15 @@ public class DirectionIndicatorTests
     [Fact] public void StraightBehindPointsDown()
     { var r = DirectionIndicator.Place(new(0, -1, 0), P(), 40); Assert.Equal(400, r.Position.X, 6); Assert.Equal(560, r.Position.Y, 6); Assert.Equal(90, r.AngleDeg, 6); }
 
+    [Fact] public void NearlyBehindPointsDown()
+    { var r = DirectionIndicator.Place(new(0.05, -1, 0), P(), 40); Assert.Equal(400, r.Position.X, 6); Assert.Equal(560, r.Position.Y, 6); Assert.Equal(90, r.AngleDeg, 6); Assert.True(r.Behind); }
+
+    [Fact] public void SideIsNotBehind()
+    { var r = DirectionIndicator.Place(new(1, 0, 0), P(), 40); Assert.False(r.Behind); }
+
+    [Fact] public void BehindLeftIsBehind()
+    { var r = DirectionIndicator.Place(new(-1, -1, 0), P(), 40); Assert.True(r.Behind); Assert.Equal(40, r.Position.X, 6); }
+
     [Fact] public void FarCornerClampsToInsetRectangle()
     { var r = DirectionIndicator.Place(new(1, 0.01, 1), P(), 40); Assert.InRange(r.Position.X, 40, 760); Assert.InRange(r.Position.Y, 40, 560); }
 

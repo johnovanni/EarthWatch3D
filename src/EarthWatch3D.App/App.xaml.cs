@@ -23,6 +23,7 @@ public partial class App : Application
             {
                 var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
                 t.Tick += (_, _) => { t.Stop(); vm.SunMoon.FaceSunCommand.Execute(null); };
+                window.Closed += (_, _) => t.Stop();
                 t.Start();
             };
         window.Show();
