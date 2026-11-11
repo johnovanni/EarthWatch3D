@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
@@ -24,14 +25,85 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
         _animator = new CameraAnimator(Camera);
+        _overlay = new SunMoonOverlay(Overlay);
+        _markers = new SunMoonGlobeMarkers();
+        foreach (var v in _markers.Visuals) Viewport.Children.Add(v);
+        StartOverlayUpdates();
         Closed += OnClosed;
     }
+
+    // --- Sun/Moon overlay wiring (moves to the SceneController in Task 12) ---
+    private readonly SunMoonOverlay _overlay;
+    private readonly SunMoonGlobeMarkers _markers;
+    private bool _overlayDirty = true;
+    private INotifyPropertyChanged? _watchedSunMoon;
+
+    private void StartOverlayUpdates()
+    {
+        CompositionTarget.Rendering += OnRendering;
+        Viewport.SizeChanged += OnViewportSizeChanged;
+    }
+
+    private void StopOverlayUpdates()
+    {
+        CompositionTarget.Rendering -= OnRendering;
+        Viewport.SizeChanged -= OnViewportSizeChanged;
+        WatchSunMoon(null);
+    }
+
+    private void OnViewportSizeChanged(object sender, SizeChangedEventArgs e) => _overlayDirty = true;
+    private void OnSunMoonChanged(object? sender, PropertyChangedEventArgs e) => _overlayDirty = true;
+
+    private void WatchSunMoon(INotifyPropertyChanged? next)
+    {
+        if (_watchedSunMoon != null) _watchedSunMoon.PropertyChanged -= OnSunMoonChanged;
+        _watchedSunMoon = next;
+        if (next != null) next.PropertyChanged += OnSunMoonChanged;
+        _overlayDirty = true;
+    }
+
+    private void OnRendering(object? sender, EventArgs e)
+    {
+        NoteCameraChange();
+        if (!_overlayDirty) return;
+        _overlayDirty = false;
+        UpdateSunMoon();
+    }
+
+    // Programmatic camera moves (CameraAnimator) do not always raise CameraChanged, so compare the pose too.
+    private (Point3D, Vector3D, Vector3D, double) _lastPose;
+
+    private void NoteCameraChange()
+    {
+        if (Viewport.Camera is not PerspectiveCamera c) return;
+        var pose = (c.Position, c.LookDirection, c.UpDirection, c.FieldOfView);
+        if (pose == _lastPose) return;
+        _lastPose = pose;
+        _overlayDirty = true;
+    }
+
+    private void UpdateSunMoon()
+    {
+        if (DataContext is not MainViewModel vm || Viewport.Camera is not PerspectiveCamera camera) return;
+        var sm = vm.SunMoon;
+        double fraction = sm.MoonIlluminatedPercent / 100.0;
+        _markers.Update(sm.SubSolar, sm.SubLunar, fraction, sm.MoonWaxing);
+        var projector = new Projector(camera, Viewport.ActualWidth, Viewport.ActualHeight);
+        var sun = sm.SubSolar.ToUnitVector();
+        var moon = sm.SubLunar.ToUnitVector();
+        double moonR = sm.MoonDistanceKm / EarthRadiusKm;
+        _overlay.Update(projector, new Vector3D(sun.X, sun.Y, sun.Z),
+            new Point3D(moon.X * moonR, moon.Y * moonR, moon.Z * moonR), fraction, sm.MoonWaxing);
+    }
+
+    private const double EarthRadiusKm = 6371.0;
 
     private readonly CameraAnimator _animator;
 
     private void OnClosed(object? sender, EventArgs e)
     {
         _animator.Cancel();
+        StopOverlayUpdates();
         if (DataContext is MainViewModel vm) vm.SunMoon.FaceRequested -= OnFaceRequested;
         DataContextChanged -= OnDataContextChanged;
     }
@@ -40,6 +112,7 @@ public partial class MainWindow : Window
     {
         if (e.OldValue is MainViewModel old) old.SunMoon.FaceRequested -= OnFaceRequested;
         if (e.NewValue is MainViewModel vm) vm.SunMoon.FaceRequested += OnFaceRequested;
+        WatchSunMoon((e.NewValue as MainViewModel)?.SunMoon);
     }
 
     private void OnFaceRequested(object? sender, GeoPosition p)
@@ -120,6 +193,7 @@ public partial class MainWindow : Window
 
     private void OnCameraChanged(object? sender, RoutedEventArgs e)
     {
+        _overlayDirty = true;
         if (_adjustingCamera) return;
         _adjustingCamera = true;
         try
