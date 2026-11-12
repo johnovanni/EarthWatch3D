@@ -70,6 +70,7 @@ public sealed partial class StatusViewModel(Dispatcher? dispatcher) : Observable
                 " – next try " + Utc(s.NextRunUtc) + (lastOk.Length > 0 ? "; last updated " + lastOk : ""),
             FeedState.NotSetUp => s.Name + ": not set up",
             FeedState.Paused => s.Name + ": paused",
+            FeedState.Idle => s.Name + ": idle" + (lastOk.Length > 0 ? "; last updated " + lastOk : ""),
             _ => s.Name + ": waiting for the first update",
         };
         return string.IsNullOrWhiteSpace(s.Note) ? text : text + Environment.NewLine + s.Note;

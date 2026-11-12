@@ -108,7 +108,7 @@ public partial class App : Application
         // Today's download volume (wire bytes of every request), kept across restarts on the same local day. Offline it is
         // not saved to the user's file: the paths are the temporary folder's.
         var meter = _meter = new DownloadMeter(wall, TimeZoneInfo.Local, paths.DownloadMeterFile, log);
-        meter.LimitBytes = LimitBytes(_settings.Load().DailyLimitMb);
+        meter.LimitBytes = AppSettings.DailyLimitBytes(_settings.Load().DailyLimitMb);   // out of range (hand-edited): no limit
         http.BytesReceived += meter.Add;
         // The user's own EUMETSAT key and secret: encrypted in the settings file, tested through the app's HTTP client.
         var eumetsat = new EumetsatClient(http, wall);
@@ -119,7 +119,7 @@ public partial class App : Application
         void Applied(AppSettings saved)
         {
             if (main is { } m) m.Units = saved.Units;
-            meter.LimitBytes = LimitBytes(saved.DailyLimitMb);
+            meter.LimitBytes = AppSettings.DailyLimitBytes(saved.DailyLimitMb);
         }
         var dialogs = new DialogService(() => mainWindow, _settings, credentials, eumetsat.TestAsync, Applied);
         var vm = main = new MainViewModel(clock, _settings, Dispatcher, dialogs);
@@ -177,7 +177,7 @@ public partial class App : Application
         {
             // The clouds feed reports only when the layer is on (a skipped run reports nothing). --layers is applied later,
             // so it is read from the options here.
-            // The same goes for GLM East (West faces away from the default view and may skip its first run).
+            // The same goes for GLM East. GLM West is left out: whether it runs depends on where the camera faces.
             var allOk = AllFeedsOkOnce(scheduler, feeds
                 .Where(f => f != clouds || OfflineSamples.CloudsWanted(vm.Layers.ShowClouds, options.Layers))
                 .Where(f => f != glmEast || OfflineSamples.LightningWanted(vm.Layers.ShowLightning, options.Layers))
@@ -221,7 +221,7 @@ public partial class App : Application
         timer.Tick += (_, _) =>
         {
             vm.Tick();   // also drives the globe's per-minute recompose
-            vm.Status.DownloadText = DownloadMeter.Format(meter.TodayBytes);
+            vm.Status.DownloadText = meter.Text;   // says "(limit reached)" while the feeds are paused
         };
         window.Closed += (_, _) =>
         {
@@ -312,9 +312,6 @@ public partial class App : Application
             return new EventStore(wall);   // the first store may hold part of the bad snapshot
         }
     }
-
-    /// <summary>The daily limit in bytes for a limit in megabytes (decimal, as the meter shows); null for no limit.</summary>
-    private static long? LimitBytes(int? limitMb) => limitMb is { } mb ? mb * 1_000_000L : null;
 
     private static void PruneStore(EventStore store, IAppLog log)
     {

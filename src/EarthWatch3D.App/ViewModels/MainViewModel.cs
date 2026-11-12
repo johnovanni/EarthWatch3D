@@ -78,7 +78,10 @@ public partial class MainViewModel : ObservableObject
 
     public DateTime DisplayTimeUtc => Timeline.DisplayTimeUtc;
 
-    /// <summary>Opens the Settings dialog (nothing is bound to it yet).</summary>
+    /// <summary>The app's clock now (the wall clock), whatever time the display shows.</summary>
+    public DateTime NowUtc => _clock.UtcNow;
+
+    /// <summary>Opens the Settings dialog.</summary>
     [RelayCommand]
     private void OpenSettings() => _dialogs?.ShowSettings();
 

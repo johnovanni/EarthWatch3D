@@ -197,14 +197,29 @@ public class SettingsViewModelTests
         Assert.Equal(500, r.Store.Load().DailyLimitMb);
     }
 
-    [Fact]
-    public void SaveFailureIsReportedNotThrown()
+    private sealed class FailingProtector : IProtector
     {
-        var r = new Rig();
-        r.Store.FailuresToThrow = 1;
-        Assert.False(r.Vm.Save());
-        Assert.Equal("Could not save the settings.", r.Vm.Error);
-        Assert.Empty(r.Applied);
+        public string Protect(string plain) => throw new System.Security.Cryptography.CryptographicException("DPAPI failed");
+        public string? Unprotect(string protectedBase64) => null;
+    }
+
+    [Fact]
+    public void EncryptionFailureIsReportedNotThrown()
+    {
+        var store = new FakeSettingsStore();
+        var vm = new SettingsViewModel(store, new EumetsatCredentialStore(store, new FailingProtector()),
+            (_, _) => Result(EumetsatTestResult.Accepted), _ => throw new InvalidOperationException("applied"))
+        { ConsumerKey = "key", ConsumerSecret = "secret", DailyLimitText = "500" };
+        Assert.False(vm.Save());
+        Assert.Equal("Could not save the settings: Windows could not encrypt the key.", vm.Error);
+        Assert.Empty(store.Saved);
+    }
+
+    [Fact]
+    public void InvalidSavedLimitShowsAsNoLimit()
+    {
+        Assert.Equal("", new Rig(new AppSettings { DailyLimitMb = 0 }).Vm.DailyLimitText);
+        Assert.Equal("500", new Rig(new AppSettings { DailyLimitMb = 500 }).Vm.DailyLimitText);
     }
 
     [Fact]

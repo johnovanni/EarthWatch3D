@@ -14,7 +14,22 @@ namespace EarthWatch3D.App.Rendering;
 public sealed class LightningLayer
 {
     public const double PointRadius = 1.004;
-    public const string Attribution = "GOES GLM: NOAA. MTG LI: Contains EUMETSAT data.";
+    /// <summary>
+    /// False until the MTG (EUMETSAT) lightning feed is built: the legend, the credit line and the Settings key section then
+    /// say MTG is coming rather than promise it. Turning MTG on later is this one line.
+    /// </summary>
+    public const bool MtgAvailable = false;
+    public const string LegendTitle = MtgAvailable ? "Lightning (GOES GLM, MTG LI)" : "Lightning (GOES GLM)";
+    public const string Attribution = MtgAvailable ? "GOES GLM: NOAA. MTG LI: Contains EUMETSAT data." : "GOES GLM: NOAA.";
+    public const string MtgComingLine = "MTG (Europe, Africa): coming in a later version";
+    /// <summary>The Settings dialog's label for the EUMETSAT key.</summary>
+    public const string SettingsKeyLabel = MtgAvailable
+        ? "EUMETSAT consumer key (for MTG lightning over Europe and Africa)"
+        : "EUMETSAT consumer key (for the coming MTG lightning over Europe and Africa)";
+    /// <summary>The Settings dialog's note under the EUMETSAT key and secret.</summary>
+    public const string SettingsKeyNote =
+        (MtgAvailable ? "" : "The key is stored now and used when MTG lightning arrives in a later version. ")
+        + "The key stays on this computer, encrypted for your Windows account. Leave the secret empty to keep the saved one; clear the key to remove it.";
     /// <summary>A newest MTG flash older than this is called delayed (MTG data reaches the public with a lag).</summary>
     public static readonly TimeSpan MtgDelayed = TimeSpan.FromMinutes(5);
     public static readonly TimeSpan RebuildInterval = TimeSpan.FromSeconds(1);
@@ -90,15 +105,19 @@ public sealed class LightningLayer
         PointCount = count;
     }
 
-    /// <summary>One line per sensor: how long ago its newest flash was, for the legend tooltip.</summary>
-    public static string LegendNote(LightningCoverage c, DateTime nowUtc)
+    /// <summary>
+    /// One line per sensor: how long ago its newest flash was, for the legend tooltip. While <paramref name="mtgAvailable"/>
+    /// is false (no MTG feed yet) the MTG line says it is coming.
+    /// </summary>
+    public static string LegendNote(LightningCoverage c, DateTime nowUtc, bool mtgAvailable = MtgAvailable)
     {
         ArgumentNullException.ThrowIfNull(c);
         var lines = new[]
         {
             Line("GOES-East", c.NewestGoesEastUtc, nowUtc),
             Line("GOES-West", c.NewestGoesWestUtc, nowUtc),
-            c.MtgSetUp ? Line("MTG", c.NewestMtgUtc, nowUtc, delayedAfter: MtgDelayed) : "MTG: not set up (Settings)",
+            !mtgAvailable ? MtgComingLine
+                : c.MtgSetUp ? Line("MTG", c.NewestMtgUtc, nowUtc, delayedAfter: MtgDelayed) : "MTG: not set up (Settings)",
         };
         return string.Join('\n', lines);
     }

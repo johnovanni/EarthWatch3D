@@ -45,7 +45,7 @@ public sealed class FeedSchedulerTests
     }
 
     [Fact]
-    public async Task SkippedKeepsStateAndLastSuccess()
+    public async Task SkippedTurnsIdleKeepingLastSuccess()
     {
         var clock = new FakeClock(T0);
         var f = new FakeFeed("f", TimeSpan.FromMinutes(1));
@@ -56,15 +56,65 @@ public sealed class FeedSchedulerTests
 
         clock.UtcNow = T0.AddMinutes(1);
         f.Result = FeedRunResult.Skipped;
-        int raised = 0;
-        s.StatusChanged += (_, _) => raised++;
+        var raised = new List<FeedStatus>();
+        s.StatusChanged += (_, st) => raised.Add(st);
         await s.TickAsync(CancellationToken.None);
         var st = s.Statuses[0];
         Assert.Equal(2, f.Runs);
-        Assert.Equal(FeedState.Ok, st.State);
+        Assert.Equal(FeedState.Idle, st.State);
+        Assert.Equal(FeedStatus.IdleNote, st.Note);
         Assert.Equal(first.LastSuccessUtc, st.LastSuccessUtc);
         Assert.Equal(clock.UtcNow + f.Interval, st.NextRunUtc);
-        Assert.Equal(0, raised);
+        Assert.Equal([st], raised);
+
+        // Already idle: only the next run moves, and nobody is told again.
+        clock.UtcNow = T0.AddMinutes(2);
+        await s.TickAsync(CancellationToken.None);
+        Assert.Equal(FeedState.Idle, s.Statuses[0].State);
+        Assert.Equal(first.LastSuccessUtc, s.Statuses[0].LastSuccessUtc);
+        Assert.Equal(clock.UtcNow + f.Interval, s.Statuses[0].NextRunUtc);
+        Assert.Single(raised);
+    }
+
+    [Theory]
+    [InlineData(FeedRunResult.Paused)]
+    [InlineData(null)]   // failing
+    public async Task SkippedReplacesAStalePausedOrFailingState(FeedRunResult? before)
+    {
+        var clock = new FakeClock(T0);
+        var f = new FakeFeed("f", TimeSpan.FromMinutes(1));
+        using var s = new FeedScheduler([f], clock, new NullLog());
+        Assert.Equal(FeedState.NotStarted, s.Statuses[0].State);
+        if (before is { } r) f.Result = r; else f.Fail = true;
+        for (int i = 0; i < 3; i++)
+        {
+            await s.TickAsync(CancellationToken.None);
+            clock.UtcNow = s.Statuses[0].NextRunUtc;
+        }
+        Assert.Equal(before is null ? FeedState.Failing : FeedState.Paused, s.Statuses[0].State);
+
+        f.Fail = false;
+        f.Result = FeedRunResult.Skipped;   // e.g. the lightning layer was turned off
+        await s.TickAsync(CancellationToken.None);
+        var st = s.Statuses[0];
+        Assert.Equal(FeedState.Idle, st.State);
+        Assert.Null(st.LastError);
+        Assert.Equal(0, st.ConsecutiveFailures);
+        Assert.Equal(clock.UtcNow + f.Interval, st.NextRunUtc);
+    }
+
+    [Fact]
+    public async Task SkippedFirstRunIsIdleNotWaiting()
+    {
+        var clock = new FakeClock(T0);
+        var f = new FakeFeed("f", TimeSpan.FromMinutes(1)) { Result = FeedRunResult.Skipped };
+        using var s = new FeedScheduler([f], clock, new NullLog());
+        int raised = 0;
+        s.StatusChanged += (_, _) => raised++;
+        await s.TickAsync(CancellationToken.None);
+        Assert.Equal(FeedState.Idle, s.Statuses[0].State);
+        Assert.Null(s.Statuses[0].LastSuccessUtc);
+        Assert.Equal(1, raised);
     }
 
     [Fact]

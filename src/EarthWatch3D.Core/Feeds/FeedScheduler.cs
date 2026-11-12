@@ -90,10 +90,16 @@ public sealed class FeedScheduler : IDisposable
             switch (result)
             {
                 case FeedRunResult.Skipped:
-                    // Nothing was fetched: keep the status as it was and only move the next run. The state did not
-                    // change, so nobody is told.
-                    lock (_gate) { slot.Status = before with { NextRunUtc = next }; slot.EndRun(); }
-                    return;
+                    // Nothing was fetched (layer off, replay, out of view): the feed is idle, whatever it was before (a
+                    // stale Paused or Failing would mislead), and keeps its last success. Already idle: only the next run
+                    // moves, and nobody is told.
+                    if (before.State == FeedState.Idle)
+                    {
+                        lock (_gate) { slot.Status = before with { NextRunUtc = next }; slot.EndRun(); }
+                        return;
+                    }
+                    status = new FeedStatus(slot.Feed.Name, FeedState.Idle, before.LastSuccessUtc, null, 0, next, FeedStatus.IdleNote);
+                    break;
                 case FeedRunResult.NotSetUp:
                     status = new FeedStatus(slot.Feed.Name, FeedState.NotSetUp, before.LastSuccessUtc, null, 0, next);
                     break;

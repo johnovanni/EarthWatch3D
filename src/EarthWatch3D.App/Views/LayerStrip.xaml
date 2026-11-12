@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:EarthWatch3D.App.Views"
+             xmlns:rendering="clr-namespace:EarthWatch3D.App.Rendering"
              HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12">
     <!-- DataContext: MainViewModel (Layers for the toggles, Display for the flyout). -->
     <UserControl.Resources>
@@ -183,14 +184,14 @@
                           IsChecked="{Binding Layers.ShowLightning}">
                 <ToggleButton.ToolTip>
                     <StackPanel>
-                        <TextBlock Style="{StaticResource LegendTitle}" Text="Lightning (GOES GLM, MTG LI)"/>
+                        <TextBlock Style="{StaticResource LegendTitle}" Text="{x:Static rendering:LightningLayer.LegendTitle}"/>
                         <TextBlock Text="Colour by age within the display window:" Foreground="#C8CDD8" Margin="0,0,0,2"/>
                         <StackPanel Style="{StaticResource Row}"><Rectangle Style="{StaticResource Swatch}" Fill="#FFF0B0"/><TextBlock Text="newest 10%"/></StackPanel>
                         <StackPanel Style="{StaticResource Row}"><Rectangle Style="{StaticResource Swatch}" Fill="#FFD84A"/><TextBlock Text="10–35%"/></StackPanel>
                         <StackPanel Style="{StaticResource Row}"><Rectangle Style="{StaticResource Swatch}" Fill="#FF9A2E"/><TextBlock Text="35–70%"/></StackPanel>
                         <StackPanel Style="{StaticResource Row}"><Rectangle Style="{StaticResource Swatch}" Fill="#B4602A"/><TextBlock Text="oldest 30%"/></StackPanel>
                         <TextBlock Style="{StaticResource LegendNote}" Text="{Binding Layers.LightningLegend}"/>
-                        <TextBlock Style="{StaticResource LegendNote}" Text="GOES GLM: NOAA. MTG LI: Contains EUMETSAT data."/>
+                        <TextBlock Style="{StaticResource LegendNote}" Text="{x:Static rendering:LightningLayer.Attribution}"/>
                         <TextBlock Style="{StaticResource LegendNote}" Text="Live only: hidden in replay. Choose the window under ⋯ Display."/>
                     </StackPanel>
                 </ToggleButton.ToolTip>
@@ -203,7 +204,7 @@
                         <TextBlock Style="{StaticResource LegendTitle}" Text="Clouds (NASA GIBS, VIIRS)"/>
                         <TextBlock Text="One true-colour satellite image of the previous day." Foreground="#C8CDD8"/>
                         <TextBlock Style="{StaticResource LegendNote}" Text="{Binding Layers.CloudsLegend}"/>
-                        <TextBlock Style="{StaticResource LegendNote}" Text="Not live and unchanged in replay. Off by default: about 2 MB a day."/>
+                        <TextBlock Style="{StaticResource LegendNote}" Text="Not live and unchanged in replay. Off by default: about 2 MB a day, more while the day's image is not complete yet (it is then fetched again each hour)."/>
                     </StackPanel>
                 </ToggleButton.ToolTip>
             </ToggleButton>

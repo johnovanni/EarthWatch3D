@@ -135,6 +135,9 @@ public sealed class SceneController
         Zones = zones ?? throw new ArgumentNullException(nameof(zones));
         _lightningSource = lightning ?? throw new ArgumentNullException(nameof(lightning));
         _view = view ?? throw new ArgumentNullException(nameof(view));
+        // The camera is put on the home view when the window loads, after the feeds have started: report that view now,
+        // so a GLM feed's first run does not skip a satellite the user is about to face (GOES-West from the Americas).
+        _view.CameraSubPoint = HomeView;
         _viewport = viewport ?? throw new ArgumentNullException(nameof(viewport));
         _overlayCanvas = overlay ?? throw new ArgumentNullException(nameof(overlay));
         _card = card ?? throw new ArgumentNullException(nameof(card));
@@ -630,7 +633,8 @@ public sealed class SceneController
     private void OnTicked(object? sender, EventArgs e)
     {
         if (_closed) return;
-        _vm.Layers.LightningLegend = LightningLayer.LegendNote(_lightningSource.Coverage, _vm.DisplayTimeUtc);
+        // How old each sensor's newest flash is right now (wall clock), not relative to a replayed display time.
+        _vm.Layers.LightningLegend = LightningLayer.LegendNote(_lightningSource.Coverage, _vm.NowUtc);
         UpdateLightning();
     }
 
@@ -650,7 +654,9 @@ public sealed class SceneController
 
     private void OnTimelineChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(TimelineViewModel.IsLive)) _eventsDirty = true;   // rings only while live
+        if (e.PropertyName != nameof(TimelineViewModel.IsLive)) return;
+        _eventsDirty = true;   // rings only while live
+        if (!_closed) UpdateLightning();   // lightning is live only: hide or show it now, not at the next tick
     }
 
     /// <summary>Hands the visible events to the scene (cheap if nothing changed) and places their labels.</summary>

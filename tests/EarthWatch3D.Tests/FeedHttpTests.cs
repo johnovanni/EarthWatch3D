@@ -151,7 +151,9 @@ public sealed class FeedHttpTests
     public async Task UnauthorizedThrowsFeedAuthException(HttpStatusCode code)
     {
         using var http = new FeedHttp(new FuncHandler((_, _) => new HttpResponseMessage(code)));
-        await Assert.ThrowsAsync<FeedAuthException>(() => http.GetBytesAsync(new Uri("http://x/y"), CancellationToken.None));
+        var e = await Assert.ThrowsAsync<FeedAuthException>(() => http.GetBytesAsync(new Uri("http://x/y"), CancellationToken.None));
+        // Keyless feeds get these too (a 403 from S3), so the message does not talk about credentials.
+        Assert.Equal($"HTTP {(int)code}: access denied", e.Message);
     }
 
     [Fact]

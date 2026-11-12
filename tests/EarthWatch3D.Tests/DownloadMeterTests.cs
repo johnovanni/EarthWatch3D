@@ -1,6 +1,7 @@
 using System.IO;
 using System.Threading.Tasks;
 using EarthWatch3D.Core.Feeds;
+using EarthWatch3D.Core.Storage;
 
 namespace EarthWatch3D.Tests;
 
@@ -88,5 +89,29 @@ public sealed class DownloadMeterTests : IDisposable
         Assert.Equal("Today: 0.4 MB", DownloadMeter.Format(400_000));
         Assert.Equal("Today: 123 MB", DownloadMeter.Format(123_456_789));
         Assert.Equal("Today: 1.23 GB", DownloadMeter.Format(1_234_000_000));
+        Assert.Equal("Today: 10.3 MB (limit reached)", DownloadMeter.Format(10_300_000, limitReached: true));
+    }
+
+    [Fact]
+    public void TextSaysWhenTheLimitIsReached()
+    {
+        var m = NewMeter(new TestClock(Local(2026, 10, 24, 12, 0)));
+        m.Add(10_300_000);
+        Assert.Equal("Today: 10.3 MB", m.Text);
+        m.LimitBytes = 10_000_000;
+        Assert.Equal("Today: 10.3 MB (limit reached)", m.Text);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(10, 10_000_000L)]
+    [InlineData(100_000, 100_000_000_000L)]
+    [InlineData(9, null)]
+    [InlineData(0, null)]
+    [InlineData(-5, null)]
+    [InlineData(100_001, null)]
+    public void HandEditedLimitOutsideTheRangeMeansNoLimit(int? mb, long? bytes)
+    {
+        Assert.Equal(bytes, AppSettings.DailyLimitBytes(mb));
     }
 }

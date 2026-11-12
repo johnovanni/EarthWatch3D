@@ -109,6 +109,19 @@ public class LayersAndDisplayViewModelTests
     }
 
     [Fact]
+    public void NowIsTheWallClockEvenInReplay()
+    {
+        // The lightning legend's "newest flash … ago" is measured from now, not from a replayed display time.
+        var clock = new TestClock(T0);
+        var vm = new MainViewModel(clock, new FakeSettingsStore());
+        vm.Timeline.ReplayAt(T0.AddHours(-3));
+        Assert.Equal(T0.AddHours(-3), vm.DisplayTimeUtc);
+        Assert.Equal(T0, vm.NowUtc);
+        clock.UtcNow = T0.AddMinutes(1);
+        Assert.Equal(T0.AddMinutes(1), vm.NowUtc);
+    }
+
+    [Fact]
     public void FilterChangedRaised()
     {
         var vm = new MainViewModel(new TestClock(T0), new FakeSettingsStore());

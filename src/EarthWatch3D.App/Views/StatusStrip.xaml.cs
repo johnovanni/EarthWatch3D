@@ -42,7 +42,7 @@ public sealed class FeedStateBrushConverter : IValueConverter
         FeedState.Retrying => Retrying,
         FeedState.Failing => Failing,
         FeedState.Paused => Paused,
-        _ => Idle,
+        _ => Idle,   // NotStarted, NotSetUp and Idle (not polled right now) are grey
     };
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>

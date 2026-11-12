@@ -4,9 +4,12 @@ using System.Net.Http.Headers;
 
 namespace EarthWatch3D.Core.Feeds;
 
-/// <summary>The server rejected the credentials (HTTP 401 or 403), so the caller can say "key rejected".</summary>
+/// <summary>
+/// HTTP 401 or 403, so a caller that sent credentials can say "key rejected". Keyless feeds can get a 403 too (S3 does),
+/// so the message itself does not talk about credentials.
+/// </summary>
 public sealed class FeedAuthException(HttpStatusCode status)
-    : HttpRequestException($"HTTP {(int)status}: the server rejected the credentials", null, status);
+    : HttpRequestException($"HTTP {(int)status}: access denied", null, status);
 
 /// <summary>
 /// Shared HTTP client for all feeds: User-Agent, 30 s timeout (headers and body), gzip/deflate, byte counting.

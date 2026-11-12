@@ -53,6 +53,17 @@ public class StatusViewModelTests
     }
 
     [Fact]
+    public void IdleTooltipSaysWhyAndKeepsTheLastUpdate()
+    {
+        Assert.Equal("Clouds: idle" + Environment.NewLine + FeedStatus.IdleNote,
+            StatusViewModel.TooltipFor(new FeedStatus("Clouds", FeedState.Idle, null, null, 0, T0, FeedStatus.IdleNote)));
+        Assert.Equal("GLM West: idle; last updated 14:03 UTC" + Environment.NewLine + FeedStatus.IdleNote,
+            StatusViewModel.TooltipFor(new FeedStatus("GLM West", FeedState.Idle, T0, null, 0, T0, FeedStatus.IdleNote)));
+        Assert.Equal("Not polled right now (layer off, replay, or not in view)", FeedStatus.IdleNote);
+        Assert.Equal(FeedStateBrushConverter.Idle, FeedStateBrushConverter.For(FeedState.Idle));
+    }
+
+    [Fact]
     public void DownloadTextIsObservable()
     {
         var vm = new StatusViewModel(null);

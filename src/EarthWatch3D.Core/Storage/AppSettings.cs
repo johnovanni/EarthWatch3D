@@ -27,14 +27,22 @@ public sealed record AppSettings
     public double NightStrength { get; init; } = 0.85;
     public bool ShowTerminator { get; init; } = true;
     public bool LayerStripExpanded { get; init; } = false;
-    /// <summary>Daily download limit in megabytes; null means no limit.</summary>
+    /// <summary>Daily download limit in megabytes (<see cref="MinDailyLimitMb"/> to <see cref="MaxDailyLimitMb"/>); null means no limit.</summary>
     public int? DailyLimitMb { get; init; } = null;
+    public const int MinDailyLimitMb = 10, MaxDailyLimitMb = 100_000;
     /// <summary>Kilometres or miles for every distance and speed shown.</summary>
     public DistanceUnits Units { get; init; } = DistanceUnits.Kilometres;
     /// <summary>The EUMETSAT consumer key, encrypted (base64 DPAPI blob); null means not set. Never stored in plain text.</summary>
     public string? EumetsatKeyProtected { get; init; } = null;
     /// <summary>The EUMETSAT consumer secret, encrypted (base64 DPAPI blob); null means not set.</summary>
     public string? EumetsatSecretProtected { get; init; } = null;
+
+    /// <summary>
+    /// The daily limit in bytes (decimal megabytes, as the meter shows) for a limit in megabytes; null for no limit. A value
+    /// outside the allowed range (a hand-edited settings file, say 0 or negative) is ignored: no limit.
+    /// </summary>
+    public static long? DailyLimitBytes(int? limitMb) =>
+        limitMb is { } mb && mb >= MinDailyLimitMb && mb <= MaxDailyLimitMb ? mb * 1_000_000L : null;
 
     public DisplayFilter ToFilter() => new(ShowQuakes, ShowCyclones, ShowAlerts, ShowEonet,
         double.IsNaN(MinMagnitude) ? double.NegativeInfinity : MinMagnitude,

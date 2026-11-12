@@ -1,5 +1,5 @@
-using System.IO;
 using System.Globalization;
+using System.Security.Cryptography;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EarthWatch3D.Core.Geo;
@@ -19,7 +19,6 @@ public sealed partial class SettingsViewModel : ObservableObject
     private const string BothOrNeither = "Enter both the consumer key and the consumer secret, or neither.";
     private const string NoSpaces = "The consumer key and secret cannot contain spaces.";
     private const string BadLimit = "Daily limit: a whole number of MB from 10 to 100,000, or empty for no limit.";
-    private const int MinLimitMb = 10, MaxLimitMb = 100_000;
 
     private readonly ISettingsStore _store;
     private readonly EumetsatCredentialStore _creds;
@@ -38,7 +37,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _savedSecret = current?.Secret;
         _consumerKey = current?.Key ?? "";
         var s = store.Load();
-        _dailyLimitText = s.DailyLimitMb?.ToString(CultureInfo.InvariantCulture) ?? "";
+        // A limit outside the allowed range (a hand-edited file) is not applied, so it shows as no limit.
+        _dailyLimitText = s.DailyLimitMb is { } mb && AppSettings.DailyLimitBytes(mb) is not null ? mb.ToString(CultureInfo.InvariantCulture) : "";
         _units = s.Units;
     }
 
@@ -135,7 +135,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         string limitText = DailyLimitText.Trim();
         if (limitText.Length > 0)
         {
-            if (!int.TryParse(limitText, NumberStyles.None, CultureInfo.InvariantCulture, out int mb) || mb < MinLimitMb || mb > MaxLimitMb)
+            if (!int.TryParse(limitText, NumberStyles.None, CultureInfo.InvariantCulture, out int mb) || mb < AppSettings.MinDailyLimitMb || mb > AppSettings.MaxDailyLimitMb)
             {
                 Error = BadLimit;
                 return false;
@@ -152,9 +152,11 @@ public sealed partial class SettingsViewModel : ObservableObject
             OnPropertyChanged(nameof(HasSavedSecret));
             _applied(settings);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (CryptographicException)
         {
-            Error = "Could not save the settings.";
+            // DPAPI could not encrypt the key (a damaged user profile, say). Nothing was saved. The exception's own
+            // message is not shown: it is not useful to the user.
+            Error = "Could not save the settings: Windows could not encrypt the key.";
             return false;
         }
         return true;

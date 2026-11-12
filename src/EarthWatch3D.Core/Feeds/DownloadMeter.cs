@@ -74,13 +74,23 @@ public sealed class DownloadMeter
             _log.Warn("Could not save the download count", error);
     }
 
-    /// <summary>"Today: 0.4 MB", "Today: 123 MB" or "Today: 1.23 GB" (decimal units).</summary>
-    public static string Format(long bytes)
+    /// <summary>Today's count for the status bar, saying when the daily limit is reached (the feeds then pause).</summary>
+    public string Text
+    {
+        get { lock (_gate) { Roll(); return Format(_bytes, _limit is { } l && _bytes >= l); } }
+    }
+
+    /// <summary>
+    /// "Today: 0.4 MB", "Today: 123 MB" or "Today: 1.23 GB" (decimal units), followed by " (limit reached)" when
+    /// <paramref name="limitReached"/>.
+    /// </summary>
+    public static string Format(long bytes, bool limitReached = false)
     {
         var inv = CultureInfo.InvariantCulture;
-        if (bytes >= 1_000_000_000L) return "Today: " + (bytes / 1e9).ToString("0.00", inv) + " GB";
+        string suffix = limitReached ? " (limit reached)" : "";
+        if (bytes >= 1_000_000_000L) return "Today: " + (bytes / 1e9).ToString("0.00", inv) + " GB" + suffix;
         var mb = bytes / 1e6;
-        return "Today: " + (Math.Round(mb, 1) < 100 ? mb.ToString("0.0", inv) : mb.ToString("0", inv)) + " MB";
+        return "Today: " + (Math.Round(mb, 1) < 100 ? mb.ToString("0.0", inv) : mb.ToString("0", inv)) + " MB" + suffix;
     }
 
     private string LocalDate() =>

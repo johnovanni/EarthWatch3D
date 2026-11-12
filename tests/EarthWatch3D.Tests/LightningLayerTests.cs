@@ -32,18 +32,43 @@ public class LightningLayerTests
     public void LegendNoteDescribesEachSensor()
     {
         var c = new LightningCoverage(Now.AddSeconds(-25), null, null, MtgSetUp: false);
-        var lines = LightningLayer.LegendNote(c, Now).Split('\n');
+        var lines = LightningLayer.LegendNote(c, Now, mtgAvailable: true).Split('\n');
         Assert.Equal(["GOES-East: newest flash 25 s ago", "GOES-West: no flashes yet", "MTG: not set up (Settings)"], lines);
+    }
+
+    [Fact]
+    public void LegendNoteSaysMtgIsComingUntilItsFeedExists()
+    {
+        // A saved key does not change that: there is no MTG feed yet.
+        foreach (var setUp in new[] { false, true })
+        {
+            var c = new LightningCoverage(Now.AddSeconds(-25), null, null, MtgSetUp: setUp);
+            var lines = LightningLayer.LegendNote(c, Now, mtgAvailable: false).Split('\n');
+            Assert.Equal(["GOES-East: newest flash 25 s ago", "GOES-West: no flashes yet", "MTG (Europe, Africa): coming in a later version"], lines);
+        }
+    }
+
+    [Fact]
+    public void MtgIsNotPromisedWhileItsFeedDoesNotExist()
+    {
+        Assert.False(LightningLayer.MtgAvailable);   // flip this (one line in LightningLayer) when the MTG feed is built
+        var c = new LightningCoverage(null, null, null, MtgSetUp: true);
+        Assert.EndsWith("MTG (Europe, Africa): coming in a later version", LightningLayer.LegendNote(c, Now));
+        Assert.Equal("Lightning (GOES GLM)", LightningLayer.LegendTitle);
+        Assert.Equal("GOES GLM: NOAA.", LightningLayer.Attribution);
+        Assert.Contains("The key is stored now and used when MTG lightning arrives in a later version.", LightningLayer.SettingsKeyNote);
+        Assert.DoesNotContain("clear both", LightningLayer.SettingsKeyNote);
+        Assert.Contains("clear the key to remove it", LightningLayer.SettingsKeyNote);
     }
 
     [Fact]
     public void LegendNoteFlagsDelayedMtg()
     {
         var c = new LightningCoverage(null, null, Now.AddMinutes(-12), MtgSetUp: true);
-        Assert.Contains("MTG: newest flash 12 min ago (delayed)", LightningLayer.LegendNote(c, Now));
+        Assert.Contains("MTG: newest flash 12 min ago (delayed)", LightningLayer.LegendNote(c, Now, mtgAvailable: true));
         var fresh = new LightningCoverage(null, null, Now.AddMinutes(-4), MtgSetUp: true);
-        Assert.Contains("MTG: newest flash 4 min ago" + "\n", LightningLayer.LegendNote(fresh, Now) + "\n");
-        Assert.DoesNotContain("delayed", LightningLayer.LegendNote(fresh, Now));
+        Assert.Contains("MTG: newest flash 4 min ago" + "\n", LightningLayer.LegendNote(fresh, Now, mtgAvailable: true) + "\n");
+        Assert.DoesNotContain("delayed", LightningLayer.LegendNote(fresh, Now, mtgAvailable: true));
     }
 
     [Fact]
@@ -122,6 +147,8 @@ public class LightningLayerTests
             // The per-sensor note is bound to the view model (a tooltip only connects its bindings once it is shown).
             Assert.Contains(texts, t => System.Windows.Data.BindingOperations.GetBinding(t, TextBlock.TextProperty)?.Path.Path == "Layers.LightningLegend");
             Assert.Contains(texts, t => t.Text == LightningLayer.Attribution);
+            Assert.Contains(texts, t => t.Text == LightningLayer.LegendTitle);
+            Assert.DoesNotContain(texts, t => t.Text.Contains("EUMETSAT", StringComparison.Ordinal) || t.Text.Contains("MTG LI", StringComparison.Ordinal));
             foreach (var t in texts)
             {
                 var c = Assert.IsType<SolidColorBrush>(t.Foreground).Color;
