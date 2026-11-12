@@ -90,7 +90,7 @@ public static class KmlReader
                 || !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon)
                 || !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat))
                 throw new FormatException($"bad KML coordinate '{tuple}'");
-            if (!double.IsFinite(lon) || !double.IsFinite(lat)) throw new FormatException($"non-finite KML coordinate '{tuple}'");
+            if (!double.IsFinite(lon) || !double.IsFinite(lat) || Math.Abs(lon) > 720 || Math.Abs(lat) > 90) throw new FormatException($"out-of-range KML coordinate '{tuple}'");
             result.Add((lon, lat));
         }
         return result;

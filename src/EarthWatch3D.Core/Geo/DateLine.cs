@@ -17,7 +17,8 @@ public static class DateLine
         var u = new List<(double Lon, double Lat)>(pts.Count);
         foreach (var (lon, lat) in pts)
         {
-            if (!double.IsFinite(lon) || !double.IsFinite(lat)) throw new ArgumentException("coordinates must be finite", nameof(pts));
+            if (!double.IsFinite(lon) || !double.IsFinite(lat) || Math.Abs(lon) > 720 || Math.Abs(lat) > 90)
+                throw new ArgumentException("coordinates must be finite, |lon| <= 720 and |lat| <= 90", nameof(pts));
             if (u.Count == 0) { u.Add((lon, lat)); continue; }
             double prev = u[^1].Lon;
             u.Add((lon + 360.0 * Math.Round((prev - lon) / 360.0), lat));

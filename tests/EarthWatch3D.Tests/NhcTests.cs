@@ -101,6 +101,7 @@ public sealed class NhcTests
     public void DateLineRejectsNonFiniteInput()
     {
         Assert.Throws<ArgumentException>(() => DateLine.SplitLine([(0, 0), (double.PositiveInfinity, 1)]));
+        Assert.Throws<ArgumentException>(() => DateLine.SplitLine([(0, 0), (1e300, 1)]));
         Assert.Throws<ArgumentException>(() => DateLine.SplitPolygon([[(0, 0), (double.NaN, 1), (1, 1)]]));
     }
 
