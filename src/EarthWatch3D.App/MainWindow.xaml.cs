@@ -13,6 +13,8 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = vm;
         Scene = new SceneController(Viewport, Overlay, Card, vm, this, store, zones);
+        Scene.HoverBlockers.Add(Details);
+        Scene.HoverBlockers.Add(Strip);
         Card.SizeChanged += (_, _) => PlaceDetails();
         PlaceDetails();
     }

@@ -113,6 +113,32 @@ public class SelectionViewModelTests
     }
 
     [Fact]
+    public void AgesRefreshWhenDisplayTimeMoves()
+    {
+        var now = Now;
+        var vm = new SelectionViewModel(() => now);
+        var q = Quake();
+        vm.Select(q);
+        Assert.Contains("(2 h ago)", vm.Lines.First(l => l.Label == "Time").Value);
+        now = Now.AddHours(3);
+        vm.ClearIfNotVisible(new VisibleEvents([new VisibleQuake(q, 0)], [], [], []));
+        Assert.Contains("(5 h ago)", vm.Lines.First(l => l.Label == "Time").Value);
+    }
+
+    [Fact]
+    public void UnnamedCycloneHoverHasNoLeadingSeparator()
+    {
+        var c = Storm(40) with { Name = "", Title = "Tropical Cyclone 07" };
+        Assert.Equal("Tropical Cyclone 07 · Tropical storm · 40 kt", SelectionViewModel.HoverText(c, Now));
+    }
+
+    [Theory]
+    [InlineData("file:///C:/Windows/System32/calc.exe")]
+    [InlineData("ftp://example.org/x")]
+    public void OpenInBrowserRejectsNonHttpSchemes(string url) =>
+        Assert.False(EarthWatch3D.App.Views.DetailsPanel.OpenInBrowser(new Uri(url)));
+
+    [Fact]
     public void CloseCommandClosesAndUpdatedRecordRefreshes()
     {
         var vm = Vm();

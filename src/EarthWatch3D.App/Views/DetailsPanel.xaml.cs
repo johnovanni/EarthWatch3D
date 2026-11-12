@@ -17,11 +17,11 @@ public partial class DetailsPanel : UserControl
     }
 
     /// <summary>Opens a web page in the default browser. Only http(s) links are opened.</summary>
-    public static void OpenInBrowser(Uri link)
+    public static bool OpenInBrowser(Uri link)
     {
-        if (link.Scheme != Uri.UriSchemeHttp && link.Scheme != Uri.UriSchemeHttps) return;
-        try { Process.Start(new ProcessStartInfo(link.AbsoluteUri) { UseShellExecute = true }); }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { }
+        if (link.Scheme != Uri.UriSchemeHttp && link.Scheme != Uri.UriSchemeHttps) return false;
+        try { Process.Start(new ProcessStartInfo(link.AbsoluteUri) { UseShellExecute = true }); return true; }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { return false; }
     }
 }
 

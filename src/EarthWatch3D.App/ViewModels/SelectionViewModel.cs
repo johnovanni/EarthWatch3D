@@ -48,7 +48,7 @@ public sealed partial class SelectionViewModel : ObservableObject
             _ => null,
         };
         if (now is null) Select(null);
-        else if (!Equals(now, s)) Select(now);
+        else Select(now);   // also rebuilds the lines, whose relative ages move with the display time
     }
 
     private static bool Same(EarthEvent a, EarthEvent b) => a.Source == b.Source && a.Id == b.Id;
@@ -122,7 +122,7 @@ public sealed partial class SelectionViewModel : ObservableObject
             case Earthquake q:
                 return $"{Magnitude(q)} · {Km(q.DepthKm)} deep · {Age(q.TimeUtc, nowUtc)}";
             case CycloneAdvisory c:
-                return $"{c.Name} · {CategoryText(c.Category)}" + (c.WindKt is { } w ? $" · {Num(w, 0)} kt" : "");
+                return $"{TitleFor(c)} · {CategoryText(c.Category)}" + (c.WindKt is { } w ? $" · {Num(w, 0)} kt" : "");
             case WeatherAlert a:
                 return $"{a.EventType} · until " + (a.EndsUtc.Date == nowUtc.Date
                     ? a.EndsUtc.ToString("HH:mm", CultureInfo.InvariantCulture) + " UTC"

@@ -54,6 +54,44 @@ public sealed class ZoneCacheTests
     }
 
     [Fact]
+    public async Task TryGetCachedNeverTouchesDisk()
+    {
+        var handler = new SampleHttpHandler();
+        handler.Map(Pzz, Sample("nws_zone.json"));
+        var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
+        var paths = TempPaths();
+        using var http = new FeedHttp(handler);
+        var zc = new ZoneCache(http, paths, clock, new RecordingLog());
+        zc.Request([Pzz]);
+        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+
+        var fresh = new ZoneCache(http, paths, clock, new RecordingLog());   // the file is on disk, memory is empty
+        Assert.False(fresh.TryGetCached(Pzz, out _));
+        Assert.True(fresh.TryGet(Pzz, out _));
+        Assert.True(fresh.TryGetCached(Pzz, out var areas));
+        Assert.Single(areas);
+    }
+
+    [Fact]
+    public async Task NegativeLookupIsCachedBriefly()
+    {
+        var handler = new SampleHttpHandler();
+        handler.Map(Pzz, Sample("nws_zone.json"));
+        var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
+        var paths = TempPaths();
+        using var http = new FeedHttp(handler);
+        var writer = new ZoneCache(http, paths, clock, new RecordingLog());
+        var reader = new ZoneCache(http, paths, clock, new RecordingLog());
+        Assert.False(reader.TryGet(Pzz, out _));                 // miss, remembered
+
+        writer.Request([Pzz]);                                    // the file appears on disk
+        await writer.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.False(reader.TryGet(Pzz, out _));                 // still the remembered miss: no disk probe
+        clock.UtcNow = clock.UtcNow.AddSeconds(31);
+        Assert.True(reader.TryGet(Pzz, out _));                  // memory expired: found
+    }
+
+    [Fact]
     public async Task SameIdInDifferentZoneTypesIsCachedSeparately()
     {
         var handler = new SampleHttpHandler();

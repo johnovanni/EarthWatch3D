@@ -15,6 +15,8 @@ namespace EarthWatch3D.Core.Feeds.Nws;
 public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppLog log, int maxConcurrent = 4)
 {
     private static readonly TimeSpan MaxAge = TimeSpan.FromDays(30);
+    private static readonly TimeSpan MissMemory = TimeSpan.FromSeconds(30);
+    private readonly ConcurrentDictionary<string, DateTime> _missUntil = new(StringComparer.Ordinal);
 
     private readonly ConcurrentDictionary<string, IReadOnlyList<GeoPolygon>> _mem = new(StringComparer.Ordinal);
     private readonly HashSet<string> _queued = new(StringComparer.Ordinal);
@@ -40,11 +42,22 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
     /// <summary>Completes when no downloads are queued or in flight.</summary>
     public Task WhenIdleAsync() { lock (_gate) return _idle.Task; }
 
+    /// <summary>Memory only: never touches the disk, so it is safe on a hot UI path such as hover.</summary>
+    public bool TryGetCached(string zoneUrl, out IReadOnlyList<GeoPolygon> areas)
+    {
+        if (_mem.TryGetValue(zoneUrl, out var m)) { areas = m; return true; }
+        areas = [];
+        return false;
+    }
+
     public bool TryGet(string zoneUrl, out IReadOnlyList<GeoPolygon> areas)
     {
         if (_mem.TryGetValue(zoneUrl, out var m)) { areas = m; return true; }
+        // A disk miss is remembered briefly so repeated lookups do not probe the file system.
+        if (_missUntil.TryGetValue(zoneUrl, out var until) && clock.UtcNow < until) { areas = []; return false; }
         var loaded = TryLoadFromDisk(zoneUrl);
-        if (loaded is not null) { _mem[zoneUrl] = loaded; areas = loaded; return true; }
+        if (loaded is not null) { _mem[zoneUrl] = loaded; _missUntil.TryRemove(zoneUrl, out _); areas = loaded; return true; }
+        _missUntil[zoneUrl] = clock.UtcNow + MissMemory;
         areas = [];
         return false;
     }
@@ -82,6 +95,7 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
                     var bytes = await http.GetBytesAsync(new Uri(url), CancellationToken.None).ConfigureAwait(false);
                     var polys = ParseZone(bytes);
                     _mem[url] = polys;
+                    _missUntil.TryRemove(url, out _);
                     Save(url, polys);
                     loaded = true;
                 }

@@ -60,6 +60,9 @@ public sealed class SceneController
     // Tooltip for the Sun/Moon surface markers (billboards can't carry WPF tooltips, so it is driven by hover tests).
     // Left button went down at this point and has not moved far (a click, not a drag); null otherwise.
     private Point? _clickStart;
+    private readonly Throttle _hoverThrottle = new(TimeSpan.FromMilliseconds(33));
+    private readonly System.Windows.Threading.DispatcherTimer _hoverTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
+    private Point _hoverMouse;
     private readonly ToolTip _markerTip = new() { Placement = PlacementMode.Relative, StaysOpen = true };
     private readonly RecomposeSchedule _schedule = new(RecomposeInterval);
     private readonly Throttle _throttle = new(TimeSpan.FromMilliseconds(250));
@@ -130,6 +133,7 @@ public sealed class SceneController
         _viewport.MouseMove += OnViewportMouseMove;
         _viewport.MouseLeave += OnViewportMouseLeave;
         _markerTip.PlacementTarget = _viewport;
+        _hoverTimer.Tick += OnHoverTimerTick;
         _viewport.SizeChanged += OnViewportSizeChanged;
         _card.SizeChanged += OnViewportSizeChanged;   // collapsing the card changes the area the arrows avoid
         _vm.DisplayTimeChanged += OnDisplayTimeChanged;
@@ -159,6 +163,9 @@ public sealed class SceneController
 
     /// <summary>The NWS zone cache for zone-only alerts.</summary>
     internal ZoneCache Zones { get; }
+
+    /// <summary>Other overlay elements (the details panel, the layer strip): no hover picking while the mouse is over them.</summary>
+    public IList<UIElement> HoverBlockers { get; } = [];
 
     /// <summary>The viewport's camera, or null if something replaced it with a non-perspective camera.</summary>
     internal PerspectiveCamera? Camera => _viewport.Camera as PerspectiveCamera;
@@ -524,14 +531,37 @@ public sealed class SceneController
 
     private void OnViewportMouseMove(object sender, MouseEventArgs e)
     {
-        if (e.LeftButton == MouseButtonState.Pressed || Camera is not { } camera) { HideMarkerTip(); return; }
-        var mouse = e.GetPosition(_viewport);
+        _hoverTimer.Stop();
+        if (e.LeftButton == MouseButtonState.Pressed || IsOverOverlayElement()) { HideMarkerTip(); return; }
+        _hoverMouse = e.GetPosition(_viewport);
+        // About 30 Hz, with a trailing pick so the last position is always handled.
+        if (_hoverThrottle.TryAcquire(DateTime.UtcNow)) UpdateHover(_hoverMouse);
+        else _hoverTimer.Start();
+    }
+
+    private void OnHoverTimerTick(object? sender, EventArgs e)
+    {
+        _hoverTimer.Stop();
+        _hoverThrottle.TryAcquire(DateTime.UtcNow);
+        if (!IsOverOverlayElement()) UpdateHover(_hoverMouse);
+    }
+
+    private bool IsOverOverlayElement()
+    {
+        if (_card.IsMouseOver) return true;
+        foreach (var b in HoverBlockers) if (b.IsMouseOver) return true;
+        return false;
+    }
+
+    private void UpdateHover(Point mouse)
+    {
+        if (Camera is not { } camera || Mouse.LeftButton == MouseButtonState.Pressed) { HideMarkerTip(); return; }
         var projector = new Projector(camera, _viewport.ActualWidth, _viewport.ActualHeight);
         var sm = _vm.SunMoon;
         string? text = MarkerHover.Hits(mouse, projector, sm.SubSolar) ? MarkerHover.SunText(sm.SubSolar)
                      : MarkerHover.Hits(mouse, projector, sm.SubLunar) ? MarkerHover.MoonText(sm.SubLunar)
                      : null;
-        if (text is null && PickEvent(mouse, projector) is { } hovered)
+        if (text is null && PickEvent(mouse, projector, hover: true) is { } hovered)
             text = SelectionViewModel.HoverText(hovered, _vm.DisplayTimeUtc);
         if (text is null) { HideMarkerTip(); return; }
         if (!Equals(_markerTip.Content, text)) _markerTip.Content = text;
@@ -541,7 +571,7 @@ public sealed class SceneController
     }
 
     /// <summary>The event under the mouse: point events first, then (needing a surface hit test) alert areas.</summary>
-    private EarthEvent? PickEvent(Point mouse, Projector projector)
+    private EarthEvent? PickEvent(Point mouse, Projector projector, bool hover = false)
     {
         var visible = _visible;
         var hit = EventPicker.Pick(mouse, projector, visible, null);
@@ -550,7 +580,8 @@ public sealed class SceneController
         if (_viewport.FindNearest(mouse, out Point3D p, out _, out _))
             surface = GeoPosition.FromVector(new Vector3d(p.X, p.Y, p.Z));
         return EventPicker.Pick(mouse, projector, visible, surface,
-            id => Zones.TryGet(id, out var polys) ? polys : null);
+            // Hover must not touch the disk (it runs at 30 Hz); a click may.
+            id => (hover ? Zones.TryGetCached(id, out var polys) : Zones.TryGet(id, out polys)) ? polys : null);
     }
 
     private void OnViewportMouseLeave(object sender, MouseEventArgs e) => HideMarkerTip();
@@ -667,6 +698,8 @@ public sealed class SceneController
         var end = e.GetPosition(_viewport);
         if ((end - start).Length >= ClickSlopPx || Camera is not { } camera) return;
         var projector = new Projector(camera, _viewport.ActualWidth, _viewport.ActualHeight);
+        var sm = _vm.SunMoon;   // a Sun/Moon marker under the mouse wins: the click does nothing
+        if (MarkerHover.Hits(end, projector, sm.SubSolar) || MarkerHover.Hits(end, projector, sm.SubLunar)) return;
         _vm.Selection.Select(PickEvent(end, projector));
     }
 
@@ -688,6 +721,8 @@ public sealed class SceneController
         _viewport.PreviewMouseUp -= OnPreviewMouseUp;
         _viewport.MouseMove -= OnViewportMouseMove;
         _viewport.MouseLeave -= OnViewportMouseLeave;
+        _hoverTimer.Stop();
+        _hoverTimer.Tick -= OnHoverTimerTick;
         HideMarkerTip();
         _viewport.SizeChanged -= OnViewportSizeChanged;
         _card.SizeChanged -= OnViewportSizeChanged;
