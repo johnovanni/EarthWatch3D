@@ -226,4 +226,19 @@ src\EarthWatch3D.App\bin\Release\net10.0-windows\EarthWatch3D.App.exe --bench --
 
 **Below the 30 fps target (spec §10)** at the cap. 25,000 flashes gave 38.6 fps (Task 8); the 10-minute live run held
 13,000 to 22,000 flashes at 46 to 49 fps (Task 11). Recorded only, not redesigned in this wave: whether to draw fewer
-points at the cap (or another way) is an open decision.
+points at the cap (or another way) was an open decision, settled below.
+
+### After the draw cap: the newest 30,000 of 100,000 flashes
+
+The user chose to draw only the newest `LightningLayer.MaxDrawnFlashes` = 30,000 flashes of the window (all are still
+kept; spec ruling P3-6). Measured **2026-11-12** (17:33 UTC), same machine and window size, .NET 10.0.15, `PERF_LOG`
+Release build, live (1,861 quakes, 1,581 alerts), one run, the same command as above.
+
+| Measurement | Value |
+|---|---|
+| Layer built (30,000 of 100,000 points drawn) | 7 ms |
+| FPS while rotating, 100,000 flashes in the buffer | **37.1 fps** (186 frames in 5.01 s), was 10.7 |
+| Working set 10 s after load (before the flashes) | 850 MB (800 MB private, 429 MB managed) |
+| Working set after the bench | 1,087 MB (1,021 MB private, 451 MB managed) |
+
+Above the 30 fps target, and in line with the 25,000-flash figure (38.6 fps).

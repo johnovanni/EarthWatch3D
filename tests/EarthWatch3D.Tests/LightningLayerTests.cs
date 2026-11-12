@@ -115,6 +115,73 @@ public class LightningLayerTests
     }
 
     [Fact]
+    public void DrawsOnlyTheNewestFlashesAboveTheCap()
+    {
+        Sta.Run(() =>
+        {
+            const int total = 40_000;
+            Assert.Equal(30_000, LightningLayer.MaxDrawnFlashes);
+            // Flash i (0 = oldest) sits at its own latitude, so the drawn points say which flashes were drawn.
+            static double Lat(int i) => -80 + i * 0.004;
+            var buffer = new LightningBuffer();
+            var batch = new List<LightningFlash>(total);
+            for (int i = 0; i < total; i++)
+                batch.Add(new LightningFlash(Now.AddMilliseconds(-12 * 60_000 + i * 15), Lat(i), 10, 0, LightningSensor.GoesEast));
+            buffer.Add(batch);
+            var source = new LiveLightningSource(buffer, () => false);
+            var viewport = new HelixViewport3D();
+            var layer = new LightningLayer(viewport);
+
+            layer.Update(source, Now, Window, show: true);
+
+            Assert.Equal(30_000, layer.PointCount);
+            Assert.Equal(total, layer.FlashCountInWindow);
+            var points = viewport.Children.OfType<PointsVisual3D>().SelectMany(p => p.Points).ToList();
+            Assert.Equal(30_000, points.Count);
+            // The oldest drawn flash is the 10,001st oldest (index 10,000): the lowest latitude drawn is its latitude.
+            double minLat = points.Min(p => GeoLat(p));
+            Assert.Equal(Lat(total - 30_000), minLat, 6);
+            Assert.Equal(Lat(total - 1), points.Max(p => GeoLat(p)), 6);
+            // Age colours still follow the window: the drawn flashes are 2 to 9.5 minutes old in a 15-minute window, so the
+            // oldest drawn is in bucket 2 (under 70 %), not re-coloured as if it were the oldest of the window.
+            var visuals = viewport.Children.OfType<PointsVisual3D>().ToList();
+            Assert.Empty(visuals[3].Points);
+            Assert.True(visuals[2].Points.Count > 0);
+        });
+    }
+
+    [Fact]
+    public void BelowTheCapEveryFlashIsDrawn()
+    {
+        Sta.Run(() =>
+        {
+            var buffer = new LightningBuffer();
+            var batch = new List<LightningFlash>();
+            for (int i = 0; i < 1_000; i++) batch.Add(new LightningFlash(Now.AddMilliseconds(-500 * i), i * 0.05, 10, 0, LightningSensor.GoesEast));
+            buffer.Add(batch);
+            var layer = new LightningLayer(new HelixViewport3D());
+            layer.Update(new LiveLightningSource(buffer, () => false), Now, Window, show: true);
+            Assert.Equal(1_000, layer.PointCount);
+            Assert.Equal(1_000, layer.FlashCountInWindow);
+        });
+    }
+
+    [Fact]
+    public void LegendSaysSoOnlyWhenTheCapApplies()
+    {
+        var c = new LightningCoverage(Now.AddSeconds(-25), null, null, MtgSetUp: false);
+        var capped = LightningLayer.LegendNote(c, Now, flashesInWindow: 84_312).Split('\n');
+        Assert.Equal("Showing the newest 30,000 of 84,312 flashes.", capped[^1]);
+        Assert.Equal(4, capped.Length);
+        foreach (int n in new[] { 0, 1_000, 30_000 })
+            Assert.DoesNotContain("Showing", LightningLayer.LegendNote(c, Now, flashesInWindow: n));
+        Assert.Equal(3, LightningLayer.LegendNote(c, Now, flashesInWindow: 30_000).Split('\n').Length);
+    }
+
+    private static double GeoLat(System.Windows.Media.Media3D.Point3D p) =>
+        AstroCore.Earth.GeoPosition.FromVector(new AstroCore.Astronomy.Vector3d(p.X, p.Y, p.Z)).LatitudeDeg;
+
+    [Fact]
     public void AgeColoursAreTheSpecifiedOnes()
     {
         Assert.Equal([Color.FromRgb(0xFF, 0xF0, 0xB0), Color.FromRgb(0xFF, 0xD8, 0x4A), Color.FromRgb(0xFF, 0x9A, 0x2E), Color.FromRgb(0xB4, 0x60, 0x2A)],

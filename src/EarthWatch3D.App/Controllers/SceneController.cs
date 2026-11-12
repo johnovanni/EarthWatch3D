@@ -633,9 +633,10 @@ public sealed class SceneController
     private void OnTicked(object? sender, EventArgs e)
     {
         if (_closed) return;
-        // How old each sensor's newest flash is right now (wall clock), not relative to a replayed display time.
-        _vm.Layers.LightningLegend = LightningLayer.LegendNote(_lightningSource.Coverage, _vm.NowUtc);
         UpdateLightning();
+        // How old each sensor's newest flash is right now (wall clock), not relative to a replayed display time; and, when
+        // the window holds more flashes than are drawn, how many.
+        _vm.Layers.LightningLegend = LightningLayer.LegendNote(_lightningSource.Coverage, _vm.NowUtc, flashesInWindow: _lightning.FlashCountInWindow);
     }
 
     private void OnLightningSettingChanged(object? sender, PropertyChangedEventArgs e)

@@ -58,6 +58,7 @@ package, so it has to work without developer tools and explain itself to non-tec
 | P3-3 | The Paused status dot (daily limit reached) is blue, #0A84FF (§5.7, §7) |
 | P3-4 | The GLM feed downloads the newest files first, at most 45 files per poll, and only files inside the lightning window (§5.7) |
 | P3-5 | MTG is not built yet: the app has no EUMETSAT lightning feed until the user's EUMETSAT key works. `mtgActive` is false, so GLM covers its whole footprint (§5.7) |
+| P3-6 | At most the newest 30,000 flashes of the window are drawn; the buffer still keeps all of them (up to 100,000). 100,000 points rotated at 10.7 fps, the capped 30,000 at 37.1 fps. Age colours stay relative to the window, and the legend tooltip adds "Showing the newest 30,000 of N flashes." when the cap applies (§6, docs/perf.md) |
 
 ### Out of scope
 
@@ -371,7 +372,8 @@ The endpoints and fields below were verified against the live services on 2026-1
   - A name and category label.
 - **EONET storms:** a point glyph and a short track line.
 - **Lightning:** HelixToolkit `PointsVisual3D` (screen-space points), rebuilt at most once a second. Colour and
-  size fade with age: from white-yellow to dim orange.
+  size fade with age: from white-yellow to dim orange. At most the newest 30,000 flashes are drawn (all are kept);
+  the legend says so when the cap applies.
 
 ### Sun and Moon
 

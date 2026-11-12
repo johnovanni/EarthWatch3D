@@ -10,10 +10,16 @@ namespace EarthWatch3D.App.Rendering;
 /// <summary>
 /// Lightning flashes on the globe: one point per flash, coloured by age within the display window (four
 /// <see cref="PointsVisual3D"/>, one per age bucket). Rebuilt at most once a second. UI thread only.
+/// At most the newest <see cref="MaxDrawnFlashes"/> flashes of the window are drawn (the buffer keeps them all).
 /// </summary>
 public sealed class LightningLayer
 {
     public const double PointRadius = 1.004;
+    /// <summary>
+    /// The most flashes drawn at once: the newest of the window. 100,000 points rotate at about 11 fps, 25,000 at about 39
+    /// (docs/perf.md), and a 60-minute window in storm season can hold 100,000.
+    /// </summary>
+    public const int MaxDrawnFlashes = 30_000;
     /// <summary>
     /// False until the MTG (EUMETSAT) lightning feed is built: the legend, the credit line and the Settings key section then
     /// say MTG is coming rather than promise it. Turning MTG on later is this one line.
@@ -58,8 +64,11 @@ public sealed class LightningLayer
         }
     }
 
-    /// <summary>Flashes currently drawn.</summary>
+    /// <summary>Flashes currently drawn (at most <see cref="MaxDrawnFlashes"/>).</summary>
     public int PointCount { get; private set; }
+
+    /// <summary>Flashes inside the window at the last rebuild, drawn or not (0 while hidden).</summary>
+    public int FlashCountInWindow { get; private set; }
 
     /// <summary>Age bucket 0 (newest) to 3 for a flash of this age in a window.</summary>
     public static int Bucket(TimeSpan age, TimeSpan window)
@@ -87,14 +96,17 @@ public sealed class LightningLayer
         {
             if (PointCount > 0) foreach (var v in _visuals) v.Points = new Point3DCollection();
             PointCount = 0;
+            FlashCountInWindow = 0;
             return;
         }
-        var flashes = source.GetFlashes(nowUtc - window, nowUtc.AddTicks(1));
+        var flashes = source.GetFlashes(nowUtc - window, nowUtc.AddTicks(1));   // in time order
         var buckets = new Point3DCollection[4];
         for (int i = 0; i < buckets.Length; i++) buckets[i] = new Point3DCollection();
         int count = 0;
-        foreach (var f in flashes)
+        // Over the cap only the newest are drawn: the tail of the list. Their age buckets are still against the window.
+        for (int n = Math.Max(0, flashes.Count - MaxDrawnFlashes); n < flashes.Count; n++)
         {
+            var f = flashes[n];
             var age = nowUtc - f.TimeUtc;
             if (age < TimeSpan.Zero) age = TimeSpan.Zero;
             var u = new GeoPosition(f.Lat, f.Lon).ToUnitVector();
@@ -103,13 +115,15 @@ public sealed class LightningLayer
         }
         for (int i = 0; i < buckets.Length; i++) _visuals[i].Points = buckets[i];
         PointCount = count;
+        FlashCountInWindow = flashes.Count;
     }
 
     /// <summary>
     /// One line per sensor: how long ago its newest flash was, for the legend tooltip. While <paramref name="mtgAvailable"/>
-    /// is false (no MTG feed yet) the MTG line says it is coming.
+    /// is false (no MTG feed yet) the MTG line says it is coming. When <paramref name="flashesInWindow"/> is over
+    /// <see cref="MaxDrawnFlashes"/> a last line says only the newest are drawn.
     /// </summary>
-    public static string LegendNote(LightningCoverage c, DateTime nowUtc, bool mtgAvailable = MtgAvailable)
+    public static string LegendNote(LightningCoverage c, DateTime nowUtc, bool mtgAvailable = MtgAvailable, int flashesInWindow = 0)
     {
         ArgumentNullException.ThrowIfNull(c);
         var lines = new[]
@@ -119,7 +133,10 @@ public sealed class LightningLayer
             !mtgAvailable ? MtgComingLine
                 : c.MtgSetUp ? Line("MTG", c.NewestMtgUtc, nowUtc, delayedAfter: MtgDelayed) : "MTG: not set up (Settings)",
         };
-        return string.Join('\n', lines);
+        var note = string.Join('\n', lines);
+        return flashesInWindow > MaxDrawnFlashes
+            ? note + '\n' + string.Create(CultureInfo.InvariantCulture, $"Showing the newest {MaxDrawnFlashes:N0} of {flashesInWindow:N0} flashes.")
+            : note;
     }
 
     private static string Line(string name, DateTime? newest, DateTime nowUtc, TimeSpan? delayedAfter = null)
