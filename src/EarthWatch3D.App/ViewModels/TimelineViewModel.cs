@@ -128,8 +128,10 @@ public partial class TimelineViewModel : ObservableObject
         SetDisplay(utc);
     }
 
+    /// <summary>Moves the display time by <paramref name="delta"/>, leaving live. A step forward while live is a no-op: live is already now.</summary>
     private void Step(TimeSpan delta)
     {
+        if (IsLive && delta > TimeSpan.Zero) return;
         var from = DisplayTimeUtc;
         IsLive = false;
         SetDisplay(from + delta);

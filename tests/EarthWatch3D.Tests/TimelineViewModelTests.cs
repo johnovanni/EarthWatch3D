@@ -64,6 +64,13 @@ public class TimelineViewModelTests
         Assert.Equal(before - 10, vm.SliderSeconds, 3);
         Assert.Contains("SliderSeconds", fired);
     }
+
+    [Fact] public void StepForwardWhileLiveStaysLive()
+    { var vm = new TimelineViewModel(new FakeClock(T0)); vm.Advance(TimeSpan.Zero); int n = 0; vm.DisplayTimeChanged += (_, _) => n++;
+      vm.StepPlus10MinCommand.Execute(null); vm.StepPlus1HourCommand.Execute(null);
+      Assert.True(vm.IsLive); Assert.Equal(T0, vm.DisplayTimeUtc); Assert.StartsWith("LIVE", vm.ReadoutText); Assert.Equal(0, n);
+      vm.StepMinus10MinCommand.Execute(null);   // a step back still leaves live
+      Assert.False(vm.IsLive); Assert.Equal(T0.AddMinutes(-10), vm.DisplayTimeUtc); }
 }
 
 public class ThrottleTests
