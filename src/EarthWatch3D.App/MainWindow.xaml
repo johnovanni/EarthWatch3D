@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:helix="http://helix-toolkit.org/wpf"
         xmlns:views="clr-namespace:EarthWatch3D.App.Views"
-        Title="EarthWatch3D" Height="720" Width="1100" Background="#04060E">
+        Title="EarthWatch3D" Icon="/EarthWatch3D.App;component/app.ico" Height="720" Width="1100" Background="#04060E">
     <!-- The globe, markers, overlay and camera input are wired by Controllers/SceneController. -->
     <Grid x:Name="Root">
         <Grid.RowDefinitions>

@@ -13,6 +13,10 @@
     <EmbeddedResource Include="Assets\**" Exclude="Assets\README.md" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="app.ico" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -20,6 +24,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <RootNamespace>EarthWatch3D.App</RootNamespace>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>
