@@ -75,7 +75,10 @@ Step 'glm' {
     $h = $now.AddHours(-1)
     $prefix = 'GLM-L2-LCFA/{0:yyyy}/{1:000}/{0:HH}/' -f $h, $h.DayOfYear
     foreach ($sat in 19, 18) {
-        $list = [xml](Invoke-WebRequest -Uri "https://noaa-goes$sat.s3.amazonaws.com/?list-type=2&prefix=$prefix" -UserAgent $UA -UseBasicParsing).Content
+        $listXml = (Invoke-WebRequest -Uri "https://noaa-goes$sat.s3.amazonaws.com/?list-type=2&prefix=$prefix" -UserAgent $UA -UseBasicParsing).Content
+        # Same hour as glm_g19_sample.nc, so the sample's key is in the saved listing (test input for GlmListing).
+        if ($sat -eq 19) { [IO.File]::WriteAllText((Join-Path $OutDir 'glm_g19_listing.xml'), $listXml, (New-Object Text.UTF8Encoding $false)) }
+        $list = [xml]$listXml
         $first = $list.ListBucketResult.Contents | Select-Object -First 1
         if (-not $first) { Write-Warning "GLM G${sat}: no objects under $prefix"; continue }
         Get-File "https://noaa-goes$sat.s3.amazonaws.com/$($first.Key)" "glm_g${sat}_sample.nc"
