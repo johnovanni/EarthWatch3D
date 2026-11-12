@@ -12,6 +12,8 @@ using AstroCore.Astronomy;
 using AstroCore.Earth;
 using EarthWatch3D.App.Rendering;
 using EarthWatch3D.App.ViewModels;
+using EarthWatch3D.Core.Events;
+using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Globe;
 using EarthWatch3D.Core.Time;
@@ -76,8 +78,13 @@ public sealed class SceneController
     /// <param name="overlay">The canvas over the viewport for the Sun/Moon icons and edge arrows.</param>
     /// <param name="card">The Sun &amp; Moon card, which the edge arrows keep clear of. It and <paramref name="overlay"/> must share a parent.</param>
     /// <param name="window">The window hosting the viewport: its Loaded, Closed, StateChanged and PreviewKeyDown events drive the scene.</param>
-    public SceneController(HelixViewport3D viewport, Canvas overlay, FrameworkElement card, MainViewModel vm, Window window)
+    /// <param name="store">The events to draw (used from Task 14 on).</param>
+    /// <param name="zones">NWS zone shapes for alerts that name zones only (used from Task 15 on).</param>
+    public SceneController(HelixViewport3D viewport, Canvas overlay, FrameworkElement card, MainViewModel vm, Window window,
+                           EventStore store, ZoneCache zones)
     {
+        Store = store ?? throw new ArgumentNullException(nameof(store));
+        Zones = zones ?? throw new ArgumentNullException(nameof(zones));
         _viewport = viewport ?? throw new ArgumentNullException(nameof(viewport));
         _overlayCanvas = overlay ?? throw new ArgumentNullException(nameof(overlay));
         _card = card ?? throw new ArgumentNullException(nameof(card));
@@ -119,6 +126,12 @@ public sealed class SceneController
     public event EventHandler<DateTime>? ComposeDisplayed;
 
     public bool IsCameraAnimating => _animator.IsRunning;
+
+    /// <summary>The event store the scene will draw from.</summary>
+    internal EventStore Store { get; }
+
+    /// <summary>The NWS zone cache for zone-only alerts.</summary>
+    internal ZoneCache Zones { get; }
 
     /// <summary>The viewport's camera, or null if something replaced it with a non-perspective camera.</summary>
     internal PerspectiveCamera? Camera => _viewport.Camera as PerspectiveCamera;
