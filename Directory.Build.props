@@ -1,4 +1,9 @@
 <Project>
+  <PropertyGroup>
+    <!-- The one version for every project (also used for the MSIX package). -->
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
   <!--
     Windows' 260-character path limit breaks builds when the solution lives in a very deep folder.
     In that case only, redirect bin/obj to a short folder under %TEMP%. In a normal location

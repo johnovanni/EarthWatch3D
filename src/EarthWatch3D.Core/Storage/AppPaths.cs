@@ -11,8 +11,17 @@ public sealed record AppPaths(string Root)
     public string CloudsDir => Path.Combine(CacheDir, "clouds");
     public string DownloadMeterFile => Path.Combine(Root, "download-meter.json");
 
-    public static AppPaths Default => new(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EarthWatch3D"));
+    public static AppPaths Default => ForUser(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), PackageIdentity.FamilyName);
+
+    /// <summary>
+    /// The data root for a user. Packaged (MSIX) apps get Windows' redirected folder named directly, so the
+    /// paths the app shows are the real ones; unpackaged apps use <c>%LOCALAPPDATA%\EarthWatch3D</c>.
+    /// </summary>
+    public static AppPaths ForUser(string localAppData, string? packageFamilyName) => new(
+        packageFamilyName is null
+            ? Path.Combine(localAppData, "EarthWatch3D")
+            : Path.Combine(localAppData, "Packages", packageFamilyName, "LocalCache", "Local", "EarthWatch3D"));
 
     public void EnsureCreated()
     {
