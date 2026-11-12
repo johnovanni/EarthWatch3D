@@ -397,6 +397,8 @@ public sealed class SceneController
         if (plates && _plates is null && _lines is { } like)
         {
             int w = like.Width, h = like.Height;
+            try
+            {
             _plates = await RunOnStaThread(() =>
             {
                 using var s = Asset("plate_boundaries.geojson");
@@ -408,13 +410,18 @@ public sealed class SceneController
                     (Of(PlateBoundaryKind.Transform), C(PlateBoundaries.TransformArgb)),
                     (Of(PlateBoundaryKind.Divergent), C(PlateBoundaries.DivergentArgb)),
                     (Of(PlateBoundaryKind.Convergent), C(PlateBoundaries.ConvergentArgb)),
-                ], w, h, 1.5));
+                ], w, h, 3.0));
             });
+            }
+            catch (Exception ex)
+            {
+                _log.Error("Plate boundaries could not be drawn; showing coastlines only", ex);
+                return coastlines ? _lines : null;
+            }
         }
         if (plates && _plates is not null)
         {
-            if (!coastlines) return _plates;
-            if (_lines is null) return _plates;
+            if (!coastlines || _lines is null) return _plates;
             return _linesAndPlates ??= SparseOverlay.Merge(_lines, _plates);
         }
         return coastlines ? _lines : null;

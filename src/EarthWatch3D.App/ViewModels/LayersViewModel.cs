@@ -30,27 +30,37 @@ public partial class LayersViewModel : ObservableObject
         _isExpanded = s.LayerStripExpanded;
     }
 
-    partial void OnShowQuakesChanged(bool value) => Save();
-    partial void OnShowCyclonesChanged(bool value) => Save();
-    partial void OnShowAlertsChanged(bool value) => Save();
-    partial void OnShowEonetChanged(bool value) => Save();
-    partial void OnShowCoastlinesChanged(bool value) => Save();
-    partial void OnShowPlatesChanged(bool value) => Save();
-    partial void OnIsExpandedChanged(bool value) => Save();
+    partial void OnShowQuakesChanged(bool value) => Save("quakes");
+    partial void OnShowCyclonesChanged(bool value) => Save("cyclones");
+    partial void OnShowAlertsChanged(bool value) => Save("alerts");
+    partial void OnShowEonetChanged(bool value) => Save("eonet");
+    partial void OnShowCoastlinesChanged(bool value) => Save("coastlines");
+    partial void OnShowPlatesChanged(bool value) => Save("plates");
+    partial void OnIsExpandedChanged(bool value) => Save(null);
 
-    private bool _transient;
+    // Layers turned on for this run only (--layers) and the saved value each must keep until the user toggles it.
+    private readonly Dictionary<string, bool> _transient = [];
+    private bool _applying;
 
     /// <summary>
-    /// Switches the named layers on for this run only (the <c>--layers</c> diagnostic): nothing is saved.
-    /// Names: quakes, cyclones, alerts, eonet, coastlines, plates.
+    /// Switches the named layers on for this run only (the <c>--layers</c> diagnostic): their saved values are kept, so nothing
+    /// persists unless the user toggles that layer. Names: quakes, cyclones, alerts, eonet, coastlines, plates.
     /// </summary>
     public void TurnOnForThisRun(IEnumerable<string> names)
     {
-        _transient = true;
+        _applying = true;
         try
         {
-            foreach (var n in names)
-                switch (n.ToLowerInvariant())
+            foreach (var n in names.Select(x => x.ToLowerInvariant()))
+            {
+                bool? saved = n switch
+                {
+                    "quakes" => ShowQuakes, "cyclones" => ShowCyclones, "alerts" => ShowAlerts,
+                    "eonet" => ShowEonet, "coastlines" => ShowCoastlines, "plates" => ShowPlates, _ => null,
+                };
+                if (saved is null) continue;
+                _transient.TryAdd(n, saved.Value);
+                switch (n)
                 {
                     case "quakes": ShowQuakes = true; break;
                     case "cyclones": ShowCyclones = true; break;
@@ -59,21 +69,24 @@ public partial class LayersViewModel : ObservableObject
                     case "coastlines": ShowCoastlines = true; break;
                     case "plates": ShowPlates = true; break;
                 }
+            }
         }
-        finally { _transient = false; }
+        finally { _applying = false; }
     }
 
-    private void Save()
+    private void Save(string? changed)
     {
-        if (_transient) return;
+        if (_applying) return;
+        if (changed is not null) _transient.Remove(changed);
+        bool P(string n, bool current) => _transient.TryGetValue(n, out var saved) ? saved : current;
         _store.Save(_store.Load() with
         {
-            ShowQuakes = ShowQuakes,
-            ShowCyclones = ShowCyclones,
-            ShowAlerts = ShowAlerts,
-            ShowEonet = ShowEonet,
-            ShowCoastlines = ShowCoastlines,
-            ShowPlates = ShowPlates,
+            ShowQuakes = P("quakes", ShowQuakes),
+            ShowCyclones = P("cyclones", ShowCyclones),
+            ShowAlerts = P("alerts", ShowAlerts),
+            ShowEonet = P("eonet", ShowEonet),
+            ShowCoastlines = P("coastlines", ShowCoastlines),
+            ShowPlates = P("plates", ShowPlates),
             LayerStripExpanded = IsExpanded,
         });
     }

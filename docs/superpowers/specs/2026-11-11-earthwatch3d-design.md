@@ -310,11 +310,11 @@ The endpoints and fields below were verified against the live services on 2026-1
   5a. **Tectonic plate boundaries** (optional, off by default): Peter Bird's PB2002 model (Bird 2003, *G³*
      4(3):1027), as converted by Hugo Ahlenius / Nordpil (ODC Attribution licence; credit required). The 5,824
      classified boundary steps are merged by `tools/prepare-assets.ps1` into polylines with a `kind`:
-     - **convergent** (subduction `SUB`, oceanic and continental convergent `OCB`/`CCB`): #FF4D4D;
-     - **divergent** (spreading ridges `OSR`, continental rifts `CRB`): #FFD23F;
-     - **transform** (`OTF`, `CTF`): #5AC8FA.
+     - **convergent** (subduction `SUB`, oceanic and continental convergent `OCB`/`CCB`): #FF3030;
+     - **divergent** (spreading ridges `OSR`, continental rifts `CRB`): #FFE600;
+     - **transform** (`OTF`, `CTF`): #00E5FF. All fully opaque, drawn 3 px wide so they read at full-globe zoom.
 
-     Drawn 1.5 px wide at 85% opacity into the same lines layer as the coastlines, on top of them.
+     Drawn 3 px wide, fully opaque, into the same lines layer as the coastlines, on top of them.
 - **When it is rebuilt:** once a minute in live mode, whenever the overlay or clouds change, and while the time
   slider moves (at most every 250 ms, with a final rebuild once the slider stops).
 - The finished image is swapped onto the material on the UI thread. Target time: under 300 ms. If that target is

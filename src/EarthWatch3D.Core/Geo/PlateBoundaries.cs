@@ -13,12 +13,12 @@ public sealed record PlateBoundary(PlateBoundaryKind Kind, GeoLine Line);
 /// </summary>
 public static class PlateBoundaries
 {
-    /// <summary>Converging (subduction, collision): red, 85% opaque.</summary>
-    public const uint ConvergentArgb = 0xD9FF4D4D;
-    /// <summary>Spreading (ridges, rifts): yellow, 85% opaque.</summary>
-    public const uint DivergentArgb = 0xD9FFD23F;
-    /// <summary>Sliding past (transform faults): blue, 85% opaque.</summary>
-    public const uint TransformArgb = 0xD95AC8FA;
+    /// <summary>Converging (subduction, collision): red, opaque.</summary>
+    public const uint ConvergentArgb = 0xFFFF3030;
+    /// <summary>Spreading (ridges, rifts): yellow, opaque.</summary>
+    public const uint DivergentArgb = 0xFFFFE600;
+    /// <summary>Sliding past (transform faults): cyan-blue, opaque.</summary>
+    public const uint TransformArgb = 0xFF00E5FF;
 
     public static uint ArgbOf(PlateBoundaryKind kind) => kind switch
     {
@@ -29,7 +29,7 @@ public static class PlateBoundaries
 
     /// <summary>
     /// Each LineString's <c>properties.kind</c> (convergent, divergent or transform) gives its kind; any other kind is skipped.
-    /// A line that crosses the date line becomes two or more boundaries. Pieces with no length are dropped.
+    /// The asset already starts a new polyline at a date-line jump; a line that still crosses ±180 is split here, giving two or more boundaries. Pieces with no length are dropped.
     /// </summary>
     public static IReadOnlyList<PlateBoundary> Read(Stream geojson)
     {

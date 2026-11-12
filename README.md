@@ -140,7 +140,7 @@ measured numbers are in [docs/perf.md](docs/perf.md).
 
 - **Imagery:** NASA Earth Observatory, *Blue Marble: Next Generation* with topography and bathymetry (R. Stöckli, July 2004).
 - **Coastlines and borders:** [Natural Earth](https://www.naturalearthdata.com/) (public domain).
-- **Plate boundaries:** Peter Bird (2003), An updated digital model of plate boundaries, G³ 4(3):1027; GIS data by Hugo Ahlenius, Nordpil (ODC-By 1.0).
+- **Plate boundaries:** Peter Bird (2003), An updated digital model of plate boundaries, G³ 4(3):1027; GIS data by Hugo Ahlenius, Nordpil (ODC-By 1.0, https://opendatacommons.org/licenses/by/1-0/).
 - **Astronomy:** AstroCore, the shared astronomy library that grew out of the author's SolarSystem3D project
   (included as a git submodule).
 - **3D:** [HelixToolkit.Wpf](https://github.com/helix-toolkit/helix-toolkit).

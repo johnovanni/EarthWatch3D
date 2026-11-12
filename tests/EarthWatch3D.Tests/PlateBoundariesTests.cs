@@ -45,11 +45,22 @@ public class PlateBoundariesTests
     [Fact] public void ShowPlatesDefaultsOffAndIsSaved()
     { var store = new FakeSettingsStore(); var vm = new LayersViewModel(store); Assert.False(vm.ShowPlates); vm.ShowPlates = true; Assert.True(store.Saved[^1].ShowPlates); }
 
-    [Fact] public void ArgbStyleConstantsAre85PercentAlpha()
+    [Fact] public void ArgbStyleConstantsAreOpaqueAndSaturated()
     {
-        Assert.Equal(0xD9FF4D4D, PlateBoundaries.ConvergentArgb);
-        Assert.Equal(0xD9FFD23F, PlateBoundaries.DivergentArgb);
-        Assert.Equal(0xD95AC8FA, PlateBoundaries.TransformArgb);
+        Assert.Equal(0xFFFF3030, PlateBoundaries.ConvergentArgb);
+        Assert.Equal(0xFFFFE600, PlateBoundaries.DivergentArgb);
+        Assert.Equal(0xFF00E5FF, PlateBoundaries.TransformArgb);
+    }
+
+    [Fact] public void LayersTurnedOnForRunAreNotSavedUnlessUserToggles()
+    {
+        var store = new FakeSettingsStore(); var vm = new LayersViewModel(store);
+        vm.TurnOnForThisRun(["plates"]);
+        Assert.True(vm.ShowPlates); Assert.Equal(0, store.SaveCount);
+        vm.ShowCoastlines = false;   // another layer saved: plates still not persisted
+        Assert.False(store.Saved[^1].ShowPlates);
+        vm.ShowPlates = false; vm.ShowPlates = true;   // the user's own toggle persists
+        Assert.True(store.Saved[^1].ShowPlates);
     }
 
     private static SparseOverlay Sparse(params (int x, int y, byte b, byte g, byte r, byte a)[] px)
