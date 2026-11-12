@@ -94,6 +94,76 @@ public class EventStoreTests
         Assert.Equal(1, raised);
     }
 
+    private static GeoPolygon Poly() => new([new List<GeoPosition> { new(0, 0), new(0, 5), new(5, 5), new(0, 0) }]);
+    private static GeoLine Line() => new([new GeoPosition(1, 1), new GeoPosition(2, 2)]);
+
+    private static WeatherAlert FullAlert() => Alert("x", T.AddHours(5)) with
+    {
+        Areas = new List<GeoPolygon> { Poly() }, ZoneIds = new List<string> { "TXZ001", "TXZ002" }
+    };
+
+    private static EonetStorm FullStorm(double wind = 60) => Eonet("s", T.AddDays(-1)) with
+    {
+        Fixes = new List<StormFix> { new(T.AddDays(-2), Here, 50), new(T.AddDays(-1), Here, wind) }
+    };
+
+    private static CycloneAdvisory FullAdvisory() => Advisory("nhc:9", T.AddHours(-1)) with
+    {
+        PastTrack = new List<GeoLine> { Line() }, ForecastTrack = new List<GeoLine> { Line() },
+        Cone = new List<GeoPolygon> { Poly() }, WindAreas = new List<WindArea> { new(63, Poly()) }
+    };
+
+    private static (EventStore Store, Func<int> Raised) Counting()
+    {
+        var store = new EventStore(new FixedClock(T));
+        var n = 0;
+        store.Changed += (_, _) => n++;
+        return (store, () => n);
+    }
+
+    [Fact]
+    public void ReUpsertIdenticalAlertIsNoChange()
+    {
+        var (store, raised) = Counting();
+        store.UpsertAlerts([FullAlert()]);
+        var v = store.Snapshot.Version;
+        store.UpsertAlerts([FullAlert()]);
+        Assert.Equal(1, raised());
+        Assert.Equal(v, store.Snapshot.Version);
+    }
+
+    [Fact]
+    public void ReUpsertIdenticalEonetIsNoChange()
+    {
+        var (store, raised) = Counting();
+        store.UpsertEonet([FullStorm()]);
+        var v = store.Snapshot.Version;
+        store.UpsertEonet([FullStorm()]);
+        Assert.Equal(1, raised());
+        Assert.Equal(v, store.Snapshot.Version);
+    }
+
+    [Fact]
+    public void ReAddIdenticalAdvisoryIsNoChange()
+    {
+        var (store, raised) = Counting();
+        store.AddCycloneAdvisories([FullAdvisory()]);
+        var v = store.Snapshot.Version;
+        store.AddCycloneAdvisories([FullAdvisory()]);
+        Assert.Equal(1, raised());
+        Assert.Equal(v, store.Snapshot.Version);
+    }
+
+    [Fact]
+    public void ChangedFixInEonetIsAChange()
+    {
+        var (store, raised) = Counting();
+        store.UpsertEonet([FullStorm()]);
+        store.UpsertEonet([FullStorm(wind: 75)]);
+        Assert.Equal(2, raised());
+        Assert.Equal(75, store.Snapshot.Eonet[0].Fixes[1].WindKt);
+    }
+
     [Fact]
     public void ConcurrentWritersDoNotLoseUpdates()
     {

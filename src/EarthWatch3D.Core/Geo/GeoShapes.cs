@@ -3,7 +3,39 @@ using AstroCore.Earth;
 namespace EarthWatch3D.Core.Geo;
 
 /// <summary>A polyline on the globe. Points never cross ±180° longitude (see <see cref="DateLine"/>).</summary>
-public sealed record GeoLine(IReadOnlyList<GeoPosition> Points);
+public sealed record GeoLine(IReadOnlyList<GeoPosition> Points)
+{
+    public bool Equals(GeoLine? other) => other is not null && ListEquality.Equal(Points, other.Points);
+    public override int GetHashCode() => ListEquality.Hash(Points);
+}
+
+/// <summary>Value equality helpers for list-bearing records.</summary>
+public static class ListEquality
+{
+    public static bool Equal<T>(IReadOnlyList<T>? a, IReadOnlyList<T>? b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a is null || b is null || a.Count != b.Count) return false;
+        return a.SequenceEqual(b);
+    }
+
+    public static bool Equal<T>(IReadOnlyList<T>? a, IReadOnlyList<T>? b, Func<T, T, bool> eq)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a is null || b is null || a.Count != b.Count) return false;
+        for (var i = 0; i < a.Count; i++) if (!eq(a[i], b[i])) return false;
+        return true;
+    }
+
+    public static int Hash<T>(IReadOnlyList<T>? a)
+    {
+        if (a is null) return 0;
+        var h = new HashCode();
+        h.Add(a.Count);
+        for (var i = 0; i < Math.Min(a.Count, 4); i++) h.Add(a[i]);
+        return h.ToHashCode();
+    }
+}
 
 /// <summary>
 /// A polygon on the globe. The first ring is the outer boundary, the rest are holes.
@@ -11,6 +43,18 @@ public sealed record GeoLine(IReadOnlyList<GeoPosition> Points);
 /// </summary>
 public sealed record GeoPolygon(IReadOnlyList<IReadOnlyList<GeoPosition>> Rings)
 {
+    public bool Equals(GeoPolygon? other) =>
+        other is not null && ListEquality.Equal(Rings, other.Rings, (x, y) => ListEquality.Equal(x, y));
+
+    public override int GetHashCode()
+    {
+        var h = new HashCode();
+        h.Add(Rings?.Count ?? 0);
+        if (Rings is not null)
+            for (var i = 0; i < Math.Min(Rings.Count, 2); i++) h.Add(ListEquality.Hash(Rings[i]));
+        return h.ToHashCode();
+    }
+
     /// <summary>Even-odd ray cast in lon/lat over all rings, so holes are respected.</summary>
     public bool Contains(GeoPosition p)
     {

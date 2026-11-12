@@ -63,6 +63,11 @@ public sealed class EventStore(IClock clock)
     public void Prune() => Write(s =>
     {
         var now = clock.UtcNow;
+        if (!s.Earthquakes.Any(q => q.TimeUtc < now - QuakeRetention)
+            && !s.Cyclones.Any(c => c.TimeUtc < now - CycloneRetention)
+            && !s.Alerts.Any(a => EndOf(a) < now - AlertRetention)
+            && !s.Eonet.Any(e => LastFix(e) < now - EonetRetention || (e.ClosedUtc is { } cl && cl < now - EonetRetention)))
+            return s;
         var quakes = s.Earthquakes.Where(q => q.TimeUtc >= now - QuakeRetention).ToList();
         var cyclones = s.Cyclones.Where(c => c.TimeUtc >= now - CycloneRetention).ToList();
         var alerts = s.Alerts.Where(a => EndOf(a) >= now - AlertRetention).ToList();

@@ -5,6 +5,16 @@ namespace EarthWatch3D.Tests;
 
 public class GeoShapesTests
 {
+    [Fact]
+    public void PolygonsFromEqualListsAreEqual()
+    {
+        static GeoPolygon Make() => new([new List<GeoPosition> { new(0, 0), new(0, 10), new(10, 10), new(0, 0) }]);
+        Assert.Equal(Make(), Make());
+        Assert.Equal(Make().GetHashCode(), Make().GetHashCode());
+        Assert.NotEqual(Make(), new GeoPolygon([new List<GeoPosition> { new(0, 0), new(0, 11), new(10, 10), new(0, 0) }]));
+        Assert.Equal(new GeoLine([new GeoPosition(1, 2)]), new GeoLine([new GeoPosition(1, 2)]));
+    }
+
     [Fact] // Review Focus 2, real NHC cone extent
     public void SplitsNhcConeAtDateLine()
     {
