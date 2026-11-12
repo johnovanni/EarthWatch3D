@@ -36,7 +36,12 @@ public sealed class GdacsFeed(FeedHttp http, EventStore store, IClock clock, IAp
                 log.Warn($"GDACS: geometry of event {e.EventId} episode {e.EpisodeId} failed; will retry", ex);
                 continue;
             }
-            advisories.Add(GdacsReader.ReadGeometry(new MemoryStream(geo), e, log));
+            try { advisories.Add(GdacsReader.ReadGeometry(new MemoryStream(geo), e, log)); }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException or FormatException)
+            {
+                log.Warn($"GDACS: geometry of event {e.EventId} episode {e.EpisodeId} unreadable; will retry", ex);
+                continue;
+            }
             _seen.Add(key);
         }
         if (advisories.Count > 0) store.AddCycloneAdvisories(advisories);

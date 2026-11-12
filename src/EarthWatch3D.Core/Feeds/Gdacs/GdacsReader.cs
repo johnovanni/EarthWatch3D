@@ -54,7 +54,7 @@ public static class GdacsReader
             && sd.TryGetProperty("severity", out var sv) && sv.ValueKind == JsonValueKind.Number ? sv.GetDouble() : null;
         var isCurrent = string.Equals(Str(p, "iscurrent"), "true", StringComparison.OrdinalIgnoreCase);
         return new GdacsEvent(eventId, episodeId, Str(p, "eventname") ?? "", isCurrent, Str(p, "source") ?? "",
-            new GeoPosition(c[1].GetDouble(), c[0].GetDouble()), wind, modified, geometry, report);
+            new GeoPosition(c[1].GetDouble(), GeoPosition.NormalizeLongitude(c[0].GetDouble())), wind, modified, geometry, report);
     }
 
     public static CycloneAdvisory ReadGeometry(Stream s, GdacsEvent e, IAppLog log)
@@ -81,7 +81,8 @@ public static class GdacsReader
                     var cls = Str(p, "Class") ?? "";
                     if (cls == "Point_Centroid")
                     {
-                        if (coords.GetArrayLength() >= 2) location = new GeoPosition(coords[1].GetDouble(), coords[0].GetDouble());
+                        if (coords.GetArrayLength() >= 2) location = new GeoPosition(coords[1].GetDouble(), GeoPosition.NormalizeLongitude(coords[0].GetDouble()));
+                        else log.Warn($"GDACS: centroid of event {e.EventId} has fewer than 2 coordinates; skipped");
                     }
                     else if (cls.StartsWith("Line_Line_", StringComparison.Ordinal))
                     {
@@ -99,7 +100,9 @@ public static class GdacsReader
                         if (!label.EndsWith("km/h", StringComparison.Ordinal)) continue;
                         if (!double.TryParse(label[..^4], NumberStyles.Float, CultureInfo.InvariantCulture, out var kmh))
                         { log.Warn($"GDACS: wind band label '{label}' not understood; skipped"); continue; }
-                        foreach (var piece in DateLine.SplitPolygon(Rings(coords))) winds.Add(new WindArea(kmh, piece));
+                        var isMulti = Str(g, "type") == "MultiPolygon";
+                        foreach (var poly in isMulti ? coords.EnumerateArray().ToList() : [coords])
+                            foreach (var piece in DateLine.SplitPolygon(Rings(poly))) winds.Add(new WindArea(kmh, piece));
                     }
                     else if (cls.StartsWith("Point_Polygon_Point_", StringComparison.Ordinal)) { }
                     else if (unknown.Add(cls)) log.Info($"GDACS: ignoring geometry class '{cls}'");
@@ -119,7 +122,11 @@ public static class GdacsReader
     private static List<(double Lon, double Lat)> Ring(JsonElement a)
     {
         var r = new List<(double, double)>(a.GetArrayLength());
-        foreach (var pt in a.EnumerateArray()) r.Add((pt[0].GetDouble(), pt[1].GetDouble()));
+        foreach (var pt in a.EnumerateArray())
+        {
+            if (pt.ValueKind != JsonValueKind.Array || pt.GetArrayLength() < 2) throw new FormatException("coordinate has fewer than 2 numbers");
+            r.Add((pt[0].GetDouble(), pt[1].GetDouble()));
+        }
         return r;
     }
 

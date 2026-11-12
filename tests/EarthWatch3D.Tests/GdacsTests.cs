@@ -101,4 +101,48 @@ public sealed class GdacsTests
         Assert.Contains(handler.Requests, r => r == "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=TC&alertlevel=green;orange;red&fromdate=2026-11-09&todate=2026-11-11");
         Assert.Contains(store.Snapshot.Cyclones, c => c.Id == "gdacs:1001348");
     }
+
+    private static GdacsEvent Ev(int id) => new(id, 1, "T-" + id, true, "NOAA", new GeoPosition(10, 20), 100,
+        new DateTime(2026, 11, 11, 10, 0, 0, DateTimeKind.Utc), new Uri("https://g/" + id), null);
+
+    [Fact]
+    public void ShortCoordinateFeatureIsSkipped()
+    {
+        const string json = """
+        {"features":[
+         {"type":"Feature","geometry":{"type":"LineString","coordinates":[[1,2],[3]]},"properties":{"Class":"Line_Line_0","forecast":false}},
+         {"type":"Feature","geometry":{"type":"LineString","coordinates":[[1,2],[3,4]]},"properties":{"Class":"Line_Line_1","forecast":false}},
+         {"type":"Feature","geometry":{"type":"MultiPolygon","coordinates":[[[[0,0],[1,0],[1,1],[0,0]]],[[[5,5],[6,5],[6,6],[5,5]]]]},"properties":{"Class":"Poly_Green","polygonlabel":"60 km/h"}}
+        ]}
+        """;
+        var log = new RecordingLog();
+        var a = GdacsReader.ReadGeometry(new MemoryStream(Encoding.UTF8.GetBytes(json)), Ev(1), log);
+        Assert.Single(a.PastTrack);
+        Assert.Single(log.Warnings);
+        Assert.Equal(2, a.WindAreas.Count);
+        Assert.All(a.WindAreas, w => Assert.Equal(60, w.ThresholdKmh));
+    }
+
+    [Fact]
+    public async Task MalformedGeometryDocumentIsSkippedAndOthersLoad()
+    {
+        const string list = """
+        {"features":[
+         {"type":"Feature","geometry":{"type":"Point","coordinates":[10,20]},"properties":{"eventid":1,"episodeid":1,"eventname":"BAD","iscurrent":"true","source":"NOAA","datemodified":"2026-11-11T10:00:00","url":{"geometry":"https://g.test/bad"}}},
+         {"type":"Feature","geometry":{"type":"Point","coordinates":[10,20]},"properties":{"eventid":2,"episodeid":1,"eventname":"GOOD","iscurrent":"true","source":"NOAA","datemodified":"2026-11-11T10:00:00","url":{"geometry":"https://g.test/good"}}}
+        ]}
+        """;
+        var handler = new SampleHttpHandler();
+        handler.MapText("https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH", list);
+        handler.MapText("https://g.test/bad", "not json");
+        handler.MapText("https://g.test/good", "{\"features\":[]}");
+        var clock = new TestClock(new DateTime(2026, 11, 11, 15, 0, 0, DateTimeKind.Utc));
+        var store = new EventStore(clock);
+        var log = new RecordingLog();
+        using var http = new FeedHttp(handler);
+        await new GdacsFeed(http, store, clock, log).RunOnceAsync(CancellationToken.None);
+        Assert.Single(store.Snapshot.Cyclones);
+        Assert.Equal("gdacs:2", store.Snapshot.Cyclones[0].Id);
+        Assert.Single(log.Warnings);
+    }
 }
