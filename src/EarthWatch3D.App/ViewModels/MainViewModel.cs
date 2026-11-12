@@ -29,6 +29,7 @@ public partial class MainViewModel : ObservableObject
         Display = new DisplayOptionsViewModel(settings);
         // In the app this is the UI thread's dispatcher; in tests (no Application) updates apply directly.
         Status = new StatusViewModel(Application.Current?.Dispatcher);
+        Selection = new SelectionViewModel(() => DisplayTimeUtc);
         _currentFilter = BuildFilter();
         Layers.PropertyChanged += OnFilterInputChanged;
         Display.PropertyChanged += OnFilterInputChanged;
@@ -46,6 +47,7 @@ public partial class MainViewModel : ObservableObject
     public LayersViewModel Layers { get; }
     public DisplayOptionsViewModel Display { get; }
     public StatusViewModel Status { get; }
+    public SelectionViewModel Selection { get; }
 
     /// <summary>Which events are shown, from the layer toggles and display options. Safe to read from any thread.</summary>
     public DisplayFilter CurrentFilter => _currentFilter;

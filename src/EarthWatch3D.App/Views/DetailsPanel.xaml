@@ -1,0 +1,79 @@
+<UserControl x:Class="EarthWatch3D.App.Views.DetailsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:EarthWatch3D.App.Views"
+             HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12" Width="300">
+    <!-- DataContext: SelectionViewModel. Shown below the Sun & Moon card; MainWindow sets the top margin. -->
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="CardStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <BooleanToVisibilityConverter x:Key="B2V"/>
+            <local:LinesToRowsConverter x:Key="Rows"/>
+            <Style TargetType="TextBlock">
+                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="FontSize" Value="13"/>
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <Border x:Name="Card" Background="#E6101624" CornerRadius="8" Padding="12,8"
+            Visibility="{Binding IsOpen, Converter={StaticResource B2V}}">
+        <Border.RenderTransform>
+            <TranslateTransform x:Name="Slide" X="0"/>
+        </Border.RenderTransform>
+        <Border.Style>
+            <Style TargetType="Border">
+                <Style.Triggers>
+                    <Trigger Property="IsVisible" Value="True">
+                        <Trigger.EnterActions>
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                                     From="320" To="0" Duration="0:0:0.18"/>
+                                    <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.18"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </Trigger.EnterActions>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
+        <StackPanel>
+            <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Right" Style="{StaticResource CardButton}" Padding="7,0" Content="×"
+                        ToolTip="Close (Esc)" Command="{Binding CloseCommand}" VerticalAlignment="Top"/>
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" Margin="0,0,8,0"/>
+            </DockPanel>
+            <ItemsControl ItemsSource="{Binding Lines, Converter={StaticResource Rows}}" Margin="0,8,0,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="92"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Label}" Foreground="#A0AEC0"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap"/>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                <ScrollViewer.Style>
+                    <Style TargetType="ScrollViewer">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Description}" Value="">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ScrollViewer.Style>
+                <TextBlock Text="{Binding Description}" TextWrapping="Wrap" FontSize="12" Foreground="#D5DCE8"/>
+            </ScrollViewer>
+            <TextBlock Margin="0,10,0,0" Visibility="{Binding Link, Converter={x:Static local:NullToCollapsedConverter.Instance}}">
+                <Hyperlink x:Name="SourceLink" Foreground="#7FB6FF" Click="OnSourceLinkClick">Source page ↗</Hyperlink>
+            </TextBlock>
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -13,7 +13,13 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = vm;
         Scene = new SceneController(Viewport, Overlay, Card, vm, this, store, zones);
+        Card.SizeChanged += (_, _) => PlaceDetails();
+        PlaceDetails();
     }
 
     public SceneController Scene { get; }
+
+    // The details panel sits just below the Sun & Moon card, which changes height when it collapses.
+    private void PlaceDetails() =>
+        Details.Margin = new Thickness(12, Card.Margin.Top + Card.ActualHeight + 8, 12, 12);
 }

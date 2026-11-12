@@ -40,6 +40,7 @@ public sealed class SceneController
 
     private const string AssetPrefix = "EarthWatch3D.App.Assets.";
     private const double EarthRadiusKm = 6371.0;
+    private const double ClickSlopPx = 4;
     private static readonly GeoPosition HomeView = new(20, -40);
 
     private readonly HelixViewport3D _viewport;
@@ -57,6 +58,8 @@ public sealed class SceneController
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly ModelVisual3D _globeVisual = new();
     // Tooltip for the Sun/Moon surface markers (billboards can't carry WPF tooltips, so it is driven by hover tests).
+    // Left button went down at this point and has not moved far (a click, not a drag); null otherwise.
+    private Point? _clickStart;
     private readonly ToolTip _markerTip = new() { Placement = PlacementMode.Relative, StaysOpen = true };
     private readonly RecomposeSchedule _schedule = new(RecomposeInterval);
     private readonly Throttle _throttle = new(TimeSpan.FromMilliseconds(250));
@@ -123,6 +126,7 @@ public sealed class SceneController
         _viewport.CameraChanged += OnCameraChanged;
         _viewport.PreviewMouseWheel += OnPreviewMouseWheel;
         _viewport.PreviewMouseDown += OnPreviewMouseDown;
+        _viewport.PreviewMouseUp += OnPreviewMouseUp;
         _viewport.MouseMove += OnViewportMouseMove;
         _viewport.MouseLeave += OnViewportMouseLeave;
         _markerTip.PlacementTarget = _viewport;
@@ -363,6 +367,7 @@ public sealed class SceneController
             _eventsDirty = false;
             _visibleAtUtc = _vm.DisplayTimeUtc;
             _visible = EventVisibility.At(Store.Snapshot, _visibleAtUtc, _vm.CurrentFilter);
+            _vm.Selection.ClearIfNotVisible(_visible);
             _overlayDirty = true;   // the labels
             RequestAreas();
         }
@@ -526,11 +531,26 @@ public sealed class SceneController
         string? text = MarkerHover.Hits(mouse, projector, sm.SubSolar) ? MarkerHover.SunText(sm.SubSolar)
                      : MarkerHover.Hits(mouse, projector, sm.SubLunar) ? MarkerHover.MoonText(sm.SubLunar)
                      : null;
+        if (text is null && PickEvent(mouse, projector) is { } hovered)
+            text = SelectionViewModel.HoverText(hovered, _vm.DisplayTimeUtc);
         if (text is null) { HideMarkerTip(); return; }
         if (!Equals(_markerTip.Content, text)) _markerTip.Content = text;
         _markerTip.HorizontalOffset = mouse.X + 16;
         _markerTip.VerticalOffset = mouse.Y + 16;
         _markerTip.IsOpen = true;
+    }
+
+    /// <summary>The event under the mouse: point events first, then (needing a surface hit test) alert areas.</summary>
+    private EarthEvent? PickEvent(Point mouse, Projector projector)
+    {
+        var visible = _visible;
+        var hit = EventPicker.Pick(mouse, projector, visible, null);
+        if (hit is not null || visible.Alerts.Count == 0) return hit;
+        GeoPosition? surface = null;
+        if (_viewport.FindNearest(mouse, out Point3D p, out _, out _))
+            surface = GeoPosition.FromVector(new Vector3d(p.X, p.Y, p.Z));
+        return EventPicker.Pick(mouse, projector, visible, surface,
+            id => Zones.TryGet(id, out var polys) ? polys : null);
     }
 
     private void OnViewportMouseLeave(object sender, MouseEventArgs e) => HideMarkerTip();
@@ -614,6 +634,12 @@ public sealed class SceneController
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && _vm.Selection.IsOpen)
+        {
+            e.Handled = true;
+            _vm.Selection.Select(null);
+            return;
+        }
         if (e.Key != Key.Home) return;
         e.Handled = true;
         if (Camera is not { } camera) return;
@@ -622,6 +648,7 @@ public sealed class SceneController
 
     private void OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton == MouseButton.Left) _clickStart = e.ClickCount == 1 ? e.GetPosition(_viewport) : null;
         if (e.ChangedButton != MouseButton.Left || e.ClickCount != 2) return;
         e.Handled = true;   // keep Helix's own double-click (look-at) out of it
         if (Camera is not { } camera) return;
@@ -630,6 +657,17 @@ public sealed class SceneController
         var geo = GeoPosition.FromVector(new Vector3d(hit.X, hit.Y, hit.Z));
         double distance = ((Vector3D)camera.Position).Length;
         _animator.AnimateTo(CameraRules.LookDownOn(geo, distance).Position);
+    }
+
+    /// <summary>A left click (released within 4 px of where it went down) selects the event under it, or clears the selection.</summary>
+    private void OnPreviewMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left || _clickStart is not { } start) return;
+        _clickStart = null;
+        var end = e.GetPosition(_viewport);
+        if ((end - start).Length >= ClickSlopPx || Camera is not { } camera) return;
+        var projector = new Projector(camera, _viewport.ActualWidth, _viewport.ActualHeight);
+        _vm.Selection.Select(PickEvent(end, projector));
     }
 
     // ---------------------------------------------------------------- lifetime
@@ -647,6 +685,7 @@ public sealed class SceneController
         _viewport.CameraChanged -= OnCameraChanged;
         _viewport.PreviewMouseWheel -= OnPreviewMouseWheel;
         _viewport.PreviewMouseDown -= OnPreviewMouseDown;
+        _viewport.PreviewMouseUp -= OnPreviewMouseUp;
         _viewport.MouseMove -= OnViewportMouseMove;
         _viewport.MouseLeave -= OnViewportMouseLeave;
         HideMarkerTip();

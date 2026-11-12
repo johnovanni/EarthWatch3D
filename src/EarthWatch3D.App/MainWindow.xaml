@@ -39,6 +39,7 @@
         <views:SunMoonCard x:Name="Card" Grid.Row="0" DataContext="{Binding SunMoon}"/>
         <Canvas x:Name="Overlay" Grid.Row="0" IsHitTestVisible="False"/>
         <views:LayerStrip x:Name="Strip" Grid.Row="0"/>
+        <views:DetailsPanel x:Name="Details" Grid.Row="0" DataContext="{Binding Selection}"/>
         <views:TimeBar x:Name="Bar" Grid.Row="1" DataContext="{Binding Timeline}"/>
     </Grid>
 </Window>
