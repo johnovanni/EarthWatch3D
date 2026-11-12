@@ -72,4 +72,33 @@ public class OfflineSamplesTests
 
     private static bool AnyZoneLoaded(EventSnapshot s, ZoneCache zones) =>
         s.Alerts.SelectMany(a => a.ZoneIds).Any(z => zones.TryGetCached(z, out var p) && p.Count > 0);
+
+    [Fact]
+    public void StaleOfflineFoldersAreSwept()
+    {
+        var temp = Path.Combine(Path.GetTempPath(), "ew3d-sweep-" + Guid.NewGuid().ToString("N"));
+        var now = new DateTime(2026, 11, 12, 12, 0, 0, DateTimeKind.Utc);
+        try
+        {
+            string Make(string name, TimeSpan age)
+            {
+                var d = Directory.CreateDirectory(Path.Combine(temp, name)).FullName;
+                File.WriteAllText(Path.Combine(d, "settings.json"), "{}");
+                Directory.SetLastWriteTimeUtc(d, now - age);
+                return d;
+            }
+            var stale = Make("EarthWatch3D-offline-aaa", TimeSpan.FromDays(2));
+            var fresh = Make("EarthWatch3D-offline-bbb", TimeSpan.FromHours(3));   // maybe another instance running
+            var other = Make("SomethingElse-offline-ccc", TimeSpan.FromDays(9));
+            var log = new RecordingLog();
+
+            Assert.Equal(1, OfflineSamples.SweepStaleFolders(temp, now, log));
+
+            Assert.False(Directory.Exists(stale));
+            Assert.True(Directory.Exists(fresh));
+            Assert.True(Directory.Exists(other));
+            Assert.Equal(0, OfflineSamples.SweepStaleFolders(Path.Combine(temp, "missing"), now, log));   // never throws
+        }
+        finally { try { Directory.Delete(temp, true); } catch (IOException) { } }
+    }
 }

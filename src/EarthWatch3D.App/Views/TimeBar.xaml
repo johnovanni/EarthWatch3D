@@ -43,7 +43,8 @@
                     </Setter.Value>
                 </Setter>
                 <Style.Triggers>
-                    <DataTrigger Binding="{Binding IsLive}" Value="True">
+                    <!-- Lit only for real live data: on the offline samples the button never looks live. -->
+                    <DataTrigger Binding="{Binding ShowsLive}" Value="True">
                         <Setter Property="Background" Value="#E0245C"/>
                         <Setter Property="BorderBrush" Value="#E0245C"/>
                     </DataTrigger>
@@ -98,8 +99,8 @@
                 </ContextMenu>
             </Button.ContextMenu>
         </Button>
-        <Button Grid.Column="4" Style="{StaticResource LiveButton}" Content="LIVE" Command="{Binding GoLiveCommand}"
-                ToolTip="Jump back to the live view"/>
+        <Button Grid.Column="4" x:Name="GoLiveButton" Style="{StaticResource LiveButton}" Content="{Binding LiveButtonText}"
+                Command="{Binding GoLiveCommand}" ToolTip="{Binding LiveButtonToolTip}"/>
 
         <Grid Grid.Column="5" Margin="6,0,12,0" VerticalAlignment="Center" Height="24">
             <Grid.ColumnDefinitions>

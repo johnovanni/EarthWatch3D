@@ -101,8 +101,9 @@ dotnet run --project src/EarthWatch3D.App -c Release -- --offline-samples tests\
 dotnet run --project src/EarthWatch3D.App -c Release -- --offline-samples tests\Samples --display-time 2026-11-11T20:00:00Z --look-at 10,-165
 ```
 
-The app starts in **REPLAY 11 Nov 20:00 UTC** with all five dots green. It uses a temporary cache and settings, so
-your own are not changed. Expect:
+The window title ends with **— SAMPLE DATA (offline)** and the readout says **SAMPLE 11 Nov 20:00 UTC** (never
+LIVE), with all five dots green. The LIVE button reads **NOW** and is not lit red. Stepping back shows REPLAY as usual; **NOW** returns to SAMPLE. The app uses a
+temporary cache and settings, so your own are not changed. Expect:
 
 - Quake discs around the Pacific and in the Americas, with M5+ labels.
 - Tropical Storm Pena near 9.9° N, 167.7° W (the second command looks straight at it): the glyph, a solid past track

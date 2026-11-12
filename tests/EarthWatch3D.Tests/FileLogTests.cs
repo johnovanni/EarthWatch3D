@@ -63,4 +63,36 @@ public sealed class FileLogTests : IDisposable
         Assert.Equal(400, lines.Length);
         Assert.All(lines, l => Assert.Matches(@"^\S+Z INFO t\d line \d+$", l));
     }
+
+    private sealed class MovingClock(DateTime t) : IClock { public DateTime UtcNow { get; set; } = t; }
+
+    [Fact]
+    public void DailyCapStopsWritingWithOneNote()
+    {
+        var clock = new MovingClock(new DateTime(2026, 11, 12, 12, 0, 0, DateTimeKind.Utc));
+        using var log = new FileLog(_dir, clock, maxBytesPerDay: 2000);
+        for (int i = 0; i < 100; i++) log.Info($"line {i} " + new string('x', 40));
+        var file = Directory.GetFiles(_dir, "earthwatch3d-*.log").Single();
+        var lines = File.ReadAllLines(file);
+        Assert.True(new FileInfo(file).Length <= 2000 + 200, "the file stays near the cap");
+        Assert.Single(lines, l => l.Contains("log cap reached"));
+        Assert.EndsWith("log cap reached (2000 bytes); further lines today are dropped", lines[^1]);
+        Assert.DoesNotContain(lines, l => l.Contains("line 99 "));
+
+        clock.UtcNow = clock.UtcNow.AddDays(1);   // a new day, a new file and a new allowance
+        log.Info("next day");
+        Assert.Equal(2, Directory.GetFiles(_dir, "earthwatch3d-*.log").Length);
+    }
+
+    [Fact]
+    public void CapCountsWhatIsAlreadyInTodaysFile()
+    {
+        var now = new DateTime(2026, 11, 12, 12, 0, 0, DateTimeKind.Utc);
+        var file = Path.Combine(_dir, $"earthwatch3d-{now.ToLocalTime():yyyyMMdd}.log");
+        File.WriteAllText(file, new string('y', 1990) + Environment.NewLine);
+        using (var log = new FileLog(_dir, new FixedClock(now), maxBytesPerDay: 2000)) log.Info("does not fit");
+        var lines = File.ReadAllLines(file);
+        Assert.DoesNotContain(lines, l => l.Contains("does not fit"));
+        Assert.Contains(lines, l => l.Contains("log cap reached"));
+    }
 }

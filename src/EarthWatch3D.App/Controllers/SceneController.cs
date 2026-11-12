@@ -172,6 +172,12 @@ public sealed class SceneController
     internal bool AreasDisplayed { get; private set; }
 
     /// <summary>
+    /// True when the globe on screen shows the current Areas layer, or there is none to show (nothing visible has an
+    /// area). With <see cref="IsBusy"/> false, the visible events are fully drawn.
+    /// </summary>
+    internal bool AreasSettled => _areas is null || AreasDisplayed;
+
+    /// <summary>
     /// True while a compose or an Areas rebuild is running or queued, or a store, zone or display-time change has not
     /// yet been worked into the visible events. The diagnostics wait for this to clear before a snapshot.
     /// </summary>

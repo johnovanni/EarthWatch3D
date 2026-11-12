@@ -44,9 +44,37 @@ public partial class TimelineViewModel : ObservableObject
         }
     }
 
-    public string ReadoutText => IsLive
-        ? "LIVE " + DisplayTimeUtc.ToString("HH:mm:ss", CultureInfo.InvariantCulture) + " UTC"
-        : "REPLAY " + DisplayTimeUtc.ToString("d MMM HH:mm", CultureInfo.InvariantCulture) + " UTC";
+    /// <summary>
+    /// True when the events come from the offline samples (--offline-samples): the readout then says SAMPLE, never
+    /// LIVE, so sample data can't be mistaken for what is happening now.
+    /// </summary>
+    public bool IsSampleData
+    {
+        get => _isSampleData;
+        set
+        {
+            if (!SetProperty(ref _isSampleData, value)) return;
+            OnPropertyChanged(nameof(ReadoutText));
+            OnPropertyChanged(nameof(ShowsLive));
+            OnPropertyChanged(nameof(LiveButtonText));
+            OnPropertyChanged(nameof(LiveButtonToolTip));
+        }
+    }
+    private bool _isSampleData;
+
+    /// <summary>True when the LIVE button should light up: live, and real data (never for the samples).</summary>
+    public bool ShowsLive => IsLive && !IsSampleData;
+
+    /// <summary>LIVE, or NOW on the samples (it jumps to the newest sample time, which is not live).</summary>
+    public string LiveButtonText => IsSampleData ? "NOW" : "LIVE";
+
+    public string LiveButtonToolTip => IsSampleData ? "Jump to the newest time on the sample clock (offline sample data)" : "Jump back to the live view";
+
+    public string ReadoutText => !IsLive
+        ? "REPLAY " + DisplayTimeUtc.ToString("d MMM HH:mm", CultureInfo.InvariantCulture) + " UTC"
+        : IsSampleData
+            ? "SAMPLE " + DisplayTimeUtc.ToString("d MMM HH:mm", CultureInfo.InvariantCulture) + " UTC"
+            : "LIVE " + DisplayTimeUtc.ToString("HH:mm:ss", CultureInfo.InvariantCulture) + " UTC";
 
     public string LocalTimeText
     {
@@ -127,5 +155,9 @@ public partial class TimelineViewModel : ObservableObject
         DisplayTimeChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    partial void OnIsLiveChanged(bool value) => OnPropertyChanged(nameof(ReadoutText));
+    partial void OnIsLiveChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ReadoutText));
+        OnPropertyChanged(nameof(ShowsLive));
+    }
 }

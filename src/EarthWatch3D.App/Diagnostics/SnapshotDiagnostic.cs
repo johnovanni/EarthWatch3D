@@ -62,7 +62,8 @@ public static class SnapshotDiagnostic
 
     /// <summary>
     /// Waits, at most <paramref name="timeout"/> in all, for <paramref name="waitForData"/>, then for the scene to draw
-    /// it: no compose or Areas rebuild running or queued, and a globe image with an Areas layer on screen. A timeout is
+    /// it: no compose or Areas rebuild running or queued, and the current Areas layer on screen (if anything visible has
+    /// an area: a visible set with no alert, cone or wind area has nothing to wait for). A timeout is
     /// logged, not thrown, so the snapshot still shows whatever did arrive.
     /// </summary>
     public static async Task WaitForDataAsync(SceneController scene, Func<Task> waitForData, TimeSpan timeout, IAppLog log)
@@ -70,17 +71,17 @@ public static class SnapshotDiagnostic
         var sw = Stopwatch.StartNew();
         try { await waitForData().WaitAsync(timeout); }
         catch (TimeoutException) { log.Warn($"Diagnostics: not every feed reported OK within {timeout.TotalSeconds:0} s"); }
-        while (scene.IsBusy || !scene.AreasDisplayed)
+        while (scene.IsBusy || !scene.AreasSettled)
         {
             if (sw.Elapsed >= timeout)
             {
-                log.Warn($"Diagnostics: the scene did not settle with areas shown within {timeout.TotalSeconds:0} s " +
-                         $"(busy={scene.IsBusy}, areas shown={scene.AreasDisplayed})");
+                log.Warn($"Diagnostics: the scene did not settle within {timeout.TotalSeconds:0} s " +
+                         $"(busy={scene.IsBusy}, areas settled={scene.AreasSettled})");
                 return;
             }
             await Task.Delay(100);
         }
-        log.Info($"Diagnostics: data drawn after {sw.Elapsed.TotalSeconds:F1} s");
+        log.Info($"Diagnostics: data drawn after {sw.Elapsed.TotalSeconds:F1} s (areas shown={scene.AreasDisplayed})");
     }
 
     /// <summary>Asks for a recompose and completes when a compose for <paramref name="notBefore"/> or later is on the globe.</summary>

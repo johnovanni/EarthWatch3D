@@ -40,6 +40,17 @@ public class TimelineViewModelTests
       vm.ReplayAt(T0.AddDays(-30)); Assert.Equal(T0 - TimelineViewModel.Range, vm.DisplayTimeUtc);
       vm.Advance(TimeSpan.FromSeconds(1)); Assert.False(vm.IsLive); }
 
+    [Fact] public void SampleDataNeverReadsLive()
+    { var c = new FakeClock(T0); var vm = new TimelineViewModel(c) { IsSampleData = true };
+      Assert.True(vm.IsLive); Assert.Equal("SAMPLE 12 Nov 12:00 UTC", vm.ReadoutText);
+      c.UtcNow = T0.AddMinutes(5); vm.Advance(TimeSpan.FromMinutes(5)); Assert.Equal("SAMPLE 12 Nov 12:05 UTC", vm.ReadoutText);
+      vm.StepMinus1HourCommand.Execute(null); Assert.Equal("REPLAY 12 Nov 11:05 UTC", vm.ReadoutText);
+      vm.GoLiveCommand.Execute(null); Assert.StartsWith("SAMPLE ", vm.ReadoutText); Assert.DoesNotContain("LIVE", vm.ReadoutText); }
+
+    [Fact] public void SettingSampleDataRaisesReadoutChange()
+    { var vm = new TimelineViewModel(new FakeClock(T0)); var changed = new List<string?>(); vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+      vm.IsSampleData = true; Assert.Contains(nameof(TimelineViewModel.ReadoutText), changed); }
+
     [Fact] public void DisplayTimeChangedRaisedOnStep()
     { var vm = new TimelineViewModel(new FakeClock(T0)); int n = 0; vm.DisplayTimeChanged += (_, _) => n++; vm.StepMinus10MinCommand.Execute(null); Assert.Equal(1, n); }
 

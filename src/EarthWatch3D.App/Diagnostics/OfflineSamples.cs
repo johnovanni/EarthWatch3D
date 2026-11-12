@@ -1,5 +1,6 @@
 using System.IO;
 using EarthWatch3D.Core.Feeds;
+using EarthWatch3D.Core.Logging;
 
 namespace EarthWatch3D.App.Diagnostics;
 
@@ -21,6 +22,42 @@ public static class OfflineSamples
         "usgs_all_week.geojson", "usgs_all_hour.geojson", "gdacs_events_tc.json", "gdacs_geometry.json",
         "nhc_CurrentStorms.json", "nhc_track.kmz", "nhc_cone.kmz", "nws_active.json", "nws_zone.json", "eonet_storms.json",
     ];
+
+    /// <summary>The prefix of the temporary data folders under %TEMP% (one per offline run, deleted on exit).</summary>
+    public const string TempFolderPrefix = "EarthWatch3D-offline-";
+
+    /// <summary>
+    /// Deletes offline data folders in <paramref name="tempDir"/> last written more than a day before
+    /// <paramref name="nowUtc"/>: left behind when a run was killed. Younger ones may belong to a run still open.
+    /// Returns how many were deleted; failures are logged, never thrown.
+    /// </summary>
+    public static int SweepStaleFolders(string tempDir, DateTime nowUtc, IAppLog log)
+    {
+        int deleted = 0;
+        try
+        {
+            if (!Directory.Exists(tempDir)) return 0;
+            foreach (var dir in Directory.EnumerateDirectories(tempDir, TempFolderPrefix + "*"))
+            {
+                try
+                {
+                    if (nowUtc - Directory.GetLastWriteTimeUtc(dir) <= TimeSpan.FromDays(1)) continue;
+                    Directory.Delete(dir, recursive: true);
+                    deleted++;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    log.Warn($"Could not delete the old offline data folder {dir}", ex);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.Warn("Could not look for old offline data folders", ex);
+        }
+        if (deleted > 0) log.Info($"Deleted {deleted} old offline data folder(s)");
+        return deleted;
+    }
 
     /// <summary>
     /// A handler mapping each feed's URL prefixes to the sample files in <paramref name="dir"/> (read on each request).

@@ -32,6 +32,7 @@ public partial class App : Application
     private EventCacheWriter? _cacheWriter;
     private Timer? _pruneTimer;
     private string? _offlineRoot;
+    private CrashHandler? _crash;
     private bool _shutDown;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -41,10 +42,18 @@ public partial class App : Application
         string logsDir = AppPaths.Default.LogsDir;
         var log = _log = new FileLog(logsDir, new SystemClock());
         log.Info($"EarthWatch3D {AppInfo.Version} starting" + (e.Args.Length > 0 ? " with " + string.Join(" ", e.Args) : ""));
-        // Shown on the UI thread: unobserved task faults arrive on the finalizer thread.
-        new CrashHandler(log, message => Dispatcher.BeginInvoke(() =>
-            MessageBox.Show(message + Environment.NewLine + Environment.NewLine + "Log folder: " + logsDir,
-                "EarthWatch3D", MessageBoxButton.OK, MessageBoxImage.Warning))).Install(this);
+        // Shown at once on the UI thread (after "too many errors" the process ends straight afterwards), otherwise
+        // queued to it: unobserved task faults arrive on the finalizer thread.
+        void ShowCrash(string message) => MessageBox.Show(message + Environment.NewLine + Environment.NewLine + "Log folder: " + logsDir,
+            "EarthWatch3D", MessageBoxButton.OK, MessageBoxImage.Warning);
+        _crash = new CrashHandler(log, message =>
+        {
+            if (Dispatcher.CheckAccess()) ShowCrash(message);
+            else Dispatcher.BeginInvoke(() => ShowCrash(message));
+        });
+        _crash.Install(this);
+        // Offline runs that were killed leave their temporary data folder behind.
+        OfflineSamples.SweepStaleFolders(Path.GetTempPath(), DateTime.UtcNow, log);
 
         var options = LaunchOptions.Parse(e.Args);
         string? samplesDir = options.OfflineSamplesDir is { } dir ? Path.GetFullPath(dir) : null;
@@ -72,7 +81,7 @@ public partial class App : Application
         // cache and saved layer choices are not touched. The log still goes to the usual logs folder.
         var paths = AppPaths.Default;
         if (samplesDir is not null)
-            paths = new AppPaths(_offlineRoot = Path.Combine(Path.GetTempPath(), "EarthWatch3D-offline-" + Guid.NewGuid().ToString("N")));
+            paths = new AppPaths(_offlineRoot = Path.Combine(Path.GetTempPath(), OfflineSamples.TempFolderPrefix + Guid.NewGuid().ToString("N")));
         // The app must still start without its data folders: settings fall back to defaults, the cache to empty,
         // and failed writes are logged (FileLog itself never throws). Logged once the log exists.
         Exception? foldersError = null;
@@ -113,7 +122,11 @@ public partial class App : Application
         _cacheWriter = new EventCacheWriter(store, s => cache.Save(s), log: log);
         _pruneTimer = new Timer(_ => PruneStore(store, log), null, PruneInterval, PruneInterval);
 
-        if (options.DisplayTimeUtc is { } replayAt)
+        // Offline, the readout says SAMPLE instead of LIVE (and the window title says so), so sample data can never be
+        // taken for now. With --display-time the clock itself starts at that time, so the display starts "live" on the
+        // sample clock (SAMPLE 11 Nov 20:00 UTC) rather than in replay.
+        vm.Timeline.IsSampleData = samplesDir is not null;
+        if (samplesDir is null && options.DisplayTimeUtc is { } replayAt)
         {
             vm.Timeline.ReplayAt(replayAt);
             if (vm.DisplayTimeUtc != replayAt)
@@ -121,6 +134,7 @@ public partial class App : Application
         }
         vm.Tick();   // show real values immediately
         var window = new MainWindow(vm, store, zones, log);
+        if (samplesDir is not null) window.Title += " — SAMPLE DATA (offline)";
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         timer.Tick += (_, _) => vm.Tick();   // also drives the globe's per-minute recompose
         window.Closed += (_, _) =>
@@ -204,6 +218,7 @@ public partial class App : Application
         Step("stop the settings saver", () => _settings?.Dispose());
         Step("dispose the HTTP client", () => _http?.Dispose());
         if (_offlineRoot is { } root) Step("delete the offline data folder", () => Directory.Delete(root, recursive: true));
+        Step("write the repeated-error counts", () => _crash?.FlushRepeats());
         _log?.Info("EarthWatch3D exiting");
         _log?.Dispose();
     }

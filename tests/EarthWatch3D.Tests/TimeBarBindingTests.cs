@@ -30,4 +30,27 @@ public class TimeBarBindingTests
             Assert.False(vm.IsLive);
         });
     }
+
+    [Fact]
+    public void SampleDataButtonDoesNotLookLive()
+    {
+        Sta.Run(() =>
+        {
+            var vm = new TimelineViewModel(new FakeClock(new DateTime(2026, 11, 12, 12, 0, 0, DateTimeKind.Utc)));
+            var bar = new TimeBar { DataContext = vm };
+            bar.Measure(new Size(1000, 100));
+            bar.Arrange(new Rect(0, 0, 1000, 100));
+            bar.UpdateLayout();
+            var button = (Button)bar.FindName("GoLiveButton");
+            var liveRed = System.Windows.Media.Color.FromRgb(0xE0, 0x24, 0x5C);
+            Assert.Equal("LIVE", button.Content);
+            Assert.Equal(liveRed, ((System.Windows.Media.SolidColorBrush)button.Background).Color);
+
+            vm.IsSampleData = true;
+            bar.UpdateLayout();
+            Assert.True(vm.IsLive);
+            Assert.Equal("NOW", button.Content);
+            Assert.NotEqual(liveRed, (button.Background as System.Windows.Media.SolidColorBrush)?.Color);
+        });
+    }
 }
