@@ -19,6 +19,15 @@ public class OfflineSamplesTests
     private static string SamplesDir => Path.Combine(AppContext.BaseDirectory, "Samples");
 
     [Fact]
+    public void CloudsAreWaitedForWhenSavedOnOrNamedInLayers()
+    {
+        Assert.False(OfflineSamples.CloudsWanted(false, null));
+        Assert.False(OfflineSamples.CloudsWanted(false, ["plates"]));
+        Assert.True(OfflineSamples.CloudsWanted(false, ["plates", "Clouds"]));
+        Assert.True(OfflineSamples.CloudsWanted(true, null));
+    }
+
+    [Fact]
     public void EverySampleFileExists()
     {
         foreach (var f in OfflineSamples.Files) Assert.True(File.Exists(Path.Combine(SamplesDir, f)), f);

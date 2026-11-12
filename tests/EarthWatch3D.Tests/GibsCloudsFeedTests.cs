@@ -90,6 +90,20 @@ public sealed class GibsCloudsFeedTests : IDisposable
     }
 
     [Fact]
+    public async Task ACorruptCachedImageIsDownloadedAgain()
+    {
+        var file = Path.Combine(_paths.CloudsDir, "viirs_2026-11-10.jpg");
+        await File.WriteAllBytesAsync(file, [1, 2, 3, 4, 5]);
+        var feed = NewFeed();
+        CloudImage? ready = null;
+        feed.ImageReady += (_, i) => ready = i;
+        await feed.RunOnceAsync(CancellationToken.None);
+        Assert.Single(GetMaps);
+        Assert.Equal(await File.ReadAllBytesAsync(SampleJpeg), ready!.Jpeg);
+        Assert.Equal(ready.Jpeg, await File.ReadAllBytesAsync(file));
+    }
+
+    [Fact]
     public async Task DeletesOlderImages()
     {
         var old = Path.Combine(_paths.CloudsDir, "viirs_2026-11-05.jpg");

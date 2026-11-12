@@ -25,6 +25,10 @@ public static class OfflineSamples
         "gibs_viirs_noaa21_truecolor_4096.jpg",
     ];
 
+    /// <summary>True when the clouds layer will be on: saved on, or named by <c>--layers</c> (which is applied after the feeds are set up).</summary>
+    public static bool CloudsWanted(bool savedOn, IReadOnlyList<string>? layers) =>
+        savedOn || layers?.Contains("clouds", StringComparer.OrdinalIgnoreCase) == true;
+
     /// <summary>The prefix of the temporary data folders under %TEMP% (one per offline run, deleted on exit).</summary>
     public const string TempFolderPrefix = "EarthWatch3D-offline-";
 

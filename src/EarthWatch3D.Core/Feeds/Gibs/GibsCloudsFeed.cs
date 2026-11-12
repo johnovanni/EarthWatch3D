@@ -82,10 +82,17 @@ public sealed class GibsCloudsFeed : IEventFeed
         var file = FileFor(date);
         if (File.Exists(file))
         {
-            try { return new CloudImage(date, await File.ReadAllBytesAsync(file, ct).ConfigureAwait(false)); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            try
             {
-                _log.Warn($"Clouds: could not read {file}; downloading it again", ex);
+                var cached = await File.ReadAllBytesAsync(file, ct).ConfigureAwait(false);
+                _decode?.Invoke(cached);   // a damaged file must not wedge the layer for the day
+                return new CloudImage(date, cached);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException
+                                       or InvalidOperationException or ArgumentException)
+            {
+                _log.Warn($"Clouds: {file} is unusable; downloading it again", ex);
+                try { File.Delete(file); } catch (Exception) { }
             }
         }
         var bytes = await _http.GetBytesAsync(RequestUri(date), ct).ConfigureAwait(false);

@@ -406,8 +406,8 @@ public sealed class SceneController
             _composed = Bgra32Image.Create(w, h);
             _bitmap = ImageConversions.CreateBitmap(w, h);
             Recompose();
-            RequestAreas();
-            if (_cloudImage is not null) _ = BuildCloudsAsync();   // one arrived while the base was loading   // composes again once the Areas layer exists
+            RequestAreas();   // composes again once the Areas layer exists
+            if (_cloudImage is not null) _ = BuildCloudsAsync();   // one arrived while the base was loading
         }
         catch (OperationCanceledException) when (_closed) { }   // closed while loading
         catch (Exception ex)

@@ -127,8 +127,9 @@ public partial class App : Application
         Func<Task>? waitForData = null;
         if (samplesDir is not null)
         {
-            // The clouds feed reports only when the layer is on (a skipped run reports nothing).
-            var allOk = AllFeedsOkOnce(scheduler, feeds.Where(f => f != clouds || vm.Layers.ShowClouds).Select(f => f.Name));
+            // The clouds feed reports only when the layer is on (a skipped run reports nothing). --layers is applied later,
+            // so it is read from the options here.
+            var allOk = AllFeedsOkOnce(scheduler, feeds.Where(f => f != clouds || OfflineSamples.CloudsWanted(vm.Layers.ShowClouds, options.Layers)).Select(f => f.Name));
             waitForData = async () => { await allOk; await zones.WhenIdleAsync(); };
         }
 
