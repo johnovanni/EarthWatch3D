@@ -10,13 +10,20 @@ namespace EarthWatch3D.Core.Feeds.Nws;
 
 /// <summary>
 /// NWS zone outlines, downloaded on demand (at most <c>maxConcurrent</c> at a time) and kept on disk for 30 days.
-/// Disk file: ZonesDir/&lt;last URL segment&gt;.json.
+/// Disk file: ZonesDir/&lt;type&gt;_&lt;id&gt;.json. A failed download (an HTTP error, no geometry, a parse error) is not
+/// tried again for 10 min, doubling after each further failure up to 6 h.
 /// </summary>
 public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppLog log, int maxConcurrent = 4)
 {
     private static readonly TimeSpan MaxAge = TimeSpan.FromDays(30);
     private static readonly TimeSpan MissMemory = TimeSpan.FromSeconds(30);
     private readonly ConcurrentDictionary<string, DateTime> _missUntil = new(StringComparer.Ordinal);
+    private static readonly TimeSpan FirstRetry = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan MaxRetry = TimeSpan.FromHours(6);
+    // Failed downloads: how many in a row, and when the zone may be tried again. Cleared by a success.
+    private readonly ConcurrentDictionary<string, (int Failures, DateTime RetryAt)> _failed = new(StringComparer.Ordinal);
+    // Zones whose failure has been logged with its stack trace (only the first failure per zone is).
+    private readonly ConcurrentDictionary<string, byte> _traced = new(StringComparer.Ordinal);
 
     private readonly ConcurrentDictionary<string, IReadOnlyList<GeoPolygon>> _mem = new(StringComparer.Ordinal);
     private readonly HashSet<string> _queued = new(StringComparer.Ordinal);
@@ -116,13 +123,22 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
         done?.TrySetResult();
     }
 
-    /// <summary>Queues the distinct URLs that are neither cached nor already queued. Never blocks.</summary>
+    /// <summary>How long a zone waits after its <paramref name="failures"/>-th failed download in a row: 10 min, doubling, at most 6 h.</summary>
+    public static TimeSpan RetryDelay(int failures)
+    {
+        var minutes = FirstRetry.TotalMinutes * Math.Pow(2, Math.Clamp(failures, 1, 30) - 1);
+        return minutes >= MaxRetry.TotalMinutes ? MaxRetry : TimeSpan.FromMinutes(minutes);
+    }
+
+    /// <summary>Queues the distinct URLs that are neither cached, already queued, nor waiting after a failure. Never blocks.</summary>
     public void Request(IEnumerable<string> zoneUrls)
     {
         var start = new List<string>();
+        var now = clock.UtcNow;
         foreach (var url in zoneUrls.Distinct(StringComparer.Ordinal))
         {
             if (TryGet(url, out _)) continue;
+            if (_failed.TryGetValue(url, out var failed) && now < failed.RetryAt) continue;
             lock (_gate)
             {
                 if (!_queued.Add(url)) continue;
@@ -150,6 +166,7 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
                     var polys = ParseZone(bytes);
                     _mem[url] = polys;
                     _missUntil.TryRemove(url, out _);
+                    _failed.TryRemove(url, out _);
                     Save(url, polys);
                     loaded = true;
                 }
@@ -160,7 +177,14 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
         catch (Exception ex)
         {
             // Background task: nothing may escape as an unobserved exception.
-            log.Warn($"NWS: zone {url} failed; will retry when requested again", ex);
+            var now = clock.UtcNow;
+            var entry = _failed.AddOrUpdate(url, _ => (1, now + RetryDelay(1)),
+                (_, old) => (old.Failures + 1, now + RetryDelay(old.Failures + 1)));
+            var wait = RetryDelay(entry.Failures);
+            if (_traced.TryAdd(url, 0))
+                log.Warn($"NWS: zone {url} failed; next try in {wait.TotalMinutes:0} min at the earliest", ex);
+            else
+                log.Warn($"NWS: zone {url} failed again ({entry.Failures} in a row): {ex.GetType().Name}: {ex.Message}; next try in {wait.TotalMinutes:0} min");
         }
         finally
         {

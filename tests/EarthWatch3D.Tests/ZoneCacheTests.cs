@@ -110,21 +110,83 @@ public sealed class ZoneCacheTests
         Assert.True(zc2.TryGet("https://api.weather.gov/zones/forecast/X", out _));
     }
 
-    [Fact]
-    public async Task FailedDownloadIsLoggedAndCanBeRequestedAgain()
+    /// <summary>Records each warning and whether it carried an exception (and so a stack trace).</summary>
+    private sealed class TraceLog : EarthWatch3D.Core.Logging.IAppLog
     {
-        var handler = new SampleHttpHandler();
+        private readonly object _gate = new();
+        public List<(string Message, bool HasException)> Warnings { get; } = [];
+        public void Info(string m) { }
+        public void Warn(string m, Exception? e = null) { lock (_gate) Warnings.Add((m, e is not null)); }
+        public void Error(string m, Exception? e = null) { lock (_gate) Warnings.Add((m, e is not null)); }
+    }
+
+    [Fact]
+    public async Task FailedDownloadBacksOffAndLogsTheTraceOnce()
+    {
+        var handler = new SampleHttpHandler();   // nothing mapped: every zone is a 404
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
-        var log = new RecordingLog();
+        var log = new TraceLog();
         using var http = new FeedHttp(handler);
         var zc = new ZoneCache(http, TempPaths(), clock, log);
-        zc.Request([Pzz]);
-        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
-        Assert.Single(log.Warnings);
-        Assert.False(zc.TryGet(Pzz, out _));
-        zc.Request([Pzz]);
-        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+
+        async Task RequestAt(TimeSpan sinceStart)
+        {
+            clock.UtcNow = new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc) + sinceStart;
+            zc.Request([Pzz]);
+            await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        }
+
+        await RequestAt(TimeSpan.Zero);
+        Assert.Single(handler.Requests);
+        Assert.True(Assert.Single(log.Warnings).HasException);   // the first failure logs the stack trace
+
+        await RequestAt(TimeSpan.FromMinutes(9));                 // within the 10 min backoff: not retried
+        Assert.Single(handler.Requests);
+
+        await RequestAt(TimeSpan.FromMinutes(10));                // retried; fails again: one line, no trace
         Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(2, log.Warnings.Count);
+        Assert.False(log.Warnings[1].HasException);
+
+        await RequestAt(TimeSpan.FromMinutes(29));                // the backoff doubled to 20 min (due at 30)
+        Assert.Equal(2, handler.Requests.Count);
+        await RequestAt(TimeSpan.FromMinutes(30));
+        Assert.Equal(3, handler.Requests.Count);
+
+        // 40, 80, 160, 320 min, then capped at 6 h.
+        var due = TimeSpan.FromMinutes(30);
+        foreach (var backoff in new[] { 40, 80, 160, 320, 360, 360 })
+        {
+            due += TimeSpan.FromMinutes(backoff);
+            int before = handler.Requests.Count;
+            await RequestAt(due - TimeSpan.FromSeconds(1));
+            Assert.Equal(before, handler.Requests.Count);
+            await RequestAt(due);
+            Assert.Equal(before + 1, handler.Requests.Count);
+        }
+        Assert.Equal(1, log.Warnings.Count(w => w.HasException));
+        Assert.False(zc.TryGet(Pzz, out _));
+    }
+
+    [Fact]
+    public async Task ZoneWithoutGeometryIsAFailureToo()
+    {
+        var handler = new SampleHttpHandler();
+        handler.MapText(Pzz, """{"id":"x","geometry":null}""");
+        var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
+        using var http = new FeedHttp(handler);
+        var zc = new ZoneCache(http, TempPaths(), clock, new RecordingLog());
+        zc.Request([Pzz]);
+        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        zc.Request([Pzz]);
+        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Single(handler.Requests);
+
+        handler.Map(Pzz, Sample("nws_zone.json"));   // fixed upstream: loads once the backoff has passed
+        clock.UtcNow = clock.UtcNow.AddMinutes(10);
+        zc.Request([Pzz]);
+        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(zc.TryGet(Pzz, out _));
     }
 
     private sealed class DelayHandler(HttpMessageHandler inner) : DelegatingHandler(inner)
