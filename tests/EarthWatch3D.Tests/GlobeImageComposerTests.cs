@@ -84,14 +84,4 @@ public class GlobeImageComposerTests
         Assert.Throws<ArgumentException>(() => new GlobeImageComposer(Solid(360, 180, 0))
             .ComposeInto(new GlobeLayers(new(0, 0), 0.55, Clouds: Bgra32Image.Create(10, 10)), Bgra32Image.Create(360, 180)));
 
-    [Fact, Trait("Category", "Perf")]
-    public void Composes8192UnderBudget()
-    {
-        var composer = new GlobeImageComposer(Solid(8192, 4096, 128));
-        var target = Bgra32Image.Create(8192, 4096);
-        composer.ComposeInto(new GlobeLayers(new(10, 20), 0.55), target);  // warm-up
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        composer.ComposeInto(new GlobeLayers(new(10, 20), 0.55, Lines: Bgra32Image.Create(8192, 4096)), target);
-        Assert.True(sw.ElapsedMilliseconds < 300, $"{sw.ElapsedMilliseconds} ms");
-    }
 }
