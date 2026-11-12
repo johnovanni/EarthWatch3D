@@ -41,16 +41,15 @@ public sealed class StaWorkerTests
     {
         var worker = new StaWorker("test-sta");
         var thread = await worker.InvokeAsync(() => Thread.CurrentThread);
-        // Work queued behind a busy item when the worker is shut down is cancelled, not left hanging.
+        // Work queued behind a busy item when the worker is shut down is cancelled, not left hanging. The busy item
+        // is held for 1 s, so Dispose (called straight away on this thread) is requested while it still runs.
         using var started = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
         var busy = worker.InvokeAsync(() => { started.Set(); release.Wait(TimeSpan.FromSeconds(10)); return 1; });
         var queued = worker.InvokeAsync(() => 2);
-        Assert.True(started.Wait(TimeSpan.FromSeconds(10)));   // the item running at shutdown finishes; queued ones don't
-        var dispose = Task.Run(worker.Dispose);
-        await Task.Delay(50);
-        release.Set();
-        await dispose.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(started.Wait(TimeSpan.FromSeconds(10)));
+        _ = Task.Delay(1000).ContinueWith(_ => release.Set(), TaskScheduler.Default);
+        worker.Dispose();   // returns once the busy item has finished and the dispatcher has shut down
         Assert.Equal(1, await busy);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queued.WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.False(thread.IsAlive);
