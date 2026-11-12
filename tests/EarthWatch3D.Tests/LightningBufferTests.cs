@@ -5,6 +5,7 @@ namespace EarthWatch3D.Tests;
 public class LightningBufferTests
 {
     private static readonly DateTime T0 = new(2026, 11, 12, 12, 0, 0, DateTimeKind.Utc);
+    private static Task Long(Action a) => Task.Factory.StartNew(a, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
     private static LightningFlash F(DateTime t, double lat = 10, double lon = -80, LightningSensor s = LightningSensor.GoesEast) => new(t, lat, lon, 1e-14, s);
 
     [Fact]
@@ -35,9 +36,24 @@ public class LightningBufferTests
         Assert.Equal(1000, b.Count);
         var all = b.Between(T0, T0.AddDays(1));
         Assert.Equal(T0.AddSeconds(500), all[0].TimeUtc);
-        // a dropped flash's key is released, so it can be added again (and is then the oldest, dropped at once by the cap)
-        Assert.Equal(1, b.Add(new[] { F(T0) }));
+        // a dropped flash's key is released, so it can be added again; being the oldest it is evicted on arrival and is not new
+        Assert.Equal(0, b.Add(new[] { F(T0) }));
         Assert.Equal(1000, b.Count);
+    }
+
+    [Fact]
+    public void FlashEvictedOnArrivalIsNotNewAndRaisesNoChanged()
+    {
+        var b = new LightningBuffer(3);
+        b.Add(new[] { F(T0.AddSeconds(1)), F(T0.AddSeconds(2)), F(T0.AddSeconds(3)) });
+        int n = 0;
+        b.Changed += (_, _) => n++;
+        Assert.Equal(0, b.Add(new[] { F(T0) }));
+        Assert.Equal(0, n);
+        Assert.Equal(3, b.Count);
+        // a batch bigger than the cap counts only what is still held
+        Assert.Equal(3, b.Add(Enumerable.Range(10, 5).Select(i => F(T0.AddSeconds(i)))));
+        Assert.Equal(1, n);
     }
 
     [Fact]
@@ -103,7 +119,12 @@ public class LightningBufferTests
         var b = new LightningBuffer();
         int seen = -1;
         // The handler asks another thread to read the buffer and waits for it: that deadlocks if Add still holds the lock.
-        b.Changed += (_, _) => seen = Task.Run(() => b.Count).Wait(2000) ? 1 : 0;
+        b.Changed += (_, _) =>
+        {
+            var t = new Thread(() => _ = b.Count) { IsBackground = true };
+            t.Start();
+            seen = t.Join(10_000) ? 1 : 0;
+        };
         b.Add(new[] { F(T0) });
         Assert.Equal(1, seen);
     }
@@ -114,7 +135,7 @@ public class LightningBufferTests
         var b = new LightningBuffer(5000);
         using var cts = new CancellationTokenSource();
         var errors = new List<Exception>();
-        var readers = Enumerable.Range(0, 3).Select(r0 => Task.Run(() =>
+        var readers = Enumerable.Range(0, 3).Select(r0 => Long(() =>
         {
             try
             {
@@ -128,7 +149,7 @@ public class LightningBufferTests
             }
             catch (Exception e) { lock (errors) errors.Add(e); }
         })).ToArray();
-        var writers = Enumerable.Range(0, 2).Select(w => Task.Run(() =>
+        var writers = Enumerable.Range(0, 2).Select(w => Long(() =>
         {
             for (int i = 0; i < 4000; i++)
             {

@@ -21,21 +21,24 @@ public sealed class LightningBuffer(int capacity = 100_000)
     private static (LightningSensor, long, long, long) KeyOf(in LightningFlash f) =>
         (f.Sensor, f.TimeUtc.Ticks / TimeSpan.TicksPerMillisecond, (long)Math.Round(f.Lat * 1e4), (long)Math.Round(f.Lon * 1e4));
 
-    /// <summary>Adds the flashes not already held and returns how many were new.</summary>
+    /// <summary>Adds the flashes not already held and returns how many were new and are still held (a flash that the cap evicts at once does not count).</summary>
     public int Add(IEnumerable<LightningFlash> flashes)
     {
         ArgumentNullException.ThrowIfNull(flashes);
         int added = 0;
+        var batch = new HashSet<(LightningSensor, long, long, long)>();
         lock (_lock)
         {
             foreach (var f in flashes)
             {
-                if (!_keys.Add(KeyOf(f))) continue;
+                var key = KeyOf(f);
+                if (!_keys.Add(key)) continue;
+                batch.Add(key);
                 _flashes.Insert(UpperBound(f.TimeUtc), f);   // mostly at the end
                 added++;
             }
             int excess = _flashes.Count - _capacity;
-            if (excess > 0) RemoveFront(excess);
+            if (excess > 0) added -= RemoveFront(excess, batch);
         }
         if (added > 0) Changed?.Invoke(this, EventArgs.Empty);
         return added;
@@ -70,11 +73,19 @@ public sealed class LightningBuffer(int capacity = 100_000)
         }
     }
 
-    private void RemoveFront(int n)
+    /// <summary>Removes the n oldest flashes; returns how many of them were in <paramref name="batch"/>.</summary>
+    private int RemoveFront(int n, HashSet<(LightningSensor, long, long, long)>? batch = null)
     {
-        if (n <= 0) return;
-        for (int i = 0; i < n; i++) _keys.Remove(KeyOf(_flashes[i]));
+        if (n <= 0) return 0;
+        int fromBatch = 0;
+        for (int i = 0; i < n; i++)
+        {
+            var k = KeyOf(_flashes[i]);
+            _keys.Remove(k);
+            if (batch is not null && batch.Contains(k)) fromBatch++;
+        }
         _flashes.RemoveRange(0, n);
+        return fromBatch;
     }
 
     /// <summary>Index of the first flash with time >= t.</summary>

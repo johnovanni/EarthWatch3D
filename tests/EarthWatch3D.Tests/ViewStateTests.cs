@@ -34,13 +34,15 @@ public class ViewStateTests
         Assert.Equal(new GeoPosition(12.5, -99.25), v.CameraSubPoint);
     }
 
+    private static Task LongTask(Action a) => Task.Factory.StartNew(a, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
     [Fact]
     public async Task CameraSubPointIsNeverTorn()
     {
         var v = new ViewState();
         bool torn = false;
-        var writer = Task.Run(() => { for (int i = 0; i < 300_000; i++) v.CameraSubPoint = (i & 1) == 0 ? new GeoPosition(1, 1) : new GeoPosition(2, 2); });
-        var reader = Task.Run(() =>
+        var writer = LongTask(() => { for (int i = 0; i < 300_000; i++) v.CameraSubPoint = (i & 1) == 0 ? new GeoPosition(1, 1) : new GeoPosition(2, 2); });
+        var reader = LongTask(() =>
         {
             for (int i = 0; i < 300_000; i++) { var p = v.CameraSubPoint; if (p.LatitudeDeg != p.LongitudeDeg && p.LatitudeDeg != 0) torn = true; }
         });
