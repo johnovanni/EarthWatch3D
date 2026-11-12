@@ -267,6 +267,9 @@ The endpoints and fields below were verified against the live services on 2026-1
   layers, which leave Europe, Africa and the western Indian Ocean uncovered). The cloud layer is therefore
   `VIIRS_NOAA21_CorrectedReflectance_TrueColor`, requested for the **previous UTC day** (the current day is
   partial), as one WMS `GetMap` image (EPSG:4326) at 4096×2048, used with brightness-keyed alpha.
+- **Keying rule.** The true-colour image also shows land and desert, so the alpha is keyed on brightness above the Blue Marble base, not on brightness alone: `a = clamp((Lv − Lb − 0.06) / 0.30, 0, 1) × 0.9` with L = (0.299 R + 0.587 G + 0.114 B) / 255, and the colour is the VIIRS pixel. Land that looks as it does in the base stays clear, and black gaps and polar night (Lv below Lb) are transparent.
+- **Partial days.** If more than 5 percent of the pixels between 60°N and 60°S are black (L < 0.02), the day is partial: the day before is used and the previous day is tried again on the next hourly run. The band stops at 60° because poleward of about 66° the image is black in polar night in winter (the 2026-11-10 sample is 5.9 percent black between 70°N and 70°S, under 1 percent between 60°N and 60°S).
+- The feed checks hourly, only while the layer is on (it is off by default), and keeps the newest image in `cache\clouds\viirs_yyyy-MM-dd.jpg`; a cached file for the date means no download. In replay the clouds stay as they are (one daily image) and the legend says which day.
 - It refreshes once a day. It has thin gaps between satellite passes. The cloud image is optional and hidden
   while missing.
 

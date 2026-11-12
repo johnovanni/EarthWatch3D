@@ -34,6 +34,13 @@ internal static class AtomicFile
     /// antivirus scan holds the destination). Returns false, leaving no .tmp behind, if it still fails.
     /// </summary>
     public static bool TryWriteAllText(string file, string text, out Exception? error)
+        => TryWrite(file, tmp => File.WriteAllText(tmp, text), out error);
+
+    /// <summary>Like <see cref="TryWriteAllText"/>, for bytes.</summary>
+    public static bool TryWriteAllBytes(string file, byte[] bytes, out Exception? error)
+        => TryWrite(file, tmp => File.WriteAllBytes(tmp, bytes), out error);
+
+    private static bool TryWrite(string file, Action<string> writeTemp, out Exception? error)
     {
         error = null;
         var tmp = file + ".tmp";
@@ -41,7 +48,7 @@ internal static class AtomicFile
         {
             var dir = Path.GetDirectoryName(file);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(tmp, text);
+            writeTemp(tmp);
             for (var i = 1; ; i++)
             {
                 try

@@ -196,6 +196,18 @@
                 </ToggleButton.ToolTip>
             </ToggleButton>
 
+            <ToggleButton Style="{StaticResource LayerButton}" Tag="☁" Content="Clouds"
+                          IsChecked="{Binding Layers.ShowClouds}">
+                <ToggleButton.ToolTip>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource LegendTitle}" Text="Clouds (NASA GIBS, VIIRS)"/>
+                        <TextBlock Text="One true-colour satellite image of the previous day." Foreground="#C8CDD8"/>
+                        <TextBlock Style="{StaticResource LegendNote}" Text="{Binding Layers.CloudsLegend}"/>
+                        <TextBlock Style="{StaticResource LegendNote}" Text="Not live and unchanged in replay. Off by default: about 2 MB a day."/>
+                    </StackPanel>
+                </ToggleButton.ToolTip>
+            </ToggleButton>
+
             <ToggleButton Style="{StaticResource LayerButton}" Tag="〰" Content="Coastlines"
                           IsChecked="{Binding Layers.ShowCoastlines}">
                 <ToggleButton.ToolTip>

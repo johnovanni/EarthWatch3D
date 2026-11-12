@@ -14,7 +14,7 @@ namespace EarthWatch3D.App.Diagnostics;
 /// cache and settings; <c>--display-time &lt;ISO UTC&gt;</c> starts in replay at that time;
 /// <c>--look-at &lt;lat,lon&gt;</c> turns the camera to that point once the globe is shown;
 /// <c>--layers &lt;list&gt;</c> switches the named layers on for this run only, without saving (comma list of
-/// quakes, cyclones, alerts, eonet, coastlines, plates, lightning; for example <c>--layers plates</c>).
+/// quakes, cyclones, alerts, eonet, coastlines, plates, lightning, clouds; for example <c>--layers plates</c>).
 /// Unknown arguments are ignored. The older options (snapshot, delay) also ignore a missing or bad value; the newer
 /// ones report it in <see cref="Error"/>, one line per problem.
 /// </summary>
@@ -24,7 +24,7 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
                                    IReadOnlyList<string>? Layers = null)
 {
     public const int DefaultDelayMs = 1500;
-    public static readonly string[] LayerNames = ["quakes", "cyclones", "alerts", "eonet", "coastlines", "plates", "lightning"];
+    public static readonly string[] LayerNames = ["quakes", "cyclones", "alerts", "eonet", "coastlines", "plates", "lightning", "clouds"];
     public const string DisplayTimeExample = "2026-11-11T20:00:00Z";
 
     private static readonly string[] UtcFormats =

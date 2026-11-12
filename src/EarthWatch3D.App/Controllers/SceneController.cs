@@ -13,6 +13,7 @@ using AstroCore.Earth;
 using EarthWatch3D.App.Rendering;
 using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.Core.Events;
+using EarthWatch3D.Core.Feeds.Gibs;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Globe;
@@ -82,6 +83,9 @@ public sealed class SceneController
     private readonly LazyLayer<SparseOverlay> _plates;   // plate boundaries, rasterized the first time they are shown
     private SparseOverlay? _linesAndPlates; // the two merged, plates on top
     private Bgra32Image? _composed;
+    private CloudImage? _cloudImage;        // the newest daily image received (UI thread)
+    private CloudImage? _cloudsTried;       // the image whose layer was last built (or failed to build)
+    private Bgra32Image? _clouds;           // its cloud layer, built against the base once both exist
     private WriteableBitmap? _bitmap;
     private bool _composing, _recomposePending, _closed;
     // The Areas layer (alert zones, cones, wind bands): planned on the UI thread; a new immutable image is rasterized
@@ -201,7 +205,7 @@ public sealed class SceneController
     /// True while a compose or an Areas rebuild is running or queued, or a store, zone or display-time change has not
     /// yet been worked into the visible events. The diagnostics wait for this to clear before a snapshot.
     /// </summary>
-    internal bool IsBusy => _composing || _recomposePending || _areasRunning || _areasPending || _eventsDirty
+    internal bool IsBusy => (_cloudImage is not null && !ReferenceEquals(_cloudImage, _cloudsTried)) || _composing || _recomposePending || _areasRunning || _areasPending || _eventsDirty
                             || Volatile.Read(ref _storeChangePending) != 0 || Volatile.Read(ref _zonesChangePending) != 0;
 
     /// <summary>The event store the scene will draw from.</summary>
@@ -248,7 +252,8 @@ public sealed class SceneController
                 var lineLayer = await GetLinesLayerAsync(_vm.Layers.ShowCoastlines, _vm.Layers.ShowPlates);
                 if (_closed) return;
                 var layers = new GlobeLayers(subSolar, display.NightStrength, Areas: _areas,
-                    SparseLines: lineLayer, DrawTerminator: display.ShowTerminator);
+                    SparseLines: lineLayer, DrawTerminator: display.ShowTerminator,
+                    Clouds: _vm.Layers.ShowClouds ? _clouds : null);
                 var composer = _composer!;
                 var target = _composed!;
                 var plain = _plain!;
@@ -312,6 +317,7 @@ public sealed class SceneController
     private void OnDisplaySettingChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is not (nameof(LayersViewModel.ShowCoastlines) or nameof(LayersViewModel.ShowPlates)
+                                   or nameof(LayersViewModel.ShowClouds)
                                    or nameof(DisplayOptionsViewModel.NightStrength)
                                    or nameof(DisplayOptionsViewModel.ShowTerminator))) return;
         // Switching plates off is the way to retry a plate load that failed (it is not retried on every compose).
@@ -400,7 +406,8 @@ public sealed class SceneController
             _composed = Bgra32Image.Create(w, h);
             _bitmap = ImageConversions.CreateBitmap(w, h);
             Recompose();
-            RequestAreas();   // composes again once the Areas layer exists
+            RequestAreas();
+            if (_cloudImage is not null) _ = BuildCloudsAsync();   // one arrived while the base was loading   // composes again once the Areas layer exists
         }
         catch (OperationCanceledException) when (_closed) { }   // closed while loading
         catch (Exception ex)
@@ -408,6 +415,43 @@ public sealed class SceneController
             _log.Error("Globe load failed", ex);
             _firstCompose.TrySetException(ex);
             if (!_closed) MessageBox.Show(_window, ex.Message, "EarthWatch3D", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// A daily cloud image has arrived (UI thread). Decoded and keyed against the base on the STA worker, then the globe
+    /// is recomposed. Clouds are drawn only while the layer is on; the built layer is kept for when it is switched on again.
+    /// </summary>
+    public void SetCloudImage(CloudImage image)
+    {
+        _cloudImage = image;
+        if (_plain is not null) _ = BuildCloudsAsync();   // otherwise OnLoaded does it once the base exists
+    }
+
+    private async Task BuildCloudsAsync()
+    {
+        var image = _cloudImage;
+        var baseImage = _plain;
+        if (image is null || baseImage is null || _closed) return;
+        try
+        {
+            var clouds = await _sta.InvokeAsync(() =>
+            {
+                using var ms = new MemoryStream(image.Jpeg);
+                return CloudLayer.Build(ImageConversions.DecodeToBgra32(ms, baseImage.Width), baseImage);
+            });
+            if (_closed || !ReferenceEquals(image, _cloudImage)) return;   // closed, or a newer image is on its way
+            _clouds = clouds;
+            _cloudsTried = image;
+            _vm.Layers.CloudsLegend = $"Image of {image.DateUtc:d MMM yyyy} (UTC day), VIIRS NOAA-21.";
+            _settingsDirty = true;
+            Recompose();
+        }
+        catch (OperationCanceledException) when (_closed) { }
+        catch (Exception ex)
+        {
+            _log.Warn("The cloud image could not be used", ex);   // the layer stays as it was
+            if (ReferenceEquals(image, _cloudImage)) _cloudsTried = image;
         }
     }
 

@@ -15,6 +15,8 @@ public sealed record AppSettings
     public bool ShowPlates { get; init; } = false;
     /// <summary>Lightning flashes (live only), on by default.</summary>
     public bool ShowLightning { get; init; } = true;
+    /// <summary>The daily cloud image (NASA GIBS), off by default: it costs a 2 MB download a day.</summary>
+    public bool ShowClouds { get; init; } = false;
     /// <summary>How many minutes of lightning stay on the globe: 5, 10, 15, 30 or 60.</summary>
     public int LightningWindowMinutes { get; init; } = 15;
     /// <summary>Minimum earthquake magnitude; NaN means "All".</summary>

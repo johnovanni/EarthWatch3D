@@ -8,10 +8,12 @@ using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Eonet;
 using EarthWatch3D.Core.Feeds.Gdacs;
+using EarthWatch3D.Core.Feeds.Gibs;
 using EarthWatch3D.Core.Feeds.Nhc;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Feeds.Usgs;
 using EarthWatch3D.Core.Geo;
+using EarthWatch3D.Core.Globe;
 using EarthWatch3D.Core.Lightning;
 using EarthWatch3D.Core.Logging;
 using EarthWatch3D.Core.Storage;
@@ -101,6 +103,13 @@ public partial class App : Application
         var vm = new MainViewModel(clock, _settings, Dispatcher);
         var http = _http = samplesDir is null ? new FeedHttp() : new FeedHttp(OfflineSamples.CreateHandler(samplesDir));
         var zones = new ZoneCache(http, paths, wall, log);
+        // The feed runs on a pool thread, so it reads the toggle from a field that PropertyChanged keeps up to date.
+        bool wantClouds = vm.Layers.ShowClouds;
+        vm.Layers.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(LayersViewModel.ShowClouds)) Volatile.Write(ref wantClouds, vm.Layers.ShowClouds);
+        };
+        var clouds = new GibsCloudsFeed(http, paths, wall, () => Volatile.Read(ref wantClouds), log, DecodeForBlackCheck);
         IEventFeed[] feeds =
         [
             new UsgsFeed(http, store, wall, log),
@@ -108,6 +117,7 @@ public partial class App : Application
             new NhcFeed(http, store, log),
             new NwsFeed(http, store, zones, () => vm.CurrentFilter.AlertTypes, wall, log),
             new EonetFeed(http, store, log),
+            clouds,
         ];
         var scheduler = _scheduler = new FeedScheduler(feeds, wall, log);
         foreach (var status in scheduler.Statuses) vm.Status.Apply(status);   // grey dots until each first run
@@ -117,7 +127,8 @@ public partial class App : Application
         Func<Task>? waitForData = null;
         if (samplesDir is not null)
         {
-            var allOk = AllFeedsOkOnce(scheduler, feeds.Select(f => f.Name));
+            // The clouds feed reports only when the layer is on (a skipped run reports nothing).
+            var allOk = AllFeedsOkOnce(scheduler, feeds.Where(f => f != clouds || vm.Layers.ShowClouds).Select(f => f.Name));
             waitForData = async () => { await allOk; await zones.WhenIdleAsync(); };
         }
 
@@ -144,6 +155,7 @@ public partial class App : Application
                 log.Warn($"--display-time {replayAt:yyyy-MM-ddTHH:mm:ssZ} is outside the last 7 days; showing {vm.DisplayTimeUtc:yyyy-MM-ddTHH:mm:ssZ}");
         }
         if (options.Layers is { } extraLayers) vm.Layers.TurnOnForThisRun(extraLayers);   // --layers: not saved
+        Volatile.Write(ref wantClouds, vm.Layers.ShowClouds);
         vm.Tick();   // show real values immediately
         // The lightning feeds (a later task) fill the buffer; the scene reports the camera's sub-point in the view state.
         var lightningBuffer = new LightningBuffer();
@@ -151,6 +163,8 @@ public partial class App : Application
         var view = new ViewState();
         var window = new MainWindow(vm, store, zones, lightning, view, log);
         if (samplesDir is not null) window.Title += " — SAMPLE DATA (offline)";
+        // Raised on the feed's thread; the scene is used on the UI thread.
+        clouds.ImageReady += (_, image) => Dispatcher.BeginInvoke(() => window.Scene.SetCloudImage(image));
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         timer.Tick += (_, _) => vm.Tick();   // also drives the globe's per-minute recompose
         window.Closed += (_, _) =>
@@ -173,6 +187,10 @@ public partial class App : Application
         ShutDownServices();
         base.OnExit(e);
     }
+
+    // A small copy is enough to count black pixels.
+    private static Bgra32Image DecodeForBlackCheck(byte[] jpeg) =>
+        Rendering.ImageConversions.DecodeToBgra32(new MemoryStream(jpeg), 1024);
 
     /// <summary>Completes once every named feed has reported <see cref="FeedState.Ok"/> at least once.</summary>
     private static Task AllFeedsOkOnce(FeedScheduler scheduler, IEnumerable<string> names)

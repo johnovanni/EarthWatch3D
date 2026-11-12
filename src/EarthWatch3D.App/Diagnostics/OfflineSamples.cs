@@ -1,5 +1,6 @@
 using System.IO;
 using EarthWatch3D.Core.Feeds;
+using EarthWatch3D.Core.Feeds.Gibs;
 using EarthWatch3D.Core.Logging;
 
 namespace EarthWatch3D.App.Diagnostics;
@@ -21,6 +22,7 @@ public static class OfflineSamples
     [
         "usgs_all_week.geojson", "usgs_all_hour.geojson", "gdacs_events_tc.json", "gdacs_geometry.json",
         "nhc_CurrentStorms.json", "nhc_track.kmz", "nhc_cone.kmz", "nws_active.json", "nws_zone.json", "eonet_storms.json",
+        "gibs_viirs_noaa21_truecolor_4096.jpg",
     ];
 
     /// <summary>The prefix of the temporary data folders under %TEMP% (one per offline run, deleted on exit).</summary>
@@ -90,6 +92,9 @@ public static class OfflineSamples
         Map("https://api.weather.gov/zones/", "nws_zone.json");
 
         Map("https://eonet.gsfc.nasa.gov/api/v3/events", "eonet_storms.json");
+
+        // Any GetMap gets the sample image (TIME=2026-11-10), whatever date was asked for.
+        Map(GibsCloudsFeed.UrlPrefix, "gibs_viirs_noaa21_truecolor_4096.jpg");
         return h;
     }
 }

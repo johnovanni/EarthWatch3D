@@ -4,6 +4,7 @@ using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Eonet;
 using EarthWatch3D.Core.Feeds.Gdacs;
+using EarthWatch3D.Core.Feeds.Gibs;
 using EarthWatch3D.Core.Feeds.Nhc;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Feeds.Usgs;
@@ -43,6 +44,7 @@ public class OfflineSamplesTests
                 new NhcFeed(http, store, log),
                 new NwsFeed(http, store, zones, () => AlertTypes.Warnings, clock, log),
                 new EonetFeed(http, store, log),
+                new GibsCloudsFeed(http, paths, clock, () => true, log),
             ];
             foreach (var f in feeds) await f.RunOnceAsync(CancellationToken.None);   // throws if a request 404s
             await zones.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(20));

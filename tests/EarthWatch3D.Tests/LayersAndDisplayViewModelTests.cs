@@ -158,6 +158,24 @@ public class LayersAndDisplayViewModelTests
     }
 
     [Fact]
+    public void CloudsAreOffByDefaultAndTheToggleIsSaved()
+    {
+        var store = new FakeSettingsStore();
+        var layers = new LayersViewModel(store);
+        Assert.False(layers.ShowClouds);
+        layers.ShowClouds = true;
+        Assert.True(store.Saved[^1].ShowClouds);
+        Assert.True(new LayersViewModel(store).ShowClouds);
+
+        var other = new FakeSettingsStore();
+        var run = new LayersViewModel(other);
+        run.TurnOnForThisRun(["clouds"]);
+        Assert.True(run.ShowClouds);
+        run.ShowCoastlines = false;   // an unrelated save must not persist the run-only layer
+        Assert.False(other.Saved[^1].ShowClouds);
+    }
+
+    [Fact]
     public void LightningTurnedOnForThisRunIsNotSaved()
     {
         var store = new FakeSettingsStore(new AppSettings { ShowLightning = false });
