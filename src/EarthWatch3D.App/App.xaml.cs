@@ -17,8 +17,8 @@ using EarthWatch3D.Core.Time;
 namespace EarthWatch3D.App;
 
 /// <summary>
-/// Composition root: data folders, log, settings, event store and cache, the feeds and their scheduler, the view
-/// models and the window. Shuts them down in order when the main window closes or the app exits.
+/// Composition root: data folders, log, crash handler, settings, event store and cache, the feeds and their scheduler,
+/// the view models and the window. Shuts them down in order when the main window closes or the app exits.
 /// </summary>
 public partial class App : Application
 {
@@ -50,6 +50,10 @@ public partial class App : Application
         catch (Exception ex) { foldersError = ex; }
         var log = _log = new FileLog(paths.LogsDir, wall);
         log.Info($"EarthWatch3D {AppInfo.Version} starting");
+        // Shown on the UI thread: unobserved task faults arrive on the finalizer thread.
+        new CrashHandler(log, message => Dispatcher.BeginInvoke(() =>
+            MessageBox.Show(message + Environment.NewLine + Environment.NewLine + "Log folder: " + paths.LogsDir,
+                "EarthWatch3D", MessageBoxButton.OK, MessageBoxImage.Warning))).Install(this);
         if (foldersError is not null) log.Error($"Could not create the data folders under {paths.Root}", foldersError);
         // Saves are debounced and written off the UI thread (a failed write can sleep while it retries).
         _settings = new SettingsSaver(new SettingsStore(paths, log), log: log);
@@ -76,7 +80,7 @@ public partial class App : Application
         _pruneTimer = new Timer(_ => PruneStore(store, log), null, PruneInterval, PruneInterval);
 
         vm.Tick();   // show real values immediately
-        var window = new MainWindow(vm, store, zones);
+        var window = new MainWindow(vm, store, zones, log);
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         timer.Tick += (_, _) => vm.Tick();   // also drives the globe's per-minute recompose
         window.Closed += (_, _) =>

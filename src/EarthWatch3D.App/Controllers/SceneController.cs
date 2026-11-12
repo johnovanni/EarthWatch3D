@@ -16,6 +16,7 @@ using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Globe;
+using EarthWatch3D.Core.Logging;
 using EarthWatch3D.Core.Time;
 using HelixToolkit.Wpf;
 using Microsoft.Win32;
@@ -48,6 +49,7 @@ public sealed class SceneController
     private readonly FrameworkElement _card;
     private readonly MainViewModel _vm;
     private readonly Window _window;
+    private readonly IAppLog _log;
     private readonly CameraAnimator _animator;
     private readonly SunMoonOverlay _overlay;
     private readonly SunMoonGlobeMarkers _markers;
@@ -69,8 +71,10 @@ public sealed class SceneController
     private readonly System.Windows.Threading.DispatcherTimer _trailing = new();
     private readonly TaskCompletionSource _firstCompose = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    // Kept between composes: the composer holds the base image; the target and bitmap are reused.
+    // Kept between composes: the composer holds the base image; the target and bitmap are reused. The base image is
+    // also kept here (no extra copy) as the fallback shown when a compose fails.
     private GlobeImageComposer? _composer;
+    private Bgra32Image? _plain;
     private SparseOverlay? _lines;
     private Bgra32Image? _composed;
     private WriteableBitmap? _bitmap;
@@ -103,9 +107,15 @@ public sealed class SceneController
     /// <param name="window">The window hosting the viewport: its Loaded, Closed, StateChanged and PreviewKeyDown events drive the scene.</param>
     /// <param name="store">The events to draw.</param>
     /// <param name="zones">NWS zone shapes for alerts that name zones only (used from Task 15 on).</param>
+    /// <param name="log">Where compose and load failures are written (none if null).</param>
     public SceneController(HelixViewport3D viewport, Canvas overlay, FrameworkElement card, MainViewModel vm, Window window,
-                           EventStore store, ZoneCache zones)
+                           EventStore store, ZoneCache zones, IAppLog? log = null)
     {
+        _log = log ?? new NullLog();
+        // Nothing need await the first compose (only the diagnostics do), so observe a fault here: otherwise it would
+        // reach TaskScheduler.UnobservedTaskException and the crash handler would show a second message for it.
+        _firstCompose.Task.ContinueWith(static t => _ = t.Exception, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         Store = store ?? throw new ArgumentNullException(nameof(store));
         Zones = zones ?? throw new ArgumentNullException(nameof(zones));
         _viewport = viewport ?? throw new ArgumentNullException(nameof(viewport));
@@ -201,10 +211,12 @@ public sealed class SceneController
                     SparseLines: _vm.Layers.ShowCoastlines ? _lines : null, DrawTerminator: display.ShowTerminator);
                 var composer = _composer!;
                 var target = _composed!;
+                var plain = _plain!;
+                var log = _log;
 #if PERF_LOG
                 var sw = Stopwatch.StartNew();
 #endif
-                await Task.Run(() => composer.ComposeInto(layers, target));
+                await Task.Run(() => ComposeOrPlain(composer, layers, target, plain, log));
 #if PERF_LOG
                 long composeMs = sw.ElapsedMilliseconds;
 #endif
@@ -221,10 +233,31 @@ public sealed class SceneController
         }
         catch (Exception ex)
         {
-            Trace.TraceError($"Globe compose failed: {ex}");
+            // ComposeOrPlain already handles a failed compose; this is anything else (copying to the bitmap, say).
+            _log.Error("Globe image could not be shown", ex);
             _firstCompose.TrySetException(ex);
         }
         finally { _composing = false; }
+    }
+
+    /// <summary>
+    /// Composes <paramref name="layers"/> into <paramref name="target"/>. If that throws (low memory, for example), logs it,
+    /// fills <paramref name="target"/> with <paramref name="plain"/>, the base image with no shading (spec section 11), and
+    /// returns false. The schedule was marked before the compose, so the next scheduled compose (within a minute) retries.
+    /// </summary>
+    public static bool ComposeOrPlain(GlobeImageComposer composer, GlobeLayers layers, Bgra32Image target, Bgra32Image plain, IAppLog log)
+    {
+        try
+        {
+            composer.ComposeInto(layers, target);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.Error("Globe compose failed; showing the plain image until the next compose", ex);
+            Buffer.BlockCopy(plain.Pixels, 0, target.Pixels, 0, Math.Min(plain.Pixels.Length, target.Pixels.Length));
+            return false;
+        }
     }
 
     private void OnDisplayTimeChanged(object? sender, EventArgs e)
@@ -317,6 +350,7 @@ public sealed class SceneController
 #endif
             if (_closed) return;
             _composer = new GlobeImageComposer(baseImage);
+            _plain = baseImage;
             _lines = lines;
             _composed = Bgra32Image.Create(w, h);
             _bitmap = ImageConversions.CreateBitmap(w, h);
@@ -325,6 +359,7 @@ public sealed class SceneController
         }
         catch (Exception ex)
         {
+            _log.Error("Globe load failed", ex);
             _firstCompose.TrySetException(ex);
             if (!_closed) MessageBox.Show(_window, ex.Message, "EarthWatch3D", MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -446,7 +481,7 @@ public sealed class SceneController
                 catch (Exception ex)
                 {
                     // One bad pass must not stop later ones: forget the key so the next trigger rebuilds.
-                    Trace.TraceError($"Areas layer failed: {ex}");
+                    _log.Error("Areas layer failed", ex);
                     _areasKey = 0;
                 }
             } while (_areasPending && !_closed);
@@ -584,7 +619,12 @@ public sealed class SceneController
             id => (hover ? Zones.TryGetCached(id, out var polys) : Zones.TryGet(id, out polys)) ? polys : null);
     }
 
-    private void OnViewportMouseLeave(object sender, MouseEventArgs e) => HideMarkerTip();
+    private void OnViewportMouseLeave(object sender, MouseEventArgs e)
+    {
+        // A trailing hover tick still queued from the last move would otherwise reopen the tooltip after the mouse left.
+        _hoverTimer.Stop();
+        HideMarkerTip();
+    }
 
     private void HideMarkerTip()
     {
