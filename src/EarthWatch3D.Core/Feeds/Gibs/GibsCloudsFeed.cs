@@ -85,11 +85,12 @@ public sealed class GibsCloudsFeed : IEventFeed
             try
             {
                 var cached = await File.ReadAllBytesAsync(file, ct).ConfigureAwait(false);
+                // A truncated JPEG decodes without an error (the decoder fills the rest), so check the end marker too.
+                if (cached.Length < 2 || cached[^2] != 0xFF || cached[^1] != 0xD9) throw new InvalidDataException("The JPEG is cut short.");
                 _decode?.Invoke(cached);   // a damaged file must not wedge the layer for the day
                 return new CloudImage(date, cached);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException
-                                       or InvalidOperationException or ArgumentException)
+            catch (Exception ex) when (ex is not OperationCanceledException)   // any decoder failure (FileFormatException, COMException...) means damaged
             {
                 _log.Warn($"Clouds: {file} is unusable; downloading it again", ex);
                 try { File.Delete(file); } catch (Exception) { }
