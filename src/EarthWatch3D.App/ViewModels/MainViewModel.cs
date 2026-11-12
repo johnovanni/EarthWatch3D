@@ -72,10 +72,17 @@ public partial class MainViewModel : ObservableObject
         Ticked?.Invoke(this, EventArgs.Empty);
     }
 
-    private DisplayFilter BuildFilter() => new(
-        Layers.ShowQuakes, Layers.ShowCyclones, Layers.ShowAlerts, Layers.ShowEonet,
-        double.IsNaN(Display.MinMagnitude) ? double.NegativeInfinity : Display.MinMagnitude,
-        TimeSpan.FromDays(Display.QuakeWindowDays), Display.AlertTypes);
+    // Through AppSettings.ToFilter, the one place that maps NaN ("All") to −∞ and days to a window.
+    private DisplayFilter BuildFilter() => new AppSettings
+    {
+        ShowQuakes = Layers.ShowQuakes,
+        ShowCyclones = Layers.ShowCyclones,
+        ShowAlerts = Layers.ShowAlerts,
+        ShowEonet = Layers.ShowEonet,
+        MinMagnitude = Display.MinMagnitude,
+        QuakeWindowDays = Display.QuakeWindowDays,
+        AlertTypes = Display.AlertTypes,
+    }.ToFilter();
 
     private void OnFilterInputChanged(object? sender, PropertyChangedEventArgs e)
     {

@@ -155,4 +155,53 @@ public sealed class StorageTests : IDisposable
         Assert.False(File.Exists(_paths.EventsFile));
         Assert.Single(log.Warnings);
     }
+
+    [Theory]
+    [InlineData("Earthquakes")]
+    [InlineData("Cyclones")]
+    [InlineData("Alerts")]
+    [InlineData("Eonet")]
+    public void CacheWithNullElementIsTreatedAsCorrupt(string list)
+    {
+        // Valid JSON, but one list holds a null: it would crash the first prune or draw.
+        new EventCache(_paths, new NullLog()).Save(Sample());
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_paths.EventsFile))!;
+        json[list]!.AsArray().Add(null);
+        File.WriteAllText(_paths.EventsFile, json.ToJsonString());
+
+        var log = new ListLog();
+        Assert.Null(new EventCache(_paths, log).Load());
+        Assert.False(File.Exists(_paths.EventsFile));
+        Assert.Single(log.Warnings);
+    }
+
+    [Fact]
+    public void AppStartsEmptyWhenCachedEventsCannotBeUsed()
+    {
+        // Loads (lists and elements present) but an EONET storm has no fix list, so the startup prune throws.
+        new EventCache(_paths, new NullLog()).Save(Sample());
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_paths.EventsFile))!;
+        json["Eonet"]![0]!["Fixes"] = null;
+        File.WriteAllText(_paths.EventsFile, json.ToJsonString());
+
+        var log = new ListLog();
+        var clock = new TestClock(new DateTime(2026, 11, 12, 0, 0, 0, DateTimeKind.Utc));
+        var store = EarthWatch3D.App.App.LoadCachedEvents(new EventCache(_paths, log), _paths, clock, log);
+        Assert.Empty(store.Snapshot.Earthquakes);
+        Assert.Empty(store.Snapshot.Eonet);
+        Assert.False(File.Exists(_paths.EventsFile));
+        Assert.StartsWith("Event cache unusable; deleting it and starting empty", Assert.Single(log.Warnings));
+    }
+
+    [Fact]
+    public void AppLoadsAUsableCache()
+    {
+        new EventCache(_paths, new NullLog()).Save(Sample());
+        var log = new ListLog();
+        var clock = new TestClock(new DateTime(2026, 11, 12, 0, 0, 0, DateTimeKind.Utc));
+        var store = EarthWatch3D.App.App.LoadCachedEvents(new EventCache(_paths, log), _paths, clock, log);
+        Assert.Single(store.Snapshot.Earthquakes);
+        Assert.True(File.Exists(_paths.EventsFile));
+        Assert.Empty(log.Warnings);
+    }
 }

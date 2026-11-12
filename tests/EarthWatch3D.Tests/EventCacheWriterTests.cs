@@ -7,6 +7,7 @@ namespace EarthWatch3D.Tests;
 public class EventCacheWriterTests
 {
     private static readonly DateTime T0 = new(2026, 11, 12, 12, 0, 0, DateTimeKind.Utc);
+    private static readonly TimeSpan Delay = TimeSpan.FromSeconds(10);
 
     private static Earthquake Quake(string id) =>
         new(id, T0, new GeoPosition(10, 20), "q " + id, null, 4, 10, "somewhere", T0);
@@ -16,14 +17,15 @@ public class EventCacheWriterTests
         private readonly object _gate = new();
         public List<(EventSnapshot Snapshot, int ThreadId)> Calls { get; } = [];
         public int Count { get { lock (_gate) return Calls.Count; } }
-        public void Save(EventSnapshot s) { lock (_gate) Calls.Add((s, Environment.CurrentManagedThreadId)); }
-    }
-
-    private static void WaitFor(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (!condition() && DateTime.UtcNow < deadline) Thread.Sleep(10);
-        Assert.True(condition());
+        public int FailuresToThrow { get; set; }
+        public void Save(EventSnapshot s)
+        {
+            lock (_gate)
+            {
+                if (FailuresToThrow > 0) { FailuresToThrow--; throw new System.IO.IOException("disk full"); }
+                Calls.Add((s, Environment.CurrentManagedThreadId));
+            }
+        }
     }
 
     [Fact]
@@ -31,18 +33,32 @@ public class EventCacheWriterTests
     {
         var store = new EventStore(new TestClock(T0));
         var saves = new Saves();
-        using var writer = new EventCacheWriter(store, saves.Save, TimeSpan.FromMilliseconds(300));
+        var time = new ManualTimeProvider();
+        using var writer = new EventCacheWriter(store, saves.Save, Delay, time: time);
         for (int i = 0; i < 3; i++)
         {
             store.UpsertEarthquakes([Quake("q" + i)]);
-            Thread.Sleep(100);
+            time.Advance(TimeSpan.FromSeconds(6));   // each change restarts the 10 s wait
         }
-        Assert.Equal(0, saves.Count);   // each change restarts the 300 ms wait
+        Assert.Equal(0, saves.Count);   // 18 s in all, but only 6 s since the last change
 
-        WaitFor(() => saves.Count >= 1);
-        Thread.Sleep(400);
+        time.Advance(TimeSpan.FromSeconds(4));
         Assert.Equal(1, saves.Count);
         Assert.Equal(3, saves.Calls[0].Snapshot.Earthquakes.Count);
+        time.Advance(TimeSpan.FromMinutes(5));
+        Assert.Equal(1, saves.Count);
+    }
+
+    [Fact]
+    public void TimerSaveRunsOffTheCallingThread()
+    {
+        var store = new EventStore(new TestClock(T0));
+        var saves = new Saves();
+        using var writer = new EventCacheWriter(store, saves.Save, TimeSpan.FromMilliseconds(50));
+        store.UpsertEarthquakes([Quake("a")]);
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (saves.Count == 0 && DateTime.UtcNow < deadline) Thread.Sleep(10);
+        Assert.Equal(1, saves.Count);
         Assert.NotEqual(Environment.CurrentManagedThreadId, saves.Calls[0].ThreadId);
     }
 
@@ -51,10 +67,28 @@ public class EventCacheWriterTests
     {
         var store = new EventStore(new TestClock(T0));
         var saves = new Saves();
-        using var writer = new EventCacheWriter(store, saves.Save, TimeSpan.FromMilliseconds(50));
-        Thread.Sleep(200);
+        var time = new ManualTimeProvider();
+        using var writer = new EventCacheWriter(store, saves.Save, Delay, time: time);
+        time.Advance(TimeSpan.FromMinutes(1));
         writer.Flush();
         Assert.Equal(0, saves.Count);
+    }
+
+    [Fact]
+    public void FailedTimerSaveIsLoggedAndKeptForRetry()
+    {
+        var store = new EventStore(new TestClock(T0));
+        var saves = new Saves { FailuresToThrow = 1 };
+        var time = new ManualTimeProvider();
+        var log = new RecordingLog();
+        using var writer = new EventCacheWriter(store, saves.Save, Delay, log, time);
+        store.UpsertEarthquakes([Quake("a")]);
+        time.Advance(Delay);   // throws inside the timer callback: logged, not thrown
+        Assert.Equal(0, saves.Count);
+        Assert.Single(log.Warnings);
+
+        writer.Flush();   // still marked as changed, so this retries
+        Assert.Equal(1, saves.Count);
     }
 
     [Fact]
@@ -62,7 +96,8 @@ public class EventCacheWriterTests
     {
         var store = new EventStore(new TestClock(T0));
         var saves = new Saves();
-        var writer = new EventCacheWriter(store, saves.Save, TimeSpan.FromSeconds(30));
+        var time = new ManualTimeProvider();
+        var writer = new EventCacheWriter(store, saves.Save, Delay, time: time);
         store.UpsertEarthquakes([Quake("a")]);
         writer.Dispose();
         writer.SaveNow();   // what the app does on exit
@@ -70,6 +105,7 @@ public class EventCacheWriterTests
         Assert.Single(saves.Calls[0].Snapshot.Earthquakes);
 
         store.UpsertEarthquakes([Quake("b")]);   // after dispose: not watched any more
+        time.Advance(TimeSpan.FromMinutes(1));
         writer.Flush();
         Assert.Equal(1, saves.Count);
     }

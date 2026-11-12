@@ -28,6 +28,9 @@ public sealed class EventCache(AppPaths paths, IAppLog log)
                       ?? throw new JsonException("empty cache");
             if (dto.Earthquakes is null || dto.Cyclones is null || dto.Alerts is null || dto.Eonet is null)
                 throw new JsonException("missing lists");
+            if (dto.Earthquakes.Contains(null!) || dto.Cyclones.Contains(null!)
+                || dto.Alerts.Contains(null!) || dto.Eonet.Contains(null!))
+                throw new JsonException("null element in a list");
             return new EventSnapshot(dto.Earthquakes, dto.Cyclones, dto.Alerts, dto.Eonet, dto.Version);
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)

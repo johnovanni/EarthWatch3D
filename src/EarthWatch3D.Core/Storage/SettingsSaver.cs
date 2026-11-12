@@ -1,3 +1,5 @@
+using EarthWatch3D.Core.Logging;
+
 namespace EarthWatch3D.Core.Storage;
 
 /// <summary>
@@ -13,19 +15,22 @@ public sealed class SettingsSaver : ISettingsStore, IDisposable
 
     private readonly ISettingsStore _inner;
     private readonly TimeSpan _delay;
-    private readonly Timer _timer;
+    private readonly IAppLog _log;
+    private readonly ITimer _timer;
     private readonly object _gate = new();
     private readonly object _writeGate = new();   // one inner write at a time
     private AppSettings _current;
     private AppSettings? _pending;
     private bool _disposed;
 
-    public SettingsSaver(ISettingsStore inner, TimeSpan? delay = null)
+    /// <param name="time">Supplies the debounce timer; tests pass a manual one. Defaults to the system's.</param>
+    public SettingsSaver(ISettingsStore inner, TimeSpan? delay = null, IAppLog? log = null, TimeProvider? time = null)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _delay = delay ?? DefaultDelay;
+        _log = log ?? new NullLog();
         _current = inner.Load();
-        _timer = new Timer(_ => Flush(), null, Timeout.Infinite, Timeout.Infinite);
+        _timer = (time ?? TimeProvider.System).CreateTimer(_ => OnTimer(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
     public AppSettings Load()
@@ -44,15 +49,31 @@ public sealed class SettingsSaver : ISettingsStore, IDisposable
         }
     }
 
-    /// <summary>Writes the pending value now, on the calling thread (the timer calls this; so does shutdown).</summary>
+    /// <summary>
+    /// Writes the pending value now, on the calling thread (shutdown calls this). If the write throws, the value
+    /// stays pending (unless a newer one arrived meanwhile), so the next save or flush tries again.
+    /// </summary>
     public void Flush()
     {
         lock (_writeGate)
         {
             AppSettings? toWrite;
             lock (_gate) { toWrite = _pending; _pending = null; }
-            if (toWrite is not null) _inner.Save(toWrite);
+            if (toWrite is null) return;
+            try { _inner.Save(toWrite); }
+            catch
+            {
+                lock (_gate) _pending ??= toWrite;
+                throw;
+            }
         }
+    }
+
+    // A timer callback must not throw: that would end the process.
+    private void OnTimer()
+    {
+        try { Flush(); }
+        catch (Exception ex) { _log.Warn("Could not save settings", ex); }
     }
 
     /// <summary>Stops the timer. Call <see cref="Flush"/> first to keep a pending change.</summary>

@@ -43,21 +43,19 @@ public partial class App : Application
         IClock wall = new SystemClock();
 
         var paths = AppPaths.Default;
-        paths.EnsureCreated();
+        // The app must still start without its data folders: settings fall back to defaults, the cache to empty,
+        // and failed writes are logged (FileLog itself never throws). Logged once the log exists.
+        Exception? foldersError = null;
+        try { paths.EnsureCreated(); }
+        catch (Exception ex) { foldersError = ex; }
         var log = _log = new FileLog(paths.LogsDir, wall);
         log.Info($"EarthWatch3D {AppInfo.Version} starting");
+        if (foldersError is not null) log.Error($"Could not create the data folders under {paths.Root}", foldersError);
         // Saves are debounced and written off the UI thread (a failed write can sleep while it retries).
-        _settings = new SettingsSaver(new SettingsStore(paths, log));
+        _settings = new SettingsSaver(new SettingsStore(paths, log), log: log);
 
-        var store = new EventStore(wall);
         var cache = new EventCache(paths, log);
-        if (cache.Load() is { } cached)
-        {
-            store.Load(cached);
-            store.Prune();   // the cache may be days old
-            var s = store.Snapshot;
-            log.Info($"Event cache loaded: {s.Earthquakes.Count} quakes, {s.Cyclones.Count} advisories, {s.Alerts.Count} alerts, {s.Eonet.Count} EONET storms");
-        }
+        var store = LoadCachedEvents(cache, paths, wall, log);
 
         var vm = new MainViewModel(clock, _settings);
         var http = _http = new FeedHttp();
@@ -74,7 +72,7 @@ public partial class App : Application
         foreach (var status in scheduler.Statuses) vm.Status.Apply(status);   // grey dots until each first run
         scheduler.StatusChanged += (_, status) => vm.Status.Apply(status);   // background thread: Apply uses BeginInvoke
 
-        _cacheWriter = new EventCacheWriter(store, s => cache.Save(s));
+        _cacheWriter = new EventCacheWriter(store, s => cache.Save(s), log: log);
         _pruneTimer = new Timer(_ => PruneStore(store, log), null, PruneInterval, PruneInterval);
 
         vm.Tick();   // show real values immediately
@@ -102,29 +100,58 @@ public partial class App : Application
         base.OnExit(e);
     }
 
+    /// <summary>
+    /// A store filled from the cache when it is present and usable. A cache that loads but then fails (bad contents
+    /// in valid JSON) is logged and deleted, and the app starts with an empty store.
+    /// </summary>
+    public static EventStore LoadCachedEvents(EventCache cache, AppPaths paths, IClock wall, IAppLog log)
+    {
+        var store = new EventStore(wall);
+        try
+        {
+            if (cache.Load() is not { } cached) return store;
+            store.Load(cached);
+            store.Prune();   // the cache may be days old
+            var s = store.Snapshot;
+            log.Info($"Event cache loaded: {s.Earthquakes.Count} quakes, {s.Cyclones.Count} advisories, {s.Alerts.Count} alerts, {s.Eonet.Count} EONET storms");
+            return store;
+        }
+        catch (Exception ex)
+        {
+            log.Warn("Event cache unusable; deleting it and starting empty", ex);
+            try { System.IO.File.Delete(paths.EventsFile); } catch (Exception) { }
+            return new EventStore(wall);   // the first store may hold part of the bad snapshot
+        }
+    }
+
     private static void PruneStore(EventStore store, IAppLog log)
     {
         try { store.Prune(); }
         catch (Exception ex) { log.Warn("Event store prune failed", ex); }
     }
 
-    /// <summary>Stops the feeds, saves the event cache and settings once, then disposes. Runs once.</summary>
+    /// <summary>
+    /// Stops the feeds, saves the event cache and settings once, then disposes. Runs once. Each step has its own
+    /// try/catch, so one failure (a slow or throwing Stop, say) doesn't skip the saves after it.
+    /// </summary>
     private void ShutDownServices()
     {
         if (_shutDown) return;
         _shutDown = true;
-        try
-        {
-            _scheduler?.Stop();   // waits (up to 5 s) for running feeds to finish or cancel
-            _pruneTimer?.Dispose();
-            _cacheWriter?.Dispose();
-            _cacheWriter?.SaveNow();
-            _settings?.Flush();
-            _settings?.Dispose();
-            _http?.Dispose();
-            _log?.Info("EarthWatch3D exiting");
-        }
-        catch (Exception ex) { _log?.Error("Shutdown failed", ex); }
-        finally { _log?.Dispose(); }
+        Step("stop the feed scheduler", () => _scheduler?.Stop());   // waits (up to 5 s) for running feeds
+        Step("stop the prune timer", () => _pruneTimer?.Dispose());
+        Step("stop the cache writer", () => _cacheWriter?.Dispose());
+        Step("save the event cache", () => _cacheWriter?.SaveNow());
+        Step("save settings", () => _settings?.Flush());
+        Step("stop the settings saver", () => _settings?.Dispose());
+        Step("dispose the HTTP client", () => _http?.Dispose());
+        _log?.Info("EarthWatch3D exiting");
+        _log?.Dispose();
+    }
+
+    private void Step(string what, Action action)
+    {
+        try { action(); }
+        catch (Exception ex) { _log?.Error("Shutdown: could not " + what, ex); }
     }
 }
