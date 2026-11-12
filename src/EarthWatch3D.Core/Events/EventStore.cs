@@ -47,11 +47,43 @@ public sealed class EventStore(IClock clock)
         return changed ? s with { Cyclones = [.. map.Values] } : s;
     });
 
+    // id -> time an alert was superseded (an Update or Cancel that references it was sent). Kept so a reference that
+    // arrives before the original is applied when it shows up, and so re-upserting the original does not undo it.
+    private readonly Dictionary<string, DateTime> _supersededAt = new(StringComparer.Ordinal);
+
     public void UpsertAlerts(IEnumerable<WeatherAlert> alerts) => Write(s =>
     {
-        var merged = MergeById(s.Alerts, alerts, a => a.Id);
-        return ReferenceEquals(merged, s.Alerts) ? s : s with { Alerts = merged };
+        var incoming = alerts as IReadOnlyCollection<WeatherAlert> ?? [.. alerts];
+        var touched = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var a in incoming)
+            foreach (var r in a.SupersedesIds ?? [])
+            {
+                if (_supersededAt.TryGetValue(r, out var t) && t <= a.TimeUtc) continue;
+                _supersededAt[r] = a.TimeUtc;
+                touched.Add(r);
+            }
+        var map = s.Alerts.ToDictionary(a => a.Id);
+        var changed = false;
+        foreach (var a0 in incoming)
+        {
+            var a = Superseded(a0);
+            if (map.TryGetValue(a.Id, out var old) && old == a) continue;
+            map[a.Id] = a;
+            changed = true;
+        }
+        foreach (var id in touched)
+        {
+            if (!map.TryGetValue(id, out var old)) continue;
+            var a = Superseded(old);
+            if (a == old) continue;
+            map[id] = a;
+            changed = true;
+        }
+        return changed ? s with { Alerts = [.. map.Values] } : s;
     });
+
+    private WeatherAlert Superseded(WeatherAlert a) =>
+        _supersededAt.TryGetValue(a.Id, out var t) && (a.CancelledUtc is null || t < a.CancelledUtc) ? a with { CancelledUtc = t } : a;
 
     public void UpsertEonet(IEnumerable<EonetStorm> storms) => Write(s =>
     {
@@ -63,6 +95,7 @@ public sealed class EventStore(IClock clock)
     public void Prune() => Write(s =>
     {
         var now = clock.UtcNow;
+        foreach (var k in _supersededAt.Where(kv => kv.Value < now - AlertRetention).Select(kv => kv.Key).ToList()) _supersededAt.Remove(k);
         if (!s.Earthquakes.Any(q => q.TimeUtc < now - QuakeRetention)
             && !s.Cyclones.Any(c => c.TimeUtc < now - CycloneRetention)
             && !s.Alerts.Any(a => EndOf(a) < now - AlertRetention)

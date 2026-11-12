@@ -115,6 +115,93 @@ public sealed class NwsTests
         Assert.Equal(2, handler.Requests.Count(r => r.Contains("/alerts/active")));
     }
 
+    private static string Ref(string id, string sent, string messageType, string refId, string evt = "Flood Warning") => $$$"""
+        {"id":"https://api.weather.gov/alerts/{{{id}}}","geometry":null,"properties":{"id":"{{{id}}}","affectedZones":["https://z/{{{id}}}"],
+         "sent":"{{{sent}}}","effective":"{{{sent}}}","expires":"2026-11-11T23:00:00-05:00","ends":null,"messageType":"{{{messageType}}}",
+         "severity":"Severe","event":"{{{evt}}}","references":[{"identifier":"{{{refId}}}"}]}}
+        """;
+
+    private static EventStore NewStore() => new(new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc)));
+    private static WeatherAlert One(string json) => NwsReader.ReadPage(Text("{\"features\":[" + json + "]}"), new RecordingLog()).Alerts[0];
+
+    [Fact]
+    public void UpdateEndsTheOriginalAtItsSentTime()
+    {
+        var store = NewStore();
+        var orig = One(Alert("o1"));
+        var upd = One(Ref("u1", "2026-11-11T13:00:00-05:00", "Update", "o1"));
+        Assert.Equal(["o1"], upd.SupersedesIds);
+        store.UpsertAlerts([orig, upd]);
+        var o = store.Snapshot.Alerts.Single(a => a.Id == "o1");
+        Assert.Equal(upd.TimeUtc, o.CancelledUtc);
+        Assert.Null(store.Snapshot.Alerts.Single(a => a.Id == "u1").CancelledUtc);
+    }
+
+    [Fact]
+    public void CancelEndsTheOriginal()
+    {
+        var store = NewStore();
+        store.UpsertAlerts([One(Alert("o1"))]);
+        var cancel = One(Ref("c1", "2026-11-11T14:00:00-05:00", "Cancel", "o1"));
+        store.UpsertAlerts([cancel]);
+        Assert.Equal(cancel.TimeUtc, store.Snapshot.Alerts.Single(a => a.Id == "o1").CancelledUtc);
+        Assert.Equal(cancel.TimeUtc, store.Snapshot.Alerts.Single(a => a.Id == "c1").CancelledUtc);
+    }
+
+    [Fact]
+    public void ReferenceArrivingBeforeOriginalIsApplied()
+    {
+        var store = NewStore();
+        var upd = One(Ref("u1", "2026-11-11T13:00:00-05:00", "Update", "o1"));
+        store.UpsertAlerts([upd]);
+        store.UpsertAlerts([One(Alert("o1"))]);
+        Assert.Equal(upd.TimeUtc, store.Snapshot.Alerts.Single(a => a.Id == "o1").CancelledUtc);
+    }
+
+    [Fact]
+    public void ReUpsertWithReferencesIsNoChange()
+    {
+        var store = NewStore();
+        var orig = One(Alert("o1"));
+        var upd = One(Ref("u1", "2026-11-11T13:00:00-05:00", "Update", "o1"));
+        store.UpsertAlerts([orig, upd]);
+        var changes = 0;
+        store.Changed += (_, _) => changes++;
+        store.UpsertAlerts([orig, upd]);
+        Assert.Equal(0, changes);
+    }
+
+    [Fact]
+    public async Task FeedSkipsZonesOfSupersededAlerts()
+    {
+        var (handler, http, store, clock) = Setup();
+        using var _ = http;
+        handler.MapText("https://api.weather.gov/alerts/active",
+            "{\"features\":[" + Alert("o1", "Flood Warning", "https://z/OLD") + "," + Ref("u1", "2026-11-11T13:00:00-05:00", "Update", "o1") + "]}");
+        handler.MapText("https://api.weather.gov/alerts?start=", "{\"features\":[]}");
+        handler.MapText("https://z/", "{\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[0,0],[1,0],[1,1],[0,0]]]}}");
+        var zones = new ZoneCache(http, TempPaths(), clock, new RecordingLog());
+        var feed = new NwsFeed(http, store, zones, () => AlertTypes.Warnings, clock, new RecordingLog());
+        await feed.RunOnceAsync(CancellationToken.None);
+        await zones.WhenIdleAsync();
+        Assert.Equal(["https://z/u1"], handler.Requests.Where(r => r.StartsWith("https://z/", StringComparison.Ordinal)).ToList());
+    }
+
+    [Fact]
+    public async Task HistoryStopsOnLoopOrForeignHost()
+    {
+        var (handler, http, store, clock) = Setup();
+        using var _ = http;
+        handler.MapText("https://api.weather.gov/alerts?start=", "{\"features\":[],\"pagination\":{\"next\":\"https://api.weather.gov/alerts?cursor=a\"}}");
+        handler.MapText("https://api.weather.gov/alerts?cursor=a", "{\"features\":[],\"pagination\":{\"next\":\"https://api.weather.gov/alerts?cursor=a\"}}");
+        handler.MapText("https://api.weather.gov/alerts/active", "{\"features\":[]}");
+        var log = new RecordingLog();
+        var feed = new NwsFeed(http, store, new ZoneCache(http, TempPaths(), clock, log), () => AlertTypes.None, clock, log);
+        await feed.RunOnceAsync(CancellationToken.None);
+        Assert.Equal(1, handler.Requests.Count(r => r.Contains("cursor=a")));
+        Assert.Single(log.Warnings);
+    }
+
     [Fact]
     public async Task FeedRequestsZonesOnlyForFilteredAlerts()
     {

@@ -68,6 +68,7 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
 
     private async Task DownloadAsync(string url)
     {
+        var loaded = false;
         try
         {
             await _slots.WaitAsync().ConfigureAwait(false);
@@ -82,19 +83,25 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
                     var polys = ParseZone(bytes);
                     _mem[url] = polys;
                     Save(url, polys);
-                    ZonesLoaded?.Invoke(this, EventArgs.Empty);
+                    loaded = true;
                 }
                 finally { Interlocked.Decrement(ref _inFlight); }
             }
             finally { _slots.Release(); }
         }
-        catch (Exception ex) when (ex is HttpRequestException or TimeoutException or JsonException or InvalidOperationException
-                                       or FormatException or ArgumentException or KeyNotFoundException or IOException or UnauthorizedAccessException)
+        catch (Exception ex)
         {
+            // Background task: nothing may escape as an unobserved exception.
             log.Warn($"NWS: zone {url} failed; will retry when requested again", ex);
         }
         finally
         {
+            // Raised before the idle signal, and outside the download's try so a throwing subscriber is not a download failure.
+            if (loaded)
+            {
+                try { ZonesLoaded?.Invoke(this, EventArgs.Empty); }
+                catch (Exception ex) { log.Warn("NWS: a ZonesLoaded subscriber threw", ex); }
+            }
             TaskCompletionSource? done = null;
             lock (_gate)
             {
@@ -115,8 +122,9 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
 
     private string FileFor(string url)
     {
-        var seg = url.TrimEnd('/');
-        seg = seg[(seg.LastIndexOf('/') + 1)..];
+        // Zone ids repeat across types (zones/forecast/X, zones/county/X), so the file is <type>_<id>.json.
+        var parts = url.TrimEnd('/').Split('/');
+        var seg = parts.Length >= 2 ? parts[^2] + "_" + parts[^1] : parts[^1];
         foreach (var c in Path.GetInvalidFileNameChars()) seg = seg.Replace(c, '_');
         return Path.Combine(paths.ZonesDir, seg + ".json");
     }

@@ -25,13 +25,19 @@ public sealed class NwsFeed(FeedHttp http, EventStore store, ZoneCache zones, Fu
         var all = new List<WeatherAlert>();
         if (!_historyDone)
         {
-            Uri? url = new("https://api.weather.gov/alerts?start="
+            var first = new Uri("https://api.weather.gov/alerts?start="
                 + (now - TimeSpan.FromHours(24)).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture));
+            var visited = new HashSet<Uri> { first };
+            Uri? url = first;
             for (var page = 0; url is not null; page++)
             {
                 if (page >= MaxHistoryPages) { log.Warn("NWS: history has more than 20 pages; stopped"); break; }
                 var (alerts, next) = await ReadAsync(url, ct).ConfigureAwait(false);
                 all.AddRange(alerts);
+                if (next is not null && !string.Equals(next.Host, first.Host, StringComparison.OrdinalIgnoreCase))
+                { log.Warn($"NWS: history next page is on another host ({next.Host}); stopped"); break; }
+                if (next is not null && !visited.Add(next))
+                { log.Warn("NWS: history next page was already read; stopped"); break; }
                 url = next;
             }
         }
@@ -39,8 +45,9 @@ public sealed class NwsFeed(FeedHttp http, EventStore store, ZoneCache zones, Fu
         store.UpsertAlerts(all);
         _historyDone = true;
 
+        // Use the store's resolved alerts, so alerts superseded by an Update or Cancel do not cause downloads.
         var wanted = filter();
-        zones.Request(all
+        zones.Request(store.Snapshot.Alerts
             .Where(a => (AlertTypeClassifier.Classify(a.EventType) & wanted) != 0 && IsActive(a, now))
             .SelectMany(a => a.ZoneIds));
     }

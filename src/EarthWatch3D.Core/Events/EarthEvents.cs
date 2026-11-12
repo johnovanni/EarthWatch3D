@@ -32,15 +32,16 @@ public sealed record CycloneAdvisory(EventSource Source, string Id, DateTime Tim
 /// <summary>TimeUtc = sent. Location = centroid of Areas, or (0,0) until zones load. Areas empty when only ZoneIds are given.</summary>
 public sealed record WeatherAlert(string Id, DateTime TimeUtc, GeoPosition Location, string Title, Uri? Link,
     string EventType, string Severity, DateTime OnsetUtc, DateTime EndsUtc, DateTime? CancelledUtc,
-    IReadOnlyList<GeoPolygon> Areas, IReadOnlyList<string> ZoneIds, string Description) : EarthEvent(EventSource.Nws, Id, TimeUtc, Location, Title, Link)
+    IReadOnlyList<GeoPolygon> Areas, IReadOnlyList<string> ZoneIds, string Description, IReadOnlyList<string>? SupersedesIds = null) : EarthEvent(EventSource.Nws, Id, TimeUtc, Location, Title, Link)
 {
     public bool Equals(WeatherAlert? o) => o is not null && Id == o.Id && TimeUtc == o.TimeUtc && Location == o.Location
         && Title == o.Title && Link == o.Link && EventType == o.EventType && Severity == o.Severity
         && OnsetUtc == o.OnsetUtc && EndsUtc == o.EndsUtc && CancelledUtc == o.CancelledUtc
-        && ListEquality.Equal(Areas, o.Areas) && ListEquality.Equal(ZoneIds, o.ZoneIds) && Description == o.Description;
+        && ListEquality.Equal(Areas, o.Areas) && ListEquality.Equal(ZoneIds, o.ZoneIds) && Description == o.Description
+        && ListEquality.Equal(SupersedesIds ?? [], o.SupersedesIds ?? []);
 
     public override int GetHashCode() => HashCode.Combine(Id, TimeUtc, EventType, Severity, EndsUtc, CancelledUtc,
-        ListEquality.Hash(Areas), ListEquality.Hash(ZoneIds));
+        ListEquality.Hash(Areas), ListEquality.Hash(ZoneIds) ^ ListEquality.Hash(SupersedesIds ?? []));
 }
 
 public sealed record StormFix(DateTime TimeUtc, GeoPosition Position, double? WindKt);

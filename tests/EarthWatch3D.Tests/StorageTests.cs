@@ -99,7 +99,7 @@ public sealed class StorageTests : IDisposable
         var c = new CycloneAdvisory(EventSource.Nhc, "nhc:al01", U(11, 3), p, "Storm", null,
             "ONE", 85, 975, [line], [line], [poly], [new WindArea(63, poly)]);
         var a = new WeatherAlert("a1", U(11, 4), p, "Flood", null, "Flood Watch", "Minor",
-            U(11, 5), U(11, 9), null, [poly], ["TXZ001"], "desc");
+            U(11, 5), U(11, 9), null, [poly], ["TXZ001"], "desc", ["old-1"]);
         var e = new EonetStorm("e1", U(10, 0), p, "Eonet", null,
             [new StormFix(U(10, 0), p, 50), new StormFix(U(11, 0), p, null)], U(12, 0));
         return new EventSnapshot([q], [c], [a], [e], 7);

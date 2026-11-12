@@ -37,7 +37,7 @@ public sealed class ZoneCacheTests
         Assert.True(zc.TryGet(Pzz, out var areas));
         Assert.Single(areas);
         Assert.True(loaded >= 1);
-        Assert.True(File.Exists(Path.Combine(paths.ZonesDir, "PZZ150.json")));
+        Assert.True(File.Exists(Path.Combine(paths.ZonesDir, "forecast_PZZ150.json")));
 
         var zc2 = new ZoneCache(http, paths, clock, new RecordingLog());
         Assert.True(zc2.TryGet(Pzz, out var again));
@@ -51,6 +51,25 @@ public sealed class ZoneCacheTests
         await zc3.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
         Assert.Equal(2, handler.Requests.Count);
         Assert.True(zc3.TryGet(Pzz, out _));
+    }
+
+    [Fact]
+    public async Task SameIdInDifferentZoneTypesIsCachedSeparately()
+    {
+        var handler = new SampleHttpHandler();
+        handler.Map("https://api.weather.gov/zones/", Sample("nws_zone.json"));
+        var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
+        var paths = TempPaths();
+        using var http = new FeedHttp(handler);
+        var zc = new ZoneCache(http, paths, clock, new RecordingLog());
+        zc.Request(["https://api.weather.gov/zones/forecast/X", "https://api.weather.gov/zones/county/X"]);
+        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(File.Exists(Path.Combine(paths.ZonesDir, "forecast_X.json")));
+        Assert.True(File.Exists(Path.Combine(paths.ZonesDir, "county_X.json")));
+        Assert.Equal(2, handler.Requests.Count);
+        var zc2 = new ZoneCache(http, paths, clock, new RecordingLog());
+        Assert.True(zc2.TryGet("https://api.weather.gov/zones/county/X", out _));
+        Assert.True(zc2.TryGet("https://api.weather.gov/zones/forecast/X", out _));
     }
 
     [Fact]
