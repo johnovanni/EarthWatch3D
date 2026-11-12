@@ -121,4 +121,17 @@ public class LaunchOptionsOfflineTests
         Assert.Contains("--display-time", o.Error);
         Assert.Contains("--look-at", o.Error);
     }
+
+    [Fact]
+    public void ParsesLayersList()
+    {
+        var o = LaunchOptions.Parse(["--layers", "plates, Coastlines"]);
+        Assert.Null(o.Error);
+        Assert.Equal(["plates", "coastlines"], o.Layers);
+        Assert.Null(LaunchOptions.Parse([]).Layers);
+    }
+
+    [Fact]
+    public void UnknownLayerIsAnError() =>
+        Assert.Contains("--layers", LaunchOptions.Parse(["--layers", "plates,mystery"]).Error);
 }

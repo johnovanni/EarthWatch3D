@@ -191,6 +191,19 @@
                 </ToggleButton.ToolTip>
             </ToggleButton>
 
+            <ToggleButton Style="{StaticResource LayerButton}" Tag="⛰" Content="Plates"
+                          IsChecked="{Binding Layers.ShowPlates}">
+                <ToggleButton.ToolTip>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource LegendTitle}" Text="Plate boundaries (Bird 2003)"/>
+                        <StackPanel Style="{StaticResource Row}"><Rectangle Width="12" Height="2" Fill="#FF4D4D" Margin="0,6,6,6"/><TextBlock Text="Converging (subduction)"/></StackPanel>
+                        <StackPanel Style="{StaticResource Row}"><Rectangle Width="12" Height="2" Fill="#FFD23F" Margin="0,6,6,6"/><TextBlock Text="Spreading (ridges, rifts)"/></StackPanel>
+                        <StackPanel Style="{StaticResource Row}"><Rectangle Width="12" Height="2" Fill="#5AC8FA" Margin="0,6,6,6"/><TextBlock Text="Sliding past (transform faults)"/></StackPanel>
+                        <TextBlock Style="{StaticResource LegendNote}" Text="PB2002; data by Hugo Ahlenius, Nordpil."/>
+                    </StackPanel>
+                </ToggleButton.ToolTip>
+            </ToggleButton>
+
             <ToggleButton x:Name="DisplayButton" Style="{StaticResource StripCommandButton}" Tag="⋯" Content="Display ▸"
                           ToolTip="Display options"
                           IsHitTestVisible="{Binding IsOpen, ElementName=DisplayPopup, Converter={x:Static local:InverseBoolConverter.Instance}}"/>

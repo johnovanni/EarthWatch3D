@@ -75,7 +75,9 @@ public sealed class SceneController
     // also kept here (no extra copy) as the fallback shown when a compose fails.
     private GlobeImageComposer? _composer;
     private Bgra32Image? _plain;
-    private SparseOverlay? _lines;
+    private SparseOverlay? _lines;          // coastlines and borders
+    private SparseOverlay? _plates;         // plate boundaries, rasterized the first time they are shown
+    private SparseOverlay? _linesAndPlates; // the two merged, plates on top
     private Bgra32Image? _composed;
     private WriteableBitmap? _bitmap;
     private bool _composing, _recomposePending, _closed;
@@ -221,10 +223,13 @@ public sealed class SceneController
                 var now = _vm.DisplayTimeUtc;
                 _schedule.MarkComposed(now);
                 var subSolar = SubPoints.SubSolarPoint(now);
-                // The lines are rasterized once at load; switching coastlines off just leaves them out.
+                // The coastlines are rasterized once at load and the plates the first time they are shown;
+                // switching a layer off just leaves it out.
                 var display = _vm.Display;
+                var lineLayer = await GetLinesLayerAsync(_vm.Layers.ShowCoastlines, _vm.Layers.ShowPlates);
+                if (_closed) return;
                 var layers = new GlobeLayers(subSolar, display.NightStrength, Areas: _areas,
-                    SparseLines: _vm.Layers.ShowCoastlines ? _lines : null, DrawTerminator: display.ShowTerminator);
+                    SparseLines: lineLayer, DrawTerminator: display.ShowTerminator);
                 var composer = _composer!;
                 var target = _composed!;
                 var plain = _plain!;
@@ -286,7 +291,8 @@ public sealed class SceneController
 
     private void OnDisplaySettingChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is not (nameof(LayersViewModel.ShowCoastlines) or nameof(DisplayOptionsViewModel.NightStrength)
+        if (e.PropertyName is not (nameof(LayersViewModel.ShowCoastlines) or nameof(LayersViewModel.ShowPlates)
+                                   or nameof(DisplayOptionsViewModel.NightStrength)
                                    or nameof(DisplayOptionsViewModel.ShowTerminator))) return;
         _settingsDirty = true;
         if (_window.WindowState == WindowState.Minimized) return;   // composed on restore instead
@@ -380,6 +386,38 @@ public sealed class SceneController
             _firstCompose.TrySetException(ex);
             if (!_closed) MessageBox.Show(_window, ex.Message, "EarthWatch3D", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    /// <summary>
+    /// The lines layer for the toggles: coastlines and/or plate boundaries (plates on top), or null for neither.
+    /// The plates are read and rasterized on an STA thread the first time they are wanted, then kept.
+    /// </summary>
+    private async Task<SparseOverlay?> GetLinesLayerAsync(bool coastlines, bool plates)
+    {
+        if (plates && _plates is null && _lines is { } like)
+        {
+            int w = like.Width, h = like.Height;
+            _plates = await RunOnStaThread(() =>
+            {
+                using var s = Asset("plate_boundaries.geojson");
+                var all = PlateBoundaries.Read(s);
+                IEnumerable<IReadOnlyList<GeoPosition>> Of(PlateBoundaryKind k) => all.Where(b => b.Kind == k).Select(b => b.Line.Points);
+                Color C(uint argb) => Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
+                return SparseOverlay.FromImage(LineRasterizer.Rasterize(
+                [
+                    (Of(PlateBoundaryKind.Transform), C(PlateBoundaries.TransformArgb)),
+                    (Of(PlateBoundaryKind.Divergent), C(PlateBoundaries.DivergentArgb)),
+                    (Of(PlateBoundaryKind.Convergent), C(PlateBoundaries.ConvergentArgb)),
+                ], w, h, 1.5));
+            });
+        }
+        if (plates && _plates is not null)
+        {
+            if (!coastlines) return _plates;
+            if (_lines is null) return _plates;
+            return _linesAndPlates ??= SparseOverlay.Merge(_lines, _plates);
+        }
+        return coastlines ? _lines : null;
     }
 
     private static Stream Asset(string name) =>

@@ -13,6 +13,7 @@ public partial class LayersViewModel : ObservableObject
     [ObservableProperty] private bool _showAlerts;
     [ObservableProperty] private bool _showEonet;
     [ObservableProperty] private bool _showCoastlines;
+    [ObservableProperty] private bool _showPlates;
     /// <summary>The strip shows text labels beside its icons.</summary>
     [ObservableProperty] private bool _isExpanded;
 
@@ -25,6 +26,7 @@ public partial class LayersViewModel : ObservableObject
         _showAlerts = s.ShowAlerts;
         _showEonet = s.ShowEonet;
         _showCoastlines = s.ShowCoastlines;
+        _showPlates = s.ShowPlates;
         _isExpanded = s.LayerStripExpanded;
     }
 
@@ -33,15 +35,46 @@ public partial class LayersViewModel : ObservableObject
     partial void OnShowAlertsChanged(bool value) => Save();
     partial void OnShowEonetChanged(bool value) => Save();
     partial void OnShowCoastlinesChanged(bool value) => Save();
+    partial void OnShowPlatesChanged(bool value) => Save();
     partial void OnIsExpandedChanged(bool value) => Save();
 
-    private void Save() => _store.Save(_store.Load() with
+    private bool _transient;
+
+    /// <summary>
+    /// Switches the named layers on for this run only (the <c>--layers</c> diagnostic): nothing is saved.
+    /// Names: quakes, cyclones, alerts, eonet, coastlines, plates.
+    /// </summary>
+    public void TurnOnForThisRun(IEnumerable<string> names)
     {
-        ShowQuakes = ShowQuakes,
-        ShowCyclones = ShowCyclones,
-        ShowAlerts = ShowAlerts,
-        ShowEonet = ShowEonet,
-        ShowCoastlines = ShowCoastlines,
-        LayerStripExpanded = IsExpanded,
-    });
+        _transient = true;
+        try
+        {
+            foreach (var n in names)
+                switch (n.ToLowerInvariant())
+                {
+                    case "quakes": ShowQuakes = true; break;
+                    case "cyclones": ShowCyclones = true; break;
+                    case "alerts": ShowAlerts = true; break;
+                    case "eonet": ShowEonet = true; break;
+                    case "coastlines": ShowCoastlines = true; break;
+                    case "plates": ShowPlates = true; break;
+                }
+        }
+        finally { _transient = false; }
+    }
+
+    private void Save()
+    {
+        if (_transient) return;
+        _store.Save(_store.Load() with
+        {
+            ShowQuakes = ShowQuakes,
+            ShowCyclones = ShowCyclones,
+            ShowAlerts = ShowAlerts,
+            ShowEonet = ShowEonet,
+            ShowCoastlines = ShowCoastlines,
+            ShowPlates = ShowPlates,
+            LayerStripExpanded = IsExpanded,
+        });
+    }
 }

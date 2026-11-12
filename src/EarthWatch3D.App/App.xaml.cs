@@ -132,6 +132,7 @@ public partial class App : Application
             if (vm.DisplayTimeUtc != replayAt)
                 log.Warn($"--display-time {replayAt:yyyy-MM-ddTHH:mm:ssZ} is outside the last 7 days; showing {vm.DisplayTimeUtc:yyyy-MM-ddTHH:mm:ssZ}");
         }
+        if (options.Layers is { } extraLayers) vm.Layers.TurnOnForThisRun(extraLayers);   // --layers: not saved
         vm.Tick();   // show real values immediately
         var window = new MainWindow(vm, store, zones, log);
         if (samplesDir is not null) window.Title += " — SAMPLE DATA (offline)";

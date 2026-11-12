@@ -7,7 +7,7 @@ A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is
 
 ## What works today
 
-- **Globe:** NASA Blue Marble imagery with Natural Earth coastlines and country borders. Rotate it and zoom in and out.
+- **Globe:** NASA Blue Marble imagery with Natural Earth coastlines and country borders. Rotate it and zoom in and out. An optional layer (off by default) draws the tectonic plate boundaries, coloured by type: red converging, yellow spreading, blue sliding past.
 - **Night shading:** the night side is darkened with a slight blue tint, with a soft twilight edge, and a thin gold
   line marks the day/night boundary (sunset and sunrise), so it shows even over dark ocean. The image is recomposed every minute (and after the PC wakes from sleep), so the line moves.
 - **Sun and Moon markers:** the points directly under the Sun and the Moon are marked on the globe. The Moon marker
@@ -80,7 +80,7 @@ with `dotnet test -c Release --filter Category=Perf`.
 | **Face Sun** / **Face Moon** (card) | Turn the globe so the point under the Sun or the Moon faces you |
 | Hover over an event | A one-line tooltip (quake, storm, alert area or EONET storm; also the Sun and Moon markers) |
 | Click an event | Open its details panel; click empty space, **×** or press Esc to close it |
-| Layer strip buttons | Show or hide earthquakes, cyclones, US alerts, EONET storms, coastlines and borders; ☰ shows the labels |
+| Layer strip buttons | Show or hide earthquakes, cyclones, US alerts, EONET storms, coastlines and borders, plate boundaries; ☰ shows the labels |
 | **⋯** / **Display ▸** | Display options: minimum magnitude, 24 h or 7 days, alert types, night shade, day/night line |
 | ◀◀ ▾ / ▾ ▶▶ | Step the display time back or forward (10 min or 1 hour) |
 | Time slider | Pick any time in the last 7 days |
@@ -96,6 +96,7 @@ These command-line options are for checking the app without a screen capture too
 |---|---|
 | `--snapshot <png path>` | Once the globe image is shown, saves a picture of the window (rendered by the app itself, at the window's DPI) as a PNG and exits. Exit code 1 if saving failed. |
 | `--face-sun` | Once the globe image is shown, turns the camera to the Sun (as the Face Sun button does). With `--snapshot`, the picture is taken after the turn. |
+| `--layers <list>` | Switches the named layers on for this run only (nothing is saved): any of `quakes`, `cyclones`, `alerts`, `eonet`, `coastlines`, `plates`, separated by commas, for example `--layers plates`. |
 | `--look-at <lat,lon>` | Once the globe image is shown, turns the camera at once to look straight down on that point, in degrees (north and east positive), for example `--look-at 10,-165`. |
 | `--delay-ms <N>` | With `--snapshot`: wait N milliseconds before the picture (default 1500). |
 | `--snapshot-recompose` | With `--snapshot <png path>`: saves two pictures instead of one, `<name>-a.png` and `<name>-b.png`. The second is taken after the app's clock is moved 6 hours ahead and the globe image recomposed and shown, so the night side should have moved about 90° west. This checks that a later recompose reaches the screen, not only the first. |
@@ -139,6 +140,7 @@ measured numbers are in [docs/perf.md](docs/perf.md).
 
 - **Imagery:** NASA Earth Observatory, *Blue Marble: Next Generation* with topography and bathymetry (R. Stöckli, July 2004).
 - **Coastlines and borders:** [Natural Earth](https://www.naturalearthdata.com/) (public domain).
+- **Plate boundaries:** Peter Bird (2003), An updated digital model of plate boundaries, G³ 4(3):1027; GIS data by Hugo Ahlenius, Nordpil (ODC-By 1.0).
 - **Astronomy:** AstroCore, the shared astronomy library that grew out of the author's SolarSystem3D project
   (included as a git submodule).
 - **3D:** [HelixToolkit.Wpf](https://github.com/helix-toolkit/helix-toolkit).

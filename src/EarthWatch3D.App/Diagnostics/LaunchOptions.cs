@@ -12,15 +12,19 @@ namespace EarthWatch3D.App.Diagnostics;
 /// app's clock is moved 6 hours ahead and the globe recomposed;
 /// <c>--offline-samples &lt;dir&gt;</c> answers every feed request from the sample files in the folder, with a temporary
 /// cache and settings; <c>--display-time &lt;ISO UTC&gt;</c> starts in replay at that time;
-/// <c>--look-at &lt;lat,lon&gt;</c> turns the camera to that point once the globe is shown.
+/// <c>--look-at &lt;lat,lon&gt;</c> turns the camera to that point once the globe is shown;
+/// <c>--layers &lt;list&gt;</c> switches the named layers on for this run only, without saving (comma list of
+/// quakes, cyclones, alerts, eonet, coastlines, plates; for example <c>--layers plates</c>).
 /// Unknown arguments are ignored. The older options (snapshot, delay) also ignore a missing or bad value; the newer
 /// ones report it in <see cref="Error"/>, one line per problem.
 /// </summary>
 public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int DelayMs, bool SnapshotRecompose = false,
                                    string? OfflineSamplesDir = null, DateTime? DisplayTimeUtc = null,
-                                   GeoPosition? LookAt = null, string? Error = null)
+                                   GeoPosition? LookAt = null, string? Error = null,
+                                   IReadOnlyList<string>? Layers = null)
 {
     public const int DefaultDelayMs = 1500;
+    public static readonly string[] LayerNames = ["quakes", "cyclones", "alerts", "eonet", "coastlines", "plates"];
     public const string DisplayTimeExample = "2026-11-11T20:00:00Z";
 
     private static readonly string[] UtcFormats =
@@ -39,6 +43,7 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
         int delay = DefaultDelayMs;
         DateTime? displayTime = null;
         GeoPosition? lookAt = null;
+        List<string>? layers = null;
         var errors = new List<string>();
         for (int i = 0; i < args.Count; i++)
         {
@@ -71,10 +76,19 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
                     if (TryParseLatLon(p, out var pos)) lookAt = pos;
                     else errors.Add($"--look-at: '{p}' is not a latitude,longitude pair in degrees (latitude −90 to 90, longitude −180 to 180, east positive), for example 10,-165.");
                     break;
+                case "--layers":
+                    if (Value(args, ref i, errors, "a comma list such as plates, from " + string.Join(", ", LayerNames)) is not { } list) break;
+                    var names = list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                    .Select(n => n.ToLowerInvariant()).ToList();
+                    var bad = names.Where(n => !LayerNames.Contains(n)).ToList();
+                    if (names.Count == 0 || bad.Count > 0)
+                        errors.Add($"--layers: '{(bad.Count > 0 ? string.Join(", ", bad) : list)}' is not a layer. Use any of {string.Join(", ", LayerNames)}.");
+                    else layers = names;
+                    break;
             }
         }
         return new LaunchOptions(snapshot, faceSun, delay, recompose, offline, displayTime, lookAt,
-                                 errors.Count == 0 ? null : string.Join(Environment.NewLine, errors));
+                                 errors.Count == 0 ? null : string.Join(Environment.NewLine, errors), layers);
     }
 
     private static string? Value(IReadOnlyList<string> args, ref int i, List<string> errors, string what)

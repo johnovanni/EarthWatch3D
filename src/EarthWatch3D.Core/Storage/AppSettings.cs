@@ -10,6 +10,8 @@ public sealed record AppSettings
     public bool ShowAlerts { get; init; } = true;
     public bool ShowEonet { get; init; } = true;
     public bool ShowCoastlines { get; init; } = true;
+    /// <summary>Tectonic plate boundaries (PB2002), off by default.</summary>
+    public bool ShowPlates { get; init; } = false;
     /// <summary>Minimum earthquake magnitude; NaN means "All".</summary>
     public double MinMagnitude { get; init; } = 2.5;
     /// <summary>1 or 7.</summary>
