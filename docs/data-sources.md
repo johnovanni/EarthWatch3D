@@ -282,6 +282,12 @@ optional `group`). **It is untested**; the default names are guesses to be corre
   - `https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_coastline.geojson` -> 200, 1,640,858 bytes.
   - `https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_boundary_lines_land.geojson` -> 200, 760,189 bytes.
   - Served as `text/plain`. Pin a commit hash or tag in the final download URL if reproducibility matters.
+- **Tectonic plate boundaries (Peter Bird's PB2002; Plan 2 Task 18).**
+  - `https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_steps.json` -> about 10.4 MB, 5,824 LineString features (about 34 coordinates each; 11 steps cross +-180).
+  - Properties: `PLATEBOUND` (for example `AF-AN`, sometimes with a backslash such as `EU\AF`), `STEPCLASS` (SUB, OCB, CCB convergent; OSR, CRB divergent; OTF, CTF transform), `STEPLENGTH` (km), `SEQNUM`.
+  - Summed `STEPLENGTH` by kind: convergent 91,921 km, divergent 94,806 km, transform 74,068 km. The committed asset (merged, simplified) measures within 0.3% of these.
+  - Licence: Open Data Commons Attribution 1.0. Credit: Peter Bird (2003), An updated digital model of plate boundaries, G³ 4(3):1027; GIS data by Hugo Ahlenius, Nordpil.
+  - `tools/prepare-assets.ps1` merges steps of one `PLATEBOUND` and kind into polylines when a step starts within 0.001 deg of the last point, cuts any jump across the date line, rounds to 3 decimals and simplifies at 0.01 deg: 1,586 polylines, 284 KB (`plate_boundaries.geojson`).
 
 ## Spec impact
 
