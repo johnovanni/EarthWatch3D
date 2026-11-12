@@ -65,13 +65,15 @@ public static class NwsReader
         var location = areas.Count > 0 ? Centroid(areas[0]) : new GeoPosition(0, 0);
         Uri? link = Uri.TryCreate(featureId, UriKind.Absolute, out var lu) && lu.Scheme == Uri.UriSchemeHttps ? lu : null;
         // A Cancel message is itself ended at its own sent time, so it never shows; the alerts it references are ended via SupersedesIds.
-        DateTime? cancelled = Str(p, "messageType") == "Cancel" ? sent : null;
+        bool isCancel = Str(p, "messageType") == "Cancel";
+        DateTime? cancelled = isCancel ? sent : null;
         var supersedes = new List<string>();
         if (p.TryGetProperty("references", out var refs) && refs.ValueKind == JsonValueKind.Array)
             foreach (var rf in refs.EnumerateArray())
                 if (rf.ValueKind == JsonValueKind.Object && Str(rf, "identifier") is { Length: > 0 } rid) supersedes.Add(rid);
         return new WeatherAlert(id, sent.Value, location, Str(p, "headline") ?? evt, link, evt,
-            Str(p, "severity") ?? "Unknown", onset.Value, ends.Value, cancelled, areas, zones, Str(p, "description") ?? "", supersedes);
+            Str(p, "severity") ?? "Unknown", onset.Value, ends.Value, cancelled, areas, zones, Str(p, "description") ?? "", supersedes,
+            isCancel ? AlertEndReason.Cancelled : null);
     }
 
     /// <summary>Polygon or MultiPolygon geometry; every polygon goes through <see cref="DateLine.SplitPolygon"/>.</summary>

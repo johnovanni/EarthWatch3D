@@ -71,6 +71,26 @@ public class SelectionViewModelTests
         Assert.Equal("Take cover.", vm.Description);
     }
 
+    [Theory]
+    [InlineData(null, null, "2026-11-12 15:30 UTC")]
+    [InlineData(10, AlertEndReason.Superseded, "2026-11-12 10:00 UTC (superseded)")]
+    [InlineData(10, AlertEndReason.Cancelled, "2026-11-12 10:00 UTC (cancelled)")]
+    [InlineData(18, AlertEndReason.Cancelled, "2026-11-12 15:30 UTC")]   // ended later than it would have anyway
+    public void AlertUntilIsTheEarlierEnd(int? cancelledHour, AlertEndReason? reason, string expected)
+    {
+        var a = Alert() with
+        {
+            CancelledUtc = cancelledHour is { } h ? new DateTime(2026, 11, 12, h, 0, 0, DateTimeKind.Utc) : null,
+            EndReason = reason,
+        };
+        var vm = Vm();
+        vm.Select(a);
+        Assert.Contains(("Until", expected), vm.Lines);
+        string hourMinute = expected.Substring(11, 5);
+        Assert.Equal("Tornado Warning · until " + hourMinute + " UTC" + (expected.EndsWith(')') ? expected[expected.IndexOf(" (", StringComparison.Ordinal)..] : ""),
+            SelectionViewModel.HoverText(a, Now));
+    }
+
     [Fact]
     public void LongDescriptionIsCut()
     {

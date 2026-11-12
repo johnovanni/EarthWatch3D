@@ -47,9 +47,10 @@ public sealed class EventStore(IClock clock)
         return changed ? s with { Cyclones = [.. map.Values] } : s;
     });
 
-    // id -> time an alert was superseded (an Update or Cancel that references it was sent). Kept so a reference that
-    // arrives before the original is applied when it shows up, and so re-upserting the original does not undo it.
-    private readonly Dictionary<string, DateTime> _supersededAt = new(StringComparer.Ordinal);
+    // id -> time an alert was superseded (an Update or Cancel that references it was sent), and which of the two it
+    // was. Kept so a reference that arrives before the original is applied when it shows up, and so re-upserting the
+    // original does not undo it.
+    private readonly Dictionary<string, (DateTime At, AlertEndReason Reason)> _supersededAt = new(StringComparer.Ordinal);
 
     public void UpsertAlerts(IEnumerable<WeatherAlert> alerts) => Write(s =>
     {
@@ -58,8 +59,9 @@ public sealed class EventStore(IClock clock)
         foreach (var a in incoming)
             foreach (var r in a.SupersedesIds ?? [])
             {
-                if (_supersededAt.TryGetValue(r, out var t) && t <= a.TimeUtc) continue;
-                _supersededAt[r] = a.TimeUtc;
+                if (_supersededAt.TryGetValue(r, out var t) && t.At <= a.TimeUtc) continue;
+                // Only a Cancel message carries Cancelled when it arrives from the reader.
+                _supersededAt[r] = (a.TimeUtc, a.EndReason == AlertEndReason.Cancelled ? AlertEndReason.Cancelled : AlertEndReason.Superseded);
                 touched.Add(r);
             }
         var map = s.Alerts.ToDictionary(a => a.Id);
@@ -83,7 +85,8 @@ public sealed class EventStore(IClock clock)
     });
 
     private WeatherAlert Superseded(WeatherAlert a) =>
-        _supersededAt.TryGetValue(a.Id, out var t) && (a.CancelledUtc is null || t < a.CancelledUtc) ? a with { CancelledUtc = t } : a;
+        _supersededAt.TryGetValue(a.Id, out var t) && (a.CancelledUtc is null || t.At < a.CancelledUtc)
+            ? a with { CancelledUtc = t.At, EndReason = t.Reason } : a;
 
     public void UpsertEonet(IEnumerable<EonetStorm> storms) => Write(s =>
     {
@@ -95,7 +98,7 @@ public sealed class EventStore(IClock clock)
     public void Prune() => Write(s =>
     {
         var now = clock.UtcNow;
-        foreach (var k in _supersededAt.Where(kv => kv.Value < now - AlertRetention).Select(kv => kv.Key).ToList()) _supersededAt.Remove(k);
+        foreach (var k in _supersededAt.Where(kv => kv.Value.At < now - AlertRetention).Select(kv => kv.Key).ToList()) _supersededAt.Remove(k);
         if (!s.Earthquakes.Any(q => q.TimeUtc < now - QuakeRetention)
             && !s.Cyclones.Any(c => c.TimeUtc < now - CycloneRetention)
             && !s.Alerts.Any(a => EndOf(a) < now - AlertRetention)

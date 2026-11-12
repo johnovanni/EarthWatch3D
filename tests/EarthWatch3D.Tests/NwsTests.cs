@@ -149,6 +149,20 @@ public sealed class NwsTests
     }
 
     [Fact]
+    public void EndReasonSaysWhetherAnUpdateOrACancelEndedTheAlert()
+    {
+        var store = NewStore();
+        store.UpsertAlerts([One(Alert("o1")), One(Alert("o2"))]);
+        Assert.Null(store.Snapshot.Alerts.Single(a => a.Id == "o1").EndReason);
+        var cancel = One(Ref("c1", "2026-11-11T14:00:00-05:00", "Cancel", "o1"));
+        Assert.Equal(AlertEndReason.Cancelled, cancel.EndReason);   // a Cancel message ends itself
+        store.UpsertAlerts([cancel, One(Ref("u2", "2026-11-11T13:00:00-05:00", "Update", "o2"))]);
+        Assert.Equal(AlertEndReason.Cancelled, store.Snapshot.Alerts.Single(a => a.Id == "o1").EndReason);
+        Assert.Equal(AlertEndReason.Superseded, store.Snapshot.Alerts.Single(a => a.Id == "o2").EndReason);
+        Assert.Null(store.Snapshot.Alerts.Single(a => a.Id == "u2").EndReason);
+    }
+
+    [Fact]
     public void ReferenceArrivingBeforeOriginalIsApplied()
     {
         var store = NewStore();

@@ -98,7 +98,7 @@ public sealed partial class SelectionViewModel : ObservableObject
                     ("Event", a.EventType),
                     ("Severity", a.Severity),
                     ("From", Utc(a.OnsetUtc)),
-                    ("Until", Utc(a.EndsUtc)),
+                    ("Until", Utc(EndOf(a)) + EndNote(a)),
                     ("Headline", a.Title),
                 ];
             case EonetStorm s:
@@ -124,15 +124,25 @@ public sealed partial class SelectionViewModel : ObservableObject
             case CycloneAdvisory c:
                 return $"{TitleFor(c)} · {CategoryText(c.Category)}" + (c.WindKt is { } w ? $" · {Num(w, 0)} kt" : "");
             case WeatherAlert a:
-                return $"{a.EventType} · until " + (a.EndsUtc.Date == nowUtc.Date
-                    ? a.EndsUtc.ToString("HH:mm", CultureInfo.InvariantCulture) + " UTC"
-                    : Utc(a.EndsUtc));
+                var end = EndOf(a);
+                return $"{a.EventType} · until " + (end.Date == nowUtc.Date
+                    ? end.ToString("HH:mm", CultureInfo.InvariantCulture) + " UTC"
+                    : Utc(end)) + EndNote(a);
             case EonetStorm s:
                 return s.Title + (LastFix(s)?.WindKt is { } fw ? $" · {Num(fw, 0)} kt" : "");
             default:
                 return e.Title;
         }
     }
+
+    /// <summary>min(EndsUtc, CancelledUtc): when the alert really stops showing.</summary>
+    private static DateTime EndOf(WeatherAlert a) => a.CancelledUtc is { } c && c < a.EndsUtc ? c : a.EndsUtc;
+
+    /// <summary>" (superseded)" or " (cancelled)" when a later message ended the alert early; otherwise empty.</summary>
+    private static string EndNote(WeatherAlert a) =>
+        a.CancelledUtc is { } c && c < a.EndsUtc
+            ? a.EndReason == AlertEndReason.Cancelled ? " (cancelled)" : " (superseded)"
+            : "";
 
     private static StormFix? LastFix(EonetStorm s)
     {

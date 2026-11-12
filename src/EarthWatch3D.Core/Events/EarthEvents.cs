@@ -29,14 +29,22 @@ public sealed record CycloneAdvisory(EventSource Source, string Id, DateTime Tim
         ListEquality.Hash(PastTrack), ListEquality.Hash(ForecastTrack), ListEquality.Hash(Cone));
 }
 
-/// <summary>TimeUtc = sent. Location = centroid of Areas, or (0,0) until zones load. Areas empty when only ZoneIds are given.</summary>
+/// <summary>Why an alert ended at its <see cref="WeatherAlert.CancelledUtc"/>: a later Update replaced it, or a Cancel ended it.</summary>
+public enum AlertEndReason { Superseded, Cancelled }
+
+/// <summary>
+/// TimeUtc = sent. Location = centroid of Areas, or (0,0) until zones load. Areas empty when only ZoneIds are given.
+/// EndReason goes with CancelledUtc: Cancelled on a Cancel message itself; set by the store on an alert that a later
+/// message references (Superseded by an Update, Cancelled by a Cancel).
+/// </summary>
 public sealed record WeatherAlert(string Id, DateTime TimeUtc, GeoPosition Location, string Title, Uri? Link,
     string EventType, string Severity, DateTime OnsetUtc, DateTime EndsUtc, DateTime? CancelledUtc,
-    IReadOnlyList<GeoPolygon> Areas, IReadOnlyList<string> ZoneIds, string Description, IReadOnlyList<string>? SupersedesIds = null) : EarthEvent(EventSource.Nws, Id, TimeUtc, Location, Title, Link)
+    IReadOnlyList<GeoPolygon> Areas, IReadOnlyList<string> ZoneIds, string Description, IReadOnlyList<string>? SupersedesIds = null,
+    AlertEndReason? EndReason = null) : EarthEvent(EventSource.Nws, Id, TimeUtc, Location, Title, Link)
 {
     public bool Equals(WeatherAlert? o) => o is not null && Id == o.Id && TimeUtc == o.TimeUtc && Location == o.Location
         && Title == o.Title && Link == o.Link && EventType == o.EventType && Severity == o.Severity
-        && OnsetUtc == o.OnsetUtc && EndsUtc == o.EndsUtc && CancelledUtc == o.CancelledUtc
+        && OnsetUtc == o.OnsetUtc && EndsUtc == o.EndsUtc && CancelledUtc == o.CancelledUtc && EndReason == o.EndReason
         && ListEquality.Equal(Areas, o.Areas) && ListEquality.Equal(ZoneIds, o.ZoneIds) && Description == o.Description
         && ListEquality.Equal(SupersedesIds ?? [], o.SupersedesIds ?? []);
 
