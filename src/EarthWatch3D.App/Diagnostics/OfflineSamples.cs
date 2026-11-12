@@ -1,6 +1,7 @@
 using System.IO;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Gibs;
+using EarthWatch3D.Core.Lightning.Glm;
 using EarthWatch3D.Core.Logging;
 
 namespace EarthWatch3D.App.Diagnostics;
@@ -22,12 +23,16 @@ public static class OfflineSamples
     [
         "usgs_all_week.geojson", "usgs_all_hour.geojson", "gdacs_events_tc.json", "gdacs_geometry.json",
         "nhc_CurrentStorms.json", "nhc_track.kmz", "nhc_cone.kmz", "nws_active.json", "nws_zone.json", "eonet_storms.json",
-        "gibs_viirs_noaa21_truecolor_4096.jpg",
+        "gibs_viirs_noaa21_truecolor_4096.jpg", "glm_g19_listing.xml", "glm_g19_sample.nc", "glm_g18_sample.nc",
     ];
 
     /// <summary>True when the clouds layer will be on: saved on, or named by <c>--layers</c> (which is applied after the feeds are set up).</summary>
     public static bool CloudsWanted(bool savedOn, IReadOnlyList<string>? layers) =>
         savedOn || layers?.Contains("clouds", StringComparer.OrdinalIgnoreCase) == true;
+
+    /// <summary>True when the lightning layer will be on: saved on, or named by <c>--layers</c> (applied after the feeds are set up).</summary>
+    public static bool LightningWanted(bool savedOn, IReadOnlyList<string>? layers) =>
+        savedOn || layers?.Contains("lightning", StringComparer.OrdinalIgnoreCase) == true;
 
     /// <summary>The prefix of the temporary data folders under %TEMP% (one per offline run, deleted on exit).</summary>
     public const string TempFolderPrefix = "EarthWatch3D-offline-";
@@ -99,6 +104,17 @@ public static class OfflineSamples
 
         // Any GetMap gets the sample image (TIME=2026-11-10), whatever date was asked for.
         Map(GibsCloudsFeed.UrlPrefix, "gibs_viirs_noaa21_truecolor_4096.jpg");
+
+        // GLM: both buckets list the one sample hour (2026-11-11 19 h UTC, G19 file names) and any other hour is empty.
+        // Files are the G19 sample for the East bucket and the G18 sample for the West one, whatever their key.
+        const string EmptyListing = "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"></ListBucketResult>";
+        var sampleHour = GlmListing.Prefix(new DateTime(2026, 11, 11, 19, 0, 0, DateTimeKind.Utc));
+        foreach (var (bucket, sample) in new[] { ("noaa-goes19", "glm_g19_sample.nc"), ("noaa-goes18", "glm_g18_sample.nc") })
+        {
+            h.MapText($"https://{bucket}.s3.amazonaws.com/?list-type=2", EmptyListing);
+            Map(GlmListing.ListUri(bucket, sampleHour, null).ToString(), "glm_g19_listing.xml");
+            Map($"https://{bucket}.s3.amazonaws.com/GLM-L2-LCFA/", sample);
+        }
         return h;
     }
 }

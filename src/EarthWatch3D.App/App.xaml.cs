@@ -16,6 +16,7 @@ using EarthWatch3D.Core.Feeds.Usgs;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Globe;
 using EarthWatch3D.Core.Lightning;
+using EarthWatch3D.Core.Lightning.Glm;
 using EarthWatch3D.Core.Lightning.Mtg;
 using EarthWatch3D.Core.Logging;
 using EarthWatch3D.Core.Storage;
@@ -37,6 +38,7 @@ public partial class App : Application
     private FeedScheduler? _scheduler;
     private EventCacheWriter? _cacheWriter;
     private Timer? _pruneTimer;
+    private DownloadMeter? _meter;
     private string? _offlineRoot;
     private CrashHandler? _crash;
     private bool _shutDown;
@@ -103,6 +105,11 @@ public partial class App : Application
         var store = LoadCachedEvents(cache, paths, wall, log);
 
         var http = _http = samplesDir is null ? new FeedHttp() : new FeedHttp(OfflineSamples.CreateHandler(samplesDir));
+        // Today's download volume (wire bytes of every request), kept across restarts on the same local day. Offline it is
+        // not saved to the user's file: the paths are the temporary folder's.
+        var meter = _meter = new DownloadMeter(wall, TimeZoneInfo.Local, paths.DownloadMeterFile, log);
+        meter.LimitBytes = LimitBytes(_settings.Load().DailyLimitMb);
+        http.BytesReceived += meter.Add;
         // The user's own EUMETSAT key and secret: encrypted in the settings file, tested through the app's HTTP client.
         var eumetsat = new EumetsatClient(http, wall);
         var credentials = new EumetsatCredentialStore(_settings, new DpapiProtector());
@@ -112,6 +119,7 @@ public partial class App : Application
         void Applied(AppSettings saved)
         {
             if (main is { } m) m.Units = saved.Units;
+            meter.LimitBytes = LimitBytes(saved.DailyLimitMb);
         }
         var dialogs = new DialogService(() => mainWindow, _settings, credentials, eumetsat.TestAsync, Applied);
         var vm = main = new MainViewModel(clock, _settings, Dispatcher, dialogs);
@@ -122,6 +130,31 @@ public partial class App : Application
         {
             if (args.PropertyName == nameof(LayersViewModel.ShowClouds)) Volatile.Write(ref wantClouds, vm.Layers.ShowClouds);
         };
+        // Same for lightning: wanted while the layer is on and the display is live (the feeds fill a live-only buffer), and
+        // the window the buffer is kept for.
+        bool wantLightning = vm.Layers.ShowLightning && vm.Timeline.IsLive;
+        int lightningWindowMinutes = vm.Display.LightningWindowMinutes;
+        void UpdateLightningWanted() => Volatile.Write(ref wantLightning, vm.Layers.ShowLightning && vm.Timeline.IsLive);
+        vm.Layers.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(LayersViewModel.ShowLightning)) UpdateLightningWanted();
+        };
+        vm.Timeline.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(TimelineViewModel.IsLive)) UpdateLightningWanted();
+        };
+        vm.Display.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(DisplayOptionsViewModel.LightningWindowMinutes))
+                Volatile.Write(ref lightningWindowMinutes, vm.Display.LightningWindowMinutes);
+        };
+        var lightningBuffer = new LightningBuffer();
+        var lightning = new LiveLightningSource(lightningBuffer, () => false);   // MTG is not built yet: no EUMETSAT feed
+        var view = new ViewState();
+        GlmFeed Glm(LightningSensor sensor) => new(http, lightningBuffer, sensor, wall, view,
+            () => TimeSpan.FromMinutes(Volatile.Read(ref lightningWindowMinutes)), () => meter.LimitReached, () => false,
+            () => Volatile.Read(ref wantLightning), log);
+        var glmEast = Glm(LightningSensor.GoesEast);
         var clouds = new GibsCloudsFeed(http, paths, wall, () => Volatile.Read(ref wantClouds), log, DecodeForBlackCheck);
         IEventFeed[] feeds =
         [
@@ -130,6 +163,8 @@ public partial class App : Application
             new NhcFeed(http, store, log),
             new NwsFeed(http, store, zones, () => vm.CurrentFilter.AlertTypes, wall, log),
             new EonetFeed(http, store, log),
+            glmEast,
+            Glm(LightningSensor.GoesWest),
             clouds,
         ];
         var scheduler = _scheduler = new FeedScheduler(feeds, wall, log);
@@ -142,7 +177,12 @@ public partial class App : Application
         {
             // The clouds feed reports only when the layer is on (a skipped run reports nothing). --layers is applied later,
             // so it is read from the options here.
-            var allOk = AllFeedsOkOnce(scheduler, feeds.Where(f => f != clouds || OfflineSamples.CloudsWanted(vm.Layers.ShowClouds, options.Layers)).Select(f => f.Name));
+            // The same goes for GLM East (West faces away from the default view and may skip its first run).
+            var allOk = AllFeedsOkOnce(scheduler, feeds
+                .Where(f => f != clouds || OfflineSamples.CloudsWanted(vm.Layers.ShowClouds, options.Layers))
+                .Where(f => f != glmEast || OfflineSamples.LightningWanted(vm.Layers.ShowLightning, options.Layers))
+                .Where(f => f is not GlmFeed || f == glmEast)
+                .Select(f => f.Name));
             waitForData = async () => { await allOk; await zones.WhenIdleAsync(); };
         }
 
@@ -156,7 +196,7 @@ public partial class App : Application
 #else
         _cacheWriter = new EventCacheWriter(store, s => cache.Save(s), log: log);
 #endif
-        _pruneTimer = new Timer(_ => PruneStore(store, log), null, PruneInterval, PruneInterval);
+        _pruneTimer = new Timer(_ => { PruneStore(store, log); meter.Save(); }, null, PruneInterval, PruneInterval);
 
         // Offline, the readout says SAMPLE instead of LIVE (and the window title says so), so sample data can never be
         // taken for now. With --display-time the clock itself starts at that time, so the display starts "live" on the
@@ -170,17 +210,19 @@ public partial class App : Application
         }
         if (options.Layers is { } extraLayers) vm.Layers.TurnOnForThisRun(extraLayers);   // --layers: not saved
         Volatile.Write(ref wantClouds, vm.Layers.ShowClouds);
+        UpdateLightningWanted();
         vm.Tick();   // show real values immediately
-        // The lightning feeds (a later task) fill the buffer; the scene reports the camera's sub-point in the view state.
-        var lightningBuffer = new LightningBuffer();
-        var lightning = new LiveLightningSource(lightningBuffer, () => false);
-        var view = new ViewState();
+        // The scene reports the camera's sub-point in the view state, which the GLM feeds read.
         var window = mainWindow = new MainWindow(vm, store, zones, lightning, view, log);
         if (samplesDir is not null) window.Title += " — SAMPLE DATA (offline)";
         // Raised on the feed's thread; the scene is used on the UI thread.
         clouds.ImageReady += (_, image) => Dispatcher.BeginInvoke(() => window.Scene.SetCloudImage(image));
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        timer.Tick += (_, _) => vm.Tick();   // also drives the globe's per-minute recompose
+        timer.Tick += (_, _) =>
+        {
+            vm.Tick();   // also drives the globe's per-minute recompose
+            vm.Status.DownloadText = DownloadMeter.Format(meter.TodayBytes);
+        };
         window.Closed += (_, _) =>
         {
             timer.Stop();
@@ -243,6 +285,9 @@ public partial class App : Application
         }
     }
 
+    /// <summary>The daily limit in bytes for a limit in megabytes (decimal, as the meter shows); null for no limit.</summary>
+    private static long? LimitBytes(int? limitMb) => limitMb is { } mb ? mb * 1_000_000L : null;
+
     private static void PruneStore(EventStore store, IAppLog log)
     {
         try { store.Prune(); }
@@ -260,6 +305,7 @@ public partial class App : Application
         _shutDown = true;
         Step("stop the feed scheduler", () => _scheduler?.Stop());   // waits (up to 5 s) for running feeds
         Step("stop the prune timer", () => _pruneTimer?.Dispose());
+        Step("save the download meter", () => _meter?.Save());
         Step("stop the cache writer", () => _cacheWriter?.Dispose());
         Step("save the event cache", () => _cacheWriter?.SaveNow());
         Step("save settings", () => _settings?.Flush());

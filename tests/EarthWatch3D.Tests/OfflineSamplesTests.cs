@@ -1,4 +1,5 @@
 using System.IO;
+using AstroCore.Earth;
 using EarthWatch3D.App.Diagnostics;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds;
@@ -8,6 +9,9 @@ using EarthWatch3D.Core.Feeds.Gibs;
 using EarthWatch3D.Core.Feeds.Nhc;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Feeds.Usgs;
+using EarthWatch3D.Core.Geo;
+using EarthWatch3D.Core.Lightning;
+using EarthWatch3D.Core.Lightning.Glm;
 using EarthWatch3D.Core.Storage;
 
 namespace EarthWatch3D.Tests;
@@ -25,6 +29,15 @@ public class OfflineSamplesTests
         Assert.False(OfflineSamples.CloudsWanted(false, ["plates"]));
         Assert.True(OfflineSamples.CloudsWanted(false, ["plates", "Clouds"]));
         Assert.True(OfflineSamples.CloudsWanted(true, null));
+    }
+
+    [Fact]
+    public void LightningIsWaitedForWhenSavedOnOrNamedInLayers()
+    {
+        Assert.False(OfflineSamples.LightningWanted(false, null));
+        Assert.False(OfflineSamples.LightningWanted(false, ["clouds"]));
+        Assert.True(OfflineSamples.LightningWanted(false, ["Lightning"]));
+        Assert.True(OfflineSamples.LightningWanted(true, null));
     }
 
     [Fact]
@@ -83,6 +96,56 @@ public class OfflineSamplesTests
 
     private static bool AnyZoneLoaded(EventSnapshot s, ZoneCache zones) =>
         s.Alerts.SelectMany(a => a.ZoneIds).Any(z => zones.TryGetCached(z, out var p) && p.Count > 0);
+
+    [Fact]
+    public async Task OfflineRunHasLightningAndClouds()
+    {
+        var handler = OfflineSamples.CreateHandler(SamplesDir);
+        using var http = new FeedHttp(handler);
+        var clock = new TestClock(SampleTime);
+        var log = new RecordingLog();
+        var paths = new AppPaths(Path.Combine(Path.GetTempPath(), "ew3d-offline-" + Guid.NewGuid().ToString("N")));
+        try
+        {
+            paths.EnsureCreated();
+            var view = new ViewState { CameraSubPoint = new GeoPosition(0, -75) };
+            var buffer = new LightningBuffer();
+            var east = new GlmFeed(http, buffer, LightningSensor.GoesEast, clock, view, () => TimeSpan.FromMinutes(15), () => false, () => false, () => true, log);
+            Assert.Equal(FeedRunResult.Ok, await east.RunOnceAsync(CancellationToken.None));
+            // The 15 min window (19:45-20:00) holds up to 45 of the listing's files, and every one is answered with the
+            // same sample .nc (757 flashes). The buffer keeps one flash per sensor, millisecond and 1e-4 degree position,
+            // so the repeated files add nothing, and the feed drops flashes more than an hour old (the sample file is from
+            // the start of 19 h). What is left is the sample's flashes from 19:00 on, however many files were read.
+            List<LightningFlash> sampleFlashes;
+            using (var sample = File.OpenRead(Path.Combine(SamplesDir, "glm_g19_sample.nc")))
+                sampleFlashes = GlmReader.Read(sample, LightningSensor.GoesEast).ToList();
+            Assert.Equal(757, sampleFlashes.Count);
+            int expected = sampleFlashes.Count(f => f.TimeUtc >= SampleTime - TimeSpan.FromMinutes(60));
+            Assert.InRange(expected, 1, 757);
+            Assert.Equal(expected, buffer.Count);
+            Assert.Contains(handler.Requests, r => r.StartsWith("https://noaa-goes19.s3.amazonaws.com/GLM-L2-LCFA/", StringComparison.Ordinal));
+
+            // The West bucket answers too: the same listing, with the G18 sample for its files.
+            view.CameraSubPoint = new GeoPosition(0, -137);
+            var westBuffer = new LightningBuffer();
+            var west = new GlmFeed(http, westBuffer, LightningSensor.GoesWest, clock, view, () => TimeSpan.FromMinutes(15), () => false, () => false, () => true, log);
+            Assert.Equal(FeedRunResult.Ok, await west.RunOnceAsync(CancellationToken.None));
+            Assert.True(westBuffer.Count > 0);
+            Assert.Contains(handler.Requests, r => r.StartsWith("https://noaa-goes18.s3.amazonaws.com/GLM-L2-LCFA/", StringComparison.Ordinal));
+
+            CloudImage? ready = null;
+            var clouds = new GibsCloudsFeed(http, paths, clock, () => true, log);
+            clouds.ImageReady += (_, image) => ready = image;
+            Assert.Equal(FeedRunResult.Ok, await clouds.RunOnceAsync(CancellationToken.None));
+            Assert.NotNull(ready);
+            Assert.Empty(log.Errors);
+            Assert.DoesNotContain(log.Warnings, w => w.Contains("skipped", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            try { Directory.Delete(paths.Root, true); } catch (IOException) { }
+        }
+    }
 
     [Fact]
     public void StaleOfflineFoldersAreSwept()
