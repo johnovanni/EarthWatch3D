@@ -35,6 +35,7 @@ package, so it has to work without developer tools and explain itself to non-tec
 | Time | Live by default, plus replay: 7 days for earthquakes, 24 hours for storms and alerts |
 | Audience | Other people, installing a packaged app |
 | Globe look | Blue Marble on both hemispheres. The night side is darkened with a slight blue tint, and a thin gold line marks the day/night boundary (changed 2026-11-11 from the original translucent grey layer, which lightened the dark Blue Marble oceans instead of darkening them). Live clouds can be switched on (NASA GIBS) |
+| Plate boundaries | Tectonic plate boundaries (Peter Bird's PB2002 model) can be switched on, coloured by type: converging, spreading, sliding past (added 2026-11-11) |
 | Rendering | WPF 3D with HelixToolkit.Wpf (the same approach as SolarSystem3D) |
 | Shared code | A new **AstroCore** repo, used as a git submodule at `external/AstroCore` |
 | Packaging | Self-contained x64 MSIX signed with Azure Trusted Signing, with an `.appinstaller` file for automatic updates |
@@ -111,7 +112,8 @@ record CycloneAdvisory(..., string Name, string Basin, int? Category, double? Wi
                        IReadOnlyList<TrackPoint> PastTrack, IReadOnlyList<TrackPoint> ForecastTrack,
                        GeoPolygon? Cone, IReadOnlyList<WindArea> WindAreas, DateTime IssuedUtc);
 record WeatherAlert(..., string EventType, string Severity, DateTime OnsetUtc, DateTime EndsUtc,
-                    DateTime? CancelledUtc, IReadOnlyList<GeoPolygon> Areas, string Headline, string Description);
+                    DateTime? CancelledUtc, IReadOnlyList<GeoPolygon> Areas, IReadOnlyList<string> ZoneIds,
+                    string Headline, string Description);   // Areas empty when the alert gives only ZoneIds
 record EonetStorm(..., IReadOnlyList<(DateTime t, GeoPoint p)> Track, DateTime? ClosedUtc);
 readonly record struct LightningFlash(DateTime TimeUtc, float Lat, float Lon, float Energy, LightningSensor Sensor);
 ```
@@ -132,13 +134,20 @@ readonly record struct LightningFlash(DateTime TimeUtc, float Lat, float Lon, fl
 
 ### What is visible at time *t*
 
+*t* is the display time: `MainViewModel.DisplayTimeUtc`, owned by the time bar's `TimelineViewModel`. In live mode
+it follows the clock; in replay it is the slider's time. Everything time-dependent (events, the Sun and Moon, the
+night shading) reads this one value, and a `DisplayTimeChanged` event tells the scene to update. `IClock` is used
+only for wall-clock needs (feed polling, staleness, the live time itself).
+
 - **Earthquakes:** `TimeUtc ≤ t` and within the display window (24 h by default, 7 days optional). The colour
   goes from red to orange to yellow to faded as the quake ages through the window. Quakes less than an hour old
   also get a pulsing ring (live mode only).
 - **Cyclones:** for each storm, the latest advisory with `IssuedUtc ≤ t`. A storm with no advisory in the
   previous 24 h is hidden.
-- **Weather alerts:** `OnsetUtc ≤ t < min(EndsUtc, CancelledUtc)`.
-- **EONET storms:** the latest track point at or before *t*, provided the storm was not closed before *t*.
+- **Weather alerts:** `OnsetUtc ≤ t < min(EndsUtc, CancelledUtc)`, and the alert type passes the US alert
+  filter (§5.4: Warnings only by default).
+- **EONET storms:** the latest track point at or before *t*, provided the storm was not closed before *t*, and
+  no visible GDACS or NHC cyclone is within 300 km of that point (§5.5).
 - **Lightning:** only in live mode, as flashes within the lightning window before now. When *t* is not live, the
   layer hides and the legend says "Lightning: live only".
 
@@ -152,56 +161,88 @@ on its own timer in a `FeedScheduler`.
 - **Retries:** after a failure, retry delays go 30 s → 1 → 2 → 5 → 10 min (cap).
 - **Status:** each feed reports its status (last success, last error) to the status strip.
 
-The endpoints below are the planned ones. Items marked **(verify)** are confirmed in the plan's first task
-before any code depends on them.
+The endpoints and fields below were verified against the live services on 2026-11-11
+(`docs/data-sources.md` has the details and `tests/Samples` the captured responses).
 
 ### 5.1 USGS earthquakes
 
-- At startup: `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson`. Every 60 s:
-  `.../all_hour.geojson`. The full weekly refresh repeats every 30 min to pick up deletions and revisions.
-- Fields: `id`, `properties.mag`, `place`, `time`, `updated`, `url`, `geometry.coordinates` (lon, lat, depth).
+- At startup: `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson` (about 1.3 MB). Every 60 s:
+  `.../all_hour.geojson` (a few KB). The full weekly refresh repeats every 30 min to pick up deletions and revisions.
+  USGS regenerates both feeds every minute.
+- Fields: top-level `id`; `properties.mag` (can be null), `place`, `time` and `updated` (both **epoch
+  milliseconds**), `url`, `type`; `geometry.coordinates` = [lon, lat, depth km].
+- `properties.type` is not always `earthquake` (quarry blasts and explosions appear). Only `earthquake` is shown.
 - The minimum magnitude shown is a display filter (M2.5 by default). All quakes are stored.
 
 ### 5.2 GDACS tropical cyclones
 
-- Every 15 min: `https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=TC&alertlevel=green;orange;red&fromdate=…&todate=…`.
-  The alert level is always given explicitly, because the default hides green storms.
-- For each new or changed episode, the event's geometry GeoJSON (track, cone and wind-band polygons, told apart
-  by their role) **(verify the exact geometry endpoint)**.
+- Every 15 min: `https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=TC&alertlevel=green;orange;red&fromdate=<yyyy-MM-dd>&todate=<yyyy-MM-dd>`
+  (dates cover the last 2 days). The alert level is always given explicitly, because the default hides green
+  storms. The response is a GeoJSON FeatureCollection with one Point per event (its current episode).
+- Event fields: `eventid`, `episodeid`, `eventname` (e.g. `PENA-26`), `name`, `alertlevel`, `iscurrent` (a
+  **string** `"true"`/`"false"`), `fromdate`, `todate`, `datemodified` (ISO, UTC, no zone), `source` (NOAA, JTWC,
+  RSMC), `severitydata`, and `url.geometry`.
+- Geometry: for each new or changed episode (new `episodeid` or `datemodified`), fetch `properties.url.geometry`
+  (`/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=…&episodeid=…`, about 200–300 KB). Features are told
+  apart by `properties.Class`, never by `polygonlabel` text:
+
+  | `Class` | Use |
+  |---|---|
+  | `Point_Centroid` | Current position |
+  | `Line_Line_<n>` | Track segment n (past and forecast) |
+  | `Poly_Cones` | Forecast cone (MultiPolygon, already cut at ±180°) |
+  | `Poly_Green` / `Poly_Orange` / `Poly_Red` | Wind bands. A `polygonlabel` ending in `km/h` is a current band; a time label is a forecast step (not drawn) |
+  | `Point_Polygon_Point_<n>` | Small radii circles: not drawn |
+
+- Episodes follow agency advisories, about every 6 h.
 
 ### 5.3 NHC tropical cyclones
 
-- Every 15 min: `https://www.nhc.noaa.gov/CurrentStorms.json` (Atlantic and East/Central Pacific)
-  **(verify structure)**.
-- For each storm, its forecast track and cone KMZ files from the links in that JSON. A KMZ is read as a zip
-  containing KML.
-- **Merging with GDACS:** a GDACS storm and an NHC storm whose names match (case-insensitive) and whose current
-  positions are within 300 km are the same storm. In NHC basins the NHC advisory wins, and the GDACS wind areas
-  are kept if NHC has none.
+- Every 15 min: `https://www.nhc.noaa.gov/CurrentStorms.json` (Atlantic and East/Central Pacific). It is
+  `{ "activeStorms": [...] }`, an empty array when nothing is active, served with a 5-minute CDN cache.
+- Storm fields: `id` (e.g. `cp042026`), `name` (e.g. `Pena`), `classification` (`TD`, `TS`, `HU`…), `intensity`
+  (knots, **string**), `pressure` (mb, string), `latitudeNumeric`/`longitudeNumeric` (west negative),
+  `movementDir`, `movementSpeed`, `lastUpdate`.
+- Geometry comes from KMZ files (a zip with one KML): `forecastTrack.kmzFile` (LineStrings and Points) and
+  `trackCone.kmzFile` (one Polygon). Re-download only when their `advNum`/`fileUpdateTime` changes.
+- **NHC KMZ longitudes are not wrapped** (a cone near the date line ran from 177° to 192.6°). The KML reader
+  normalises longitudes and splits shapes that cross ±180°.
+- **Merging with GDACS:** a GDACS storm and an NHC storm are the same storm when their names match after removing
+  GDACS's `-YY` year suffix (case-insensitive; `PENA-26` = `Pena`) and their current positions are within
+  300 km. In NHC basins the NHC advisory wins, and the GDACS wind bands are kept if NHC has none.
 
 ### 5.4 NWS US alerts
 
-- Every 2 min: `https://api.weather.gov/alerts/active`. At startup, the last 24 h:
-  `https://api.weather.gov/alerts?start=…` **(verify history support and paging)**.
-- Alerts with no geometry use `properties.affectedZones`. Zone outlines are downloaded once and cached in
-  `cache/zones/`.
+- Every 2 min: `https://api.weather.gov/alerts/active` (about 1.8 MB, no paging). At startup, the last 24 h:
+  `https://api.weather.gov/alerts?start=<ISO UTC>`, following `pagination.next` until it is absent (pages of
+  500; about 1,100 alerts and roughly 5 MB per day). A User-Agent is required.
+- Fields: `id` (URN), `properties.event` (e.g. `Tornado Warning`), `severity`, `status`, `messageType`, `sent`,
+  `effective`, `onset`, `expires`, `ends`, `headline`, `description`, `areaDesc`, `affectedZones`, `references`.
+- **Geometry is null for 94–98% of alerts.** Those use `affectedZones`: each zone URL
+  (`https://api.weather.gov/zones/forecast/<id>`, 20–120 KB) returns a Polygon or MultiPolygon. Zones are fetched
+  on demand (at most 4 requests at a time) and cached in `cache/zones/` for 30 days.
+- **Default filter: Warnings only** (an `event` ending in "Warning"). Watches, Advisories and Statements can each
+  be switched on in the ⋯ Display flyout. Zones are downloaded only for alerts that pass the filter.
 - Colours follow the standard NWS hazard colours for the common types (tornado, severe thunderstorm, flash flood,
-  winter storm, hurricane and so on). Other types get a neutral colour.
+  winter storm, hurricane, gale and so on). Other types get a neutral colour.
 
 ### 5.5 NASA EONET
 
-- Every 30 min: `https://eonet.gsfc.nasa.gov/api/v3/events?category=severeStorms&status=all&days=7`
-  **(verify)**.
+- Every 30 min: `https://eonet.gsfc.nasa.gov/api/v3/events?category=severeStorms&status=all&days=7` (slow: 3–4 s).
+- Events: `id`, `title`, `closed` (null while open, ISO when closed), `sources[].id`, and `geometry`: a list of
+  Points, one per fix (`date`, `coordinates` [lon, lat], `magnitudeValue` in kts), usually 6-hourly.
+- **EONET repeats storms GDACS and NHC already have** (in the sample all four were JTWC storms, one also an NHC
+  storm). An EONET storm is hidden at time *t* when a GDACS or NHC cyclone is visible within 300 km of its
+  position at *t*. It is shown only when it adds a storm the others don't have.
 
 ### 5.6 Clouds (NASA GIBS)
 
-- A GIBS global layer fetched as one equirectangular image (WMS `GetMap`, EPSG:4326) at 4096×2048.
-- The first plan task picks the layer from the GIBS GetCapabilities list:
-  - Preferred: a geostationary infrared composite updated every few hours or more often, turned into a
-    translucent cloud layer (white where cold, transparent where warm).
-  - Fallback: daily VIIRS corrected-reflectance true colour, used as a cloud layer with brightness-keyed alpha.
-    It has thin gaps between satellite passes.
-- Refresh interval: matches the layer (hourly or daily). The cloud image is optional and hidden while missing.
+- No global geostationary infrared layer exists in GIBS (only separate GOES-East, GOES-West and Himawari
+  layers, which leave Europe, Africa and the western Indian Ocean uncovered). The cloud layer is therefore
+  `VIIRS_NOAA21_CorrectedReflectance_TrueColor`, requested for the **previous UTC day** (the current day is
+  partial), as one WMS `GetMap` image (EPSG:4326) at 4096×2048, used with brightness-keyed alpha.
+- It refreshes once a day. It has thin gaps between satellite passes. The cloud image is optional and hidden
+  while missing.
 
 ### 5.7 Lightning
 
@@ -209,23 +250,23 @@ before any code depends on them.
 
 - **GOES GLM:**
   - Satellites: GOES-19 (East, 75.2°W) and GOES-18 (West, 137.2°W).
-  - Where the files are: public S3 buckets `noaa-goes19` and `noaa-goes18`, prefix
-    `GLM-L2-LCFA/YYYY/DDD/HH/`, listed anonymously with
-    `https://noaa-goes1X.s3.amazonaws.com/?list-type=2&prefix=…`.
-  - Polling: every 20 s for files newer than the last one read. On start, the last 15 minutes (or the chosen
-    window) are fetched.
-  - Reading: NetCDF-4 is HDF5 underneath and is read with **PureHDF** (managed, MIT). Variables: `flash_lat`,
-    `flash_lon`, `flash_energy`, `flash_time_offset_of_first_event` and the product time attributes. Packed
-    integers are unpacked with `scale_factor` and `add_offset` **(verify PureHDF on a real file, including the
-    deflate filter)**.
+  - Files: public S3 buckets `noaa-goes19` and `noaa-goes18`, listed anonymously with
+    `https://noaa-goes1X.s3.amazonaws.com/?list-type=2&prefix=GLM-L2-LCFA/<yyyy>/<ddd>/<HH>/&start-after=<last key>`
+    (ddd = day of year; one 20-second file each, 180 per hour). Roll the prefix over each hour.
+  - Latency: a file appears about 10 s (5–55 s) after its period ends. Poll every 20 s.
+  - Size: GOES-19 about 390 KB per file (39–72 MB/h, storm-dependent), GOES-18 about 165 KB (about 30 MB/h).
+  - Reading: **PureHDF 2.2.0**, no filter package needed. `flash_lat` and `flash_lon` are plain float32.
+    `flash_energy` and `flash_time_offset_of_first_event` are packed uint16 (`_Unsigned`) with `scale_factor` and
+    `add_offset`. Flash times can start up to about 1.15 s before the file's start time, so flashes are
+    de-duplicated by time and position.
   - The downloaded file is thrown away after reading. Only flashes are kept.
 - **EUMETSAT MTG LI** (only when the user has entered a key):
   - Satellite: Meteosat at 0°.
   - Sign-in: an OAuth token from `https://api.eumetsat.int/token` using the user's consumer key and secret.
   - Finding new files: search the Data Store for collection `EO:EUM:DAT:0691` (LI-2-LFL, lightning flashes) for
     products newer than the last one read, then download each product's NetCDF file.
-  - Reading: the same PureHDF reader, with this product's variable names **(verify product layout, file size
-    and latency)**.
+  - Reading: the same PureHDF reader, with this product's variable names. **Not yet verified: Plan 3 starts by
+    checking the product layout, file size and latency with the user's key.**
   - If latency turns out to be well over a few minutes, the legend shows the actual age of the newest MTG flash
     and nothing is described as "live".
 - **Overlap rules** (each flash is kept by exactly one satellite, decided by longitude):
@@ -265,6 +306,14 @@ before any code depends on them.
   4a. **Day/night line**: a soft gold line (RGB 255, 200, 120, peak 70% opacity) along h = 0, fading out
      2.5 image pixels each side, so the boundary shows even over dark ocean. It can be switched off.
   5. **Coastlines and borders** (Natural Earth 1:50m, public domain), 1-pixel lines, optional.
+  5a. **Tectonic plate boundaries** (optional, off by default): Peter Bird's PB2002 model (Bird 2003, *G³*
+     4(3):1027), as converted by Hugo Ahlenius / Nordpil (ODC Attribution licence; credit required). The 5,824
+     classified boundary steps are merged by `tools/prepare-assets.ps1` into polylines with a `kind`:
+     - **convergent** (subduction `SUB`, oceanic and continental convergent `OCB`/`CCB`): #FF4D4D;
+     - **divergent** (spreading ridges `OSR`, continental rifts `CRB`): #FFD23F;
+     - **transform** (`OTF`, `CTF`): #5AC8FA.
+
+     Drawn 1.5 px wide at 85% opacity into the same lines layer as the coastlines, on top of them.
 - **When it is rebuilt:** once a minute in live mode, whenever the overlay or clouds change, and while the time
   slider moves (at most every 250 ms, with a final rebuild once the slider stops).
 - The finished image is swapped onto the material on the UI thread. Target time: under 300 ms. If that target is
@@ -331,8 +380,8 @@ overlays. Only rarely changed settings go in dialog windows.
 ```
 
 - **Layer strip** (top left, about 48 px wide):
-  - Icon toggle buttons for earthquakes, cyclones, US alerts, EONET storms, lightning, clouds, and coastlines and
-    borders.
+  - Icon toggle buttons for earthquakes, cyclones, US alerts, EONET storms, lightning, clouds, coastlines and
+    borders, and tectonic plate boundaries.
   - Each has a tooltip, and hovering shows that layer's legend (for example the age colours, the NWS hazard
     colours or the lightning fade).
   - `≡` expands the strip to show text labels next to the icons.
@@ -340,6 +389,7 @@ overlays. Only rarely changed settings go in dialog windows.
   - Minimum earthquake magnitude (M2.5 by default; "All" is allowed).
   - Earthquake display window: 24 h or 7 days.
   - Lightning window: 5–60 min (15 by default).
+  - US alert types: Warnings (on by default), Watches, Advisories, Statements.
   - Night-shade strength, and the day/night line on or off.
 - **Sun & Moon card** (top right): sub-solar and sub-lunar points, the Moon's distance and its illuminated
   percentage, plus **Face Sun** and **Face Moon** buttons. It folds down to two icons.
@@ -363,7 +413,8 @@ overlays. Only rarely changed settings go in dialog windows.
     - Saved in `settings.json`. The key and secret are encrypted with DPAPI (`ProtectedData`, CurrentUser
       scope). The ⋯ Display choices and layer toggles are saved there too, so they survive a restart.
   - **About:** the version, every data source with its required credit (USGS, NOAA/NHC/NWS, NASA
-    GIBS/EONET/Blue Marble, GDACS, EUMETSAT "Contains EUMETSAT data", Natural Earth) and the open-source licences
+    GIBS/EONET/Blue Marble, GDACS, EUMETSAT "Contains EUMETSAT data", Natural Earth, and for plate boundaries
+    "Peter Bird (2003), PB2002; GIS conversion by Hugo Ahlenius, Nordpil", ODC-By 1.0) and the open-source licences
     (HelixToolkit, CommunityToolkit, PureHDF).
   - **Welcome** (first run only, can be skipped): explains the layers and the optional EUMETSAT key.
 - **MVVM structure:**
