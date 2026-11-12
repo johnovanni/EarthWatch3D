@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EarthWatch3D.App.Services;
 using EarthWatch3D.Core.Events;
+using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Storage;
 using EarthWatch3D.Core.Time;
 
@@ -16,6 +17,7 @@ public partial class MainViewModel : ObservableObject
 
     private readonly IClock _clock;
     private readonly IDialogService? _dialogs;
+    private readonly ISettingsStore _settings;
     private DateTime? _lastTick;
     // Replaced whole, never mutated, so feeds may read it from any thread.
     private volatile DisplayFilter _currentFilter;
@@ -30,12 +32,14 @@ public partial class MainViewModel : ObservableObject
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _dialogs = dialogs;
         ArgumentNullException.ThrowIfNull(settings);
+        _settings = settings;
+        _units = settings.Load().Units;
         Timeline = new TimelineViewModel(clock);
-        SunMoon = new SunMoonViewModel();
+        SunMoon = new SunMoonViewModel { Units = _units };
         Layers = new LayersViewModel(settings);
         Display = new DisplayOptionsViewModel(settings);
         Status = new StatusViewModel(dispatcher);
-        Selection = new SelectionViewModel(() => DisplayTimeUtc);
+        Selection = new SelectionViewModel(() => DisplayTimeUtc, () => Units);
         _currentFilter = BuildFilter();
         Layers.PropertyChanged += OnFilterInputChanged;
         Display.PropertyChanged += OnFilterInputChanged;
@@ -46,6 +50,17 @@ public partial class MainViewModel : ObservableObject
             DisplayTimeChanged?.Invoke(this, EventArgs.Empty);
         };
         SunMoon.Refresh(DisplayTimeUtc);
+    }
+
+    /// <summary>Kilometres or miles for every distance and speed shown. Saved when changed.</summary>
+    [ObservableProperty] private DistanceUnits _units;
+
+    partial void OnUnitsChanged(DistanceUnits value)
+    {
+        _settings.Save(_settings.Load() with { Units = value });
+        SunMoon.Units = value;
+        SunMoon.Refresh(DisplayTimeUtc);
+        Selection.Select(Selection.Selected);   // rebuilds the lines (and keeps the panel closed if nothing is selected)
     }
 
     public TimelineViewModel Timeline { get; }

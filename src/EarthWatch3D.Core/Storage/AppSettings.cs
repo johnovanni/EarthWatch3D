@@ -1,4 +1,5 @@
 using EarthWatch3D.Core.Events;
+using EarthWatch3D.Core.Geo;
 
 namespace EarthWatch3D.Core.Storage;
 
@@ -22,6 +23,8 @@ public sealed record AppSettings
     public bool LayerStripExpanded { get; init; } = false;
     /// <summary>Daily download limit in megabytes; null means no limit.</summary>
     public int? DailyLimitMb { get; init; } = null;
+    /// <summary>Kilometres or miles for every distance and speed shown.</summary>
+    public DistanceUnits Units { get; init; } = DistanceUnits.Kilometres;
 
     public DisplayFilter ToFilter() => new(ShowQuakes, ShowCyclones, ShowAlerts, ShowEonet,
         double.IsNaN(MinMagnitude) ? double.NegativeInfinity : MinMagnitude,

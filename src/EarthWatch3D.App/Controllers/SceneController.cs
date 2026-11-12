@@ -631,7 +631,7 @@ public sealed class SceneController
                      : MarkerHover.Hits(mouse, projector, sm.SubLunar) ? MarkerHover.MoonText(sm.SubLunar)
                      : null;
         if (text is null && PickEvent(mouse, projector, hover: true) is { } hovered)
-            text = SelectionViewModel.HoverText(hovered, _vm.DisplayTimeUtc);
+            text = SelectionViewModel.HoverText(hovered, _vm.DisplayTimeUtc, _vm.Units);
         if (text is null) { HideMarkerTip(); return; }
         if (!Equals(_markerTip.Content, text)) _markerTip.Content = text;
         _markerTip.HorizontalOffset = mouse.X + 16;

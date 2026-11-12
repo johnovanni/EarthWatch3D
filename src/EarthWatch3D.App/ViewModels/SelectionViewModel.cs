@@ -2,17 +2,24 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EarthWatch3D.Core.Events;
+using EarthWatch3D.Core.Geo;
+using UnitFormat = EarthWatch3D.Core.Geo.Units;
 
 namespace EarthWatch3D.App.ViewModels;
 
-/// <summary>The selected event and the text the details panel and the hover tooltip show for it (km and kt for now).</summary>
+/// <summary>The selected event and the text the details panel and the hover tooltip show for it (distances and winds in the chosen units).</summary>
 public sealed partial class SelectionViewModel : ObservableObject
 {
     public const int MaxDescriptionChars = 600;
     private static readonly IReadOnlyList<(string Label, string Value)> NoLines = [];
     private readonly Func<DateTime> _nowUtc;
+    private readonly Func<DistanceUnits> _units;
 
-    public SelectionViewModel(Func<DateTime>? nowUtc = null) => _nowUtc = nowUtc ?? (() => DateTime.UtcNow);
+    public SelectionViewModel(Func<DateTime>? nowUtc = null, Func<DistanceUnits>? units = null)
+    {
+        _nowUtc = nowUtc ?? (() => DateTime.UtcNow);
+        _units = units ?? (() => DistanceUnits.Kilometres);
+    }
 
     [ObservableProperty] private EarthEvent? _selected;
     [ObservableProperty] private string _title = "";
@@ -26,7 +33,7 @@ public sealed partial class SelectionViewModel : ObservableObject
         Selected = e;
         IsOpen = e is not null;
         Title = e is null ? "" : TitleFor(e);
-        Lines = e is null ? NoLines : LinesFor(e, _nowUtc());
+        Lines = e is null ? NoLines : LinesFor(e, _nowUtc(), _units());
         Description = e is WeatherAlert a ? Truncate(a.Description) : "";
         Link = e?.Link;
     }
@@ -63,7 +70,7 @@ public sealed partial class SelectionViewModel : ObservableObject
         _ => e.Title,
     };
 
-    public static IReadOnlyList<(string Label, string Value)> LinesFor(EarthEvent e, DateTime nowUtc)
+    public static IReadOnlyList<(string Label, string Value)> LinesFor(EarthEvent e, DateTime nowUtc, DistanceUnits units)
     {
         switch (e)
         {
@@ -71,7 +78,7 @@ public sealed partial class SelectionViewModel : ObservableObject
                 return
                 [
                     ("Magnitude", Magnitude(q)),
-                    ("Depth", Km(q.DepthKm)),
+                    ("Depth", UnitFormat.Distance(q.DepthKm, units)),
                     ("Time", TimeWithAge(q.TimeUtc, nowUtc)),
                     ("Place", q.Place),
                 ];
@@ -79,7 +86,7 @@ public sealed partial class SelectionViewModel : ObservableObject
                 return
                 [
                     ("Category", StormNames.CategoryText(c.Category, c.Location)),
-                    ("Wind", Wind(c.WindKt)),
+                    ("Wind", Wind(c.WindKt, units)),
                     ("Pressure", c.PressureHpa is { } p ? Num(p, 0) + " hPa" : "unknown"),
                     ("Advisory time", TimeWithAge(c.TimeUtc, nowUtc)),
                     ("Source", SourceName(c.Source)),
@@ -97,7 +104,7 @@ public sealed partial class SelectionViewModel : ObservableObject
                 var fix = EventVisibility.FixAt(s, nowUtc);   // the fix the globe shows at the display time
                 return
                 [
-                    ("Wind", Wind(fix?.WindKt)),
+                    ("Wind", Wind(fix?.WindKt, units)),
                     ("Last fix", fix is null ? "unknown" : TimeWithAge(fix.TimeUtc, nowUtc)),
                     ("Source", "NASA EONET"),
                 ];
@@ -107,12 +114,12 @@ public sealed partial class SelectionViewModel : ObservableObject
     }
 
     /// <summary>The one-line tooltip, e.g. "M6.1 · 35 km deep · 2 h ago".</summary>
-    public static string HoverText(EarthEvent e, DateTime nowUtc)
+    public static string HoverText(EarthEvent e, DateTime nowUtc, DistanceUnits units)
     {
         switch (e)
         {
             case Earthquake q:
-                return $"{Magnitude(q)} · {Km(q.DepthKm)} deep · {Age(q.TimeUtc, nowUtc)}";
+                return $"{Magnitude(q)} · {UnitFormat.Distance(q.DepthKm, units)} deep · {Age(q.TimeUtc, nowUtc)}";
             case CycloneAdvisory c:
                 return $"{TitleFor(c)} · {StormNames.CategoryText(c.Category, c.Location)}" + (c.WindKt is { } w ? $" · {Num(w, 0)} kt" : "");
             case WeatherAlert a:
@@ -137,8 +144,7 @@ public sealed partial class SelectionViewModel : ObservableObject
             : "";
 
     private static string Magnitude(Earthquake q) => "M" + Num(q.Magnitude, 1);
-    private static string Km(double km) => Num(km, 0) + " km";
-    private static string Wind(double? kt) => kt is { } w ? $"{Num(w, 0)} kt ({Num(w * 1.852, 0)} km/h)" : "unknown";
+    private static string Wind(double? kt, DistanceUnits units) => kt is { } w ? UnitFormat.WindFromKnots(w, units) : "unknown";
     private static string Num(double v, int digits) => v.ToString("F" + digits, CultureInfo.InvariantCulture);
     private static string Utc(DateTime t) => t.ToUniversalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC";
     private static string TimeWithAge(DateTime t, DateTime now) => $"{Utc(t)} ({Age(t, now)})";

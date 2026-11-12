@@ -41,6 +41,18 @@ public class SunMoonViewModelTests
     }
 
     [Fact]
+    public void DistancesFollowUnits()
+    {
+        var vm = new SunMoonViewModel { Units = DistanceUnits.Miles };
+        vm.Refresh(new DateTime(2026, 12, 21, 12, 0, 0, DateTimeKind.Utc));
+        Assert.EndsWith(" mi", vm.MoonDistanceText);
+        Assert.Equal(Units.Distance(vm.MoonDistanceKm, DistanceUnits.Miles), vm.MoonDistanceText);
+        Assert.Equal(Units.Large(vm.SunDistanceKm, DistanceUnits.Miles), vm.SunDistanceText);
+        Assert.Contains("million miles", vm.SunDistanceToolTip);   // tooltips keep both systems
+        Assert.Contains(" km", vm.MoonDistanceToolTip);
+    }
+
+    [Fact]
     public void RefreshUsesTheGivenTime()
     {
         var t = new DateTime(2026, 11, 11, 0, 0, 0, DateTimeKind.Utc);

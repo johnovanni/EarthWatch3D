@@ -184,4 +184,18 @@ public class LayersAndDisplayViewModelTests
         e.Arrange(new Rect(0, 0, 800, 600));
         e.UpdateLayout();
     }
+
+    [Fact]
+    public void UnitsAreSavedAndRestored()
+    {
+        var store = new FakeSettingsStore();
+        var vm = new MainViewModel(new TestClock(T0), store);
+        Assert.Equal(EarthWatch3D.Core.Geo.DistanceUnits.Kilometres, vm.Units);
+        vm.Units = EarthWatch3D.Core.Geo.DistanceUnits.Miles;
+        Assert.Equal(EarthWatch3D.Core.Geo.DistanceUnits.Miles, store.Load().Units);
+        Assert.EndsWith(" mi", vm.SunMoon.MoonDistanceText);
+        var again = new MainViewModel(new TestClock(T0), store);
+        Assert.Equal(EarthWatch3D.Core.Geo.DistanceUnits.Miles, again.Units);
+        Assert.EndsWith(" mi", again.SunMoon.MoonDistanceText);
+    }
 }

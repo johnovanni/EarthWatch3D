@@ -54,7 +54,7 @@ public class SelectionViewModelTests
         var vm = Vm();
         vm.Select(typhoon);
         Assert.Equal("Category 4 typhoon", vm.Lines.First(l => l.Label == "Category").Value);
-        Assert.Equal("PENA · Category 4 typhoon · 120 kt", SelectionViewModel.HoverText(typhoon, Now));
+        Assert.Equal("PENA · Category 4 typhoon · 120 kt", SelectionViewModel.HoverText(typhoon, Now, DistanceUnits.Kilometres));
     }
 
     [Fact]
@@ -71,7 +71,7 @@ public class SelectionViewModelTests
         vm.Select(s);
         Assert.Contains(("Wind", "30 kt (56 km/h)"), vm.Lines);
         Assert.Contains(("Last fix", "2026-11-12 03:00 UTC (2 h ago)"), vm.Lines);
-        Assert.Equal("Storm X · 30 kt", SelectionViewModel.HoverText(s, at));
+        Assert.Equal("Storm X · 30 kt", SelectionViewModel.HoverText(s, at, DistanceUnits.Kilometres));
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class SelectionViewModelTests
         Assert.Contains(("Until", expected), vm.Lines);
         string hourMinute = expected.Substring(11, 5);
         Assert.Equal("Tornado Warning · until " + hourMinute + " UTC" + (expected.EndsWith(')') ? expected[expected.IndexOf(" (", StringComparison.Ordinal)..] : ""),
-            SelectionViewModel.HoverText(a, Now));
+            SelectionViewModel.HoverText(a, Now, DistanceUnits.Kilometres));
     }
 
     [Fact]
@@ -139,11 +139,44 @@ public class SelectionViewModelTests
     }
 
     [Fact]
+    public void QuakeLinesInMiles()
+    {
+        var vm = new SelectionViewModel(() => Now, () => DistanceUnits.Miles);
+        vm.Select(Quake());
+        Assert.Contains(("Depth", "22 mi"), vm.Lines);
+        Assert.Equal("M6.1 · 22 mi deep · 2 h ago", SelectionViewModel.HoverText(Quake(), Now, DistanceUnits.Miles));
+    }
+
+    [Fact]
+    public void WindLinesInMiles()
+    {
+        var vm = new SelectionViewModel(() => Now, () => DistanceUnits.Miles);
+        vm.Select(Storm(65));
+        Assert.Contains(("Wind", "65 kt (75 mph)"), vm.Lines);
+        var eonet = new EonetStorm("e1", T, new GeoPosition(0, 0), "Storm X", null,
+            [new StormFix(T, new GeoPosition(1, 1), 50)], null);
+        vm.Select(eonet);
+        Assert.Contains(("Wind", "50 kt (58 mph)"), vm.Lines);
+    }
+
+    [Fact]
+    public void LinesFollowTheUnitsWhenReselected()
+    {
+        var units = DistanceUnits.Kilometres;
+        var vm = new SelectionViewModel(() => Now, () => units);
+        vm.Select(Quake());
+        Assert.Contains(("Depth", "35 km"), vm.Lines);
+        units = DistanceUnits.Miles;
+        vm.Select(vm.Selected);
+        Assert.Contains(("Depth", "22 mi"), vm.Lines);
+    }
+
+    [Fact]
     public void HoverTexts()
     {
-        Assert.Equal("M6.1 · 35 km deep · 2 h ago", SelectionViewModel.HoverText(Quake(), Now));
-        Assert.Equal("PENA · Tropical storm · 40 kt", SelectionViewModel.HoverText(Storm(40), Now));
-        Assert.Equal("Tornado Warning · until 15:30 UTC", SelectionViewModel.HoverText(Alert(), Now));
+        Assert.Equal("M6.1 · 35 km deep · 2 h ago", SelectionViewModel.HoverText(Quake(), Now, DistanceUnits.Kilometres));
+        Assert.Equal("PENA · Tropical storm · 40 kt", SelectionViewModel.HoverText(Storm(40), Now, DistanceUnits.Kilometres));
+        Assert.Equal("Tornado Warning · until 15:30 UTC", SelectionViewModel.HoverText(Alert(), Now, DistanceUnits.Kilometres));
     }
 
     [Fact]
@@ -176,7 +209,7 @@ public class SelectionViewModelTests
     public void UnnamedCycloneHoverHasNoLeadingSeparator()
     {
         var c = Storm(40) with { Name = "", Title = "Tropical Cyclone 07" };
-        Assert.Equal("Tropical Cyclone 07 · Tropical storm · 40 kt", SelectionViewModel.HoverText(c, Now));
+        Assert.Equal("Tropical Cyclone 07 · Tropical storm · 40 kt", SelectionViewModel.HoverText(c, Now, DistanceUnits.Kilometres));
     }
 
     [Theory]
