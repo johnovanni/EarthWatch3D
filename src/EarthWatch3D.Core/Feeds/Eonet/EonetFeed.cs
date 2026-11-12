@@ -11,9 +11,10 @@ public sealed class EonetFeed(FeedHttp http, EventStore store, IAppLog log) : IE
     public string Name => "EONET";
     public TimeSpan Interval => TimeSpan.FromMinutes(30);
 
-    public async Task RunOnceAsync(CancellationToken ct)
+    public async Task<FeedRunResult> RunOnceAsync(CancellationToken ct)
     {
         var bytes = await http.GetBytesAsync(Url, ct).ConfigureAwait(false);
         store.UpsertEonet(EonetReader.Read(new MemoryStream(bytes), log));
+        return FeedRunResult.Ok;
     }
 }

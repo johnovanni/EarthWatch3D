@@ -8,6 +8,8 @@ public sealed record AppPaths(string Root)
     public string LogsDir => Path.Combine(Root, "logs");
     public string SettingsFile => Path.Combine(Root, "settings.json");
     public string EventsFile => Path.Combine(CacheDir, "events.json");
+    public string CloudsDir => Path.Combine(CacheDir, "clouds");
+    public string DownloadMeterFile => Path.Combine(Root, "download-meter.json");
 
     public static AppPaths Default => new(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EarthWatch3D"));
@@ -17,6 +19,7 @@ public sealed record AppPaths(string Root)
         Directory.CreateDirectory(Root);
         Directory.CreateDirectory(CacheDir);
         Directory.CreateDirectory(ZonesDir);
+        Directory.CreateDirectory(CloudsDir);
         Directory.CreateDirectory(LogsDir);
     }
 }

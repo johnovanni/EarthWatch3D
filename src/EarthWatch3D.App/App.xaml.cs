@@ -96,7 +96,7 @@ public partial class App : Application
         var cache = new EventCache(paths, log);
         var store = LoadCachedEvents(cache, paths, wall, log);
 
-        var vm = new MainViewModel(clock, _settings);
+        var vm = new MainViewModel(clock, _settings, Dispatcher);
         var http = _http = samplesDir is null ? new FeedHttp() : new FeedHttp(OfflineSamples.CreateHandler(samplesDir));
         var zones = new ZoneCache(http, paths, wall, log);
         IEventFeed[] feeds =

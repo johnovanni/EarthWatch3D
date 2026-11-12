@@ -1,5 +1,6 @@
 using System.Windows.Threading;
 using EarthWatch3D.App.ViewModels;
+using EarthWatch3D.App.Views;
 using EarthWatch3D.Core.Feeds;
 
 namespace EarthWatch3D.Tests;
@@ -40,6 +41,26 @@ public class StatusViewModelTests
             StatusViewModel.TooltipFor(new FeedStatus("EONET", FeedState.NotStarted, null, null, 0, next)));
         Assert.Equal("MTG: not set up",
             StatusViewModel.TooltipFor(new FeedStatus("MTG", FeedState.NotSetUp, null, null, 0, next)));
+    }
+
+    [Fact]
+    public void PausedTooltipAddsTheNoteOnItsOwnLine()
+    {
+        var tip = StatusViewModel.TooltipFor(new FeedStatus("MTG", FeedState.Paused, T0, null, 0, T0.AddMinutes(1),
+            "Daily download limit reached"));
+        Assert.Equal("MTG: paused" + Environment.NewLine + "Daily download limit reached", tip);
+        Assert.Equal(FeedStateBrushConverter.Paused, FeedStateBrushConverter.For(FeedState.Paused));
+    }
+
+    [Fact]
+    public void DownloadTextIsObservable()
+    {
+        var vm = new StatusViewModel(null);
+        var changed = new List<string?>();
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        Assert.Equal("", vm.DownloadText);
+        vm.DownloadText = "Today: 1 MB";
+        Assert.Contains(nameof(StatusViewModel.DownloadText), changed);
     }
 
     [Fact]

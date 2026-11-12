@@ -19,7 +19,7 @@ public sealed class NwsFeed(FeedHttp http, EventStore store, ZoneCache zones, Fu
     public string Name => "NWS";
     public TimeSpan Interval => TimeSpan.FromMinutes(2);
 
-    public async Task RunOnceAsync(CancellationToken ct)
+    public async Task<FeedRunResult> RunOnceAsync(CancellationToken ct)
     {
         var now = clock.UtcNow;
         var all = new List<WeatherAlert>();
@@ -50,6 +50,7 @@ public sealed class NwsFeed(FeedHttp http, EventStore store, ZoneCache zones, Fu
         zones.Request(store.Snapshot.Alerts
             .Where(a => (AlertTypeClassifier.Classify(a.EventType) & wanted) != 0 && IsActive(a, now))
             .SelectMany(a => a.ZoneIds));
+        return FeedRunResult.Ok;
     }
 
     private async Task<(IReadOnlyList<WeatherAlert> Alerts, Uri? Next)> ReadAsync(Uri url, CancellationToken ct)

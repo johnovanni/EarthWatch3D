@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
 using EarthWatch3D.Core.Feeds;
 
 namespace EarthWatch3D.App.ViewModels;
@@ -8,8 +9,12 @@ namespace EarthWatch3D.App.ViewModels;
 public sealed record StatusItem(string Name, FeedState State, string Tooltip);
 
 /// <summary>One status dot per data source, in the order the sources first report.</summary>
-public sealed class StatusViewModel(Dispatcher? dispatcher)
+public sealed partial class StatusViewModel(Dispatcher? dispatcher) : ObservableObject
 {
+    /// <summary>The download meter's text for the time bar, such as "Today: 12 MB"; empty when not shown.</summary>
+    [ObservableProperty]
+    private string _downloadText = "";
+
     public ObservableCollection<StatusItem> Items { get; } = [];
 
     /// <summary>
@@ -43,15 +48,17 @@ public sealed class StatusViewModel(Dispatcher? dispatcher)
     {
         string lastOk = s.LastSuccessUtc is { } ok ? Utc(ok) : "";
         string error = string.IsNullOrWhiteSpace(s.LastError) ? "" : " (" + Shorten(s.LastError) + ")";
-        return s.State switch
+        var text = s.State switch
         {
             FeedState.Ok => s.Name + ": updated" + (lastOk.Length > 0 ? " " + lastOk : ""),
             FeedState.Retrying or FeedState.Failing =>
                 s.Name + (s.State == FeedState.Retrying ? ": retrying" : ": failing") + error +
                 " – next try " + Utc(s.NextRunUtc) + (lastOk.Length > 0 ? "; last updated " + lastOk : ""),
             FeedState.NotSetUp => s.Name + ": not set up",
+            FeedState.Paused => s.Name + ": paused",
             _ => s.Name + ": waiting for the first update",
         };
+        return string.IsNullOrWhiteSpace(s.Note) ? text : text + Environment.NewLine + s.Note;
     }
 
     private static string Utc(DateTime t) => t.ToString("HH:mm", CultureInfo.InvariantCulture) + " UTC";

@@ -14,11 +14,12 @@ public sealed class FeedSchedulerTests
         public TimeSpan Interval { get; } = interval;
         public int Runs;
         public bool Fail;
-        public Task RunOnceAsync(CancellationToken ct)
+        public FeedRunResult Result = FeedRunResult.Ok;
+        public Task<FeedRunResult> RunOnceAsync(CancellationToken ct)
         {
             Interlocked.Increment(ref Runs);
             if (Fail) throw new InvalidOperationException("boom");
-            return Task.CompletedTask;
+            return Task.FromResult(Result);
         }
     }
 
@@ -41,6 +42,49 @@ public sealed class FeedSchedulerTests
         await s.TickAsync(CancellationToken.None);
         Assert.Equal(2, a.Runs);
         Assert.Equal(1, b.Runs);
+    }
+
+    [Fact]
+    public async Task SkippedKeepsStateAndLastSuccess()
+    {
+        var clock = new FakeClock(T0);
+        var f = new FakeFeed("f", TimeSpan.FromMinutes(1));
+        using var s = new FeedScheduler([f], clock, new NullLog());
+        await s.TickAsync(CancellationToken.None);
+        var first = s.Statuses[0];
+        Assert.Equal(FeedState.Ok, first.State);
+
+        clock.UtcNow = T0.AddMinutes(1);
+        f.Result = FeedRunResult.Skipped;
+        int raised = 0;
+        s.StatusChanged += (_, _) => raised++;
+        await s.TickAsync(CancellationToken.None);
+        var st = s.Statuses[0];
+        Assert.Equal(2, f.Runs);
+        Assert.Equal(FeedState.Ok, st.State);
+        Assert.Equal(first.LastSuccessUtc, st.LastSuccessUtc);
+        Assert.Equal(clock.UtcNow + f.Interval, st.NextRunUtc);
+        Assert.Equal(0, raised);
+    }
+
+    [Fact]
+    public async Task NotSetUpAndPausedMapToTheirStates()
+    {
+        var clock = new FakeClock(T0);
+        var f = new FakeFeed("f", TimeSpan.FromMinutes(1)) { Result = FeedRunResult.NotSetUp };
+        using var s = new FeedScheduler([f], clock, new NullLog());
+        await s.TickAsync(CancellationToken.None);
+        Assert.Equal(FeedState.NotSetUp, s.Statuses[0].State);
+        Assert.Equal(0, s.Statuses[0].ConsecutiveFailures);
+        Assert.Equal(T0.AddMinutes(1), s.Statuses[0].NextRunUtc);
+
+        clock.UtcNow = T0.AddMinutes(1);
+        f.Result = FeedRunResult.Paused;
+        await s.TickAsync(CancellationToken.None);
+        var st = s.Statuses[0];
+        Assert.Equal(FeedState.Paused, st.State);
+        Assert.Equal("Daily download limit reached", st.Note);
+        Assert.Equal(0, st.ConsecutiveFailures);
     }
 
     [Fact]
@@ -106,7 +150,11 @@ public sealed class FeedSchedulerTests
     {
         public string Name => "hang";
         public TimeSpan Interval => TimeSpan.FromMinutes(1);
-        public Task RunOnceAsync(CancellationToken ct) => Task.Delay(Timeout.Infinite, ct);
+        public async Task<FeedRunResult> RunOnceAsync(CancellationToken ct)
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            return FeedRunResult.Ok;
+        }
     }
 
     [Fact]
@@ -133,10 +181,11 @@ public sealed class FeedSchedulerTests
         public string Name { get; } = name;
         public TimeSpan Interval { get; } = interval;
         public int Runs;
-        public async Task RunOnceAsync(CancellationToken ct)
+        public async Task<FeedRunResult> RunOnceAsync(CancellationToken ct)
         {
             Interlocked.Increment(ref Runs);
             await Gate.Task.WaitAsync(ct);
+            return FeedRunResult.Ok;
         }
     }
 
@@ -180,7 +229,7 @@ public sealed class FeedSchedulerTests
         public volatile bool Finished;
         public string Name => "slow-stop";
         public TimeSpan Interval => TimeSpan.FromMinutes(1);
-        public async Task RunOnceAsync(CancellationToken ct)
+        public async Task<FeedRunResult> RunOnceAsync(CancellationToken ct)
         {
             Started.TrySetResult();
             try { await Task.Delay(Timeout.Infinite, ct); }
@@ -189,6 +238,7 @@ public sealed class FeedSchedulerTests
                 Thread.Sleep(200);
                 Finished = true;
             }
+            return FeedRunResult.Ok;
         }
     }
 

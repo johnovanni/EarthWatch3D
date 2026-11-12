@@ -1,4 +1,6 @@
 using System.IO;
+using System.IO.Compression;
+using System.Net.Http.Headers;
 using System.Threading;
 using System.Net.Http;
 using System.Net;
@@ -91,5 +93,84 @@ public sealed class FeedHttpTests
     {
         using var http = new FeedHttp(new StallHandler(), TimeSpan.FromMilliseconds(100));
         await Assert.ThrowsAsync<TimeoutException>(() => http.GetBytesAsync(new Uri("http://host.example/x"), CancellationToken.None));
+    }
+
+    private sealed class FuncHandler(Func<HttpRequestMessage, string?, HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(ct);
+            return respond(request, body);
+        }
+    }
+
+    [Fact]
+    public async Task CountsCompressedBytesAndDecompresses()
+    {
+        var text = string.Concat(Enumerable.Range(0, 20_000).Select(i => "line " + (i % 7) + "\n"))[..100_000];
+        var raw = Encoding.UTF8.GetBytes(text);
+        Assert.Equal(100_000, raw.Length);
+        byte[] gz;
+        using (var ms = new MemoryStream())
+        {
+            using (var z = new GZipStream(ms, CompressionLevel.Optimal, leaveOpen: true)) z.Write(raw);
+            gz = ms.ToArray();
+        }
+        Assert.True(gz.Length < raw.Length / 4);
+        var handler = new FuncHandler((_, _) =>
+        {
+            var r = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(gz) };
+            r.Content.Headers.ContentEncoding.Add("gzip");
+            return r;
+        });
+        using var http = new FeedHttp(handler);
+        long total = 0;
+        http.BytesReceived += n => Interlocked.Add(ref total, n);
+        var got = await http.GetBytesAsync(new Uri("http://x/y"), CancellationToken.None);
+        Assert.Equal(raw, got);
+        Assert.Equal(gz.Length, total);
+    }
+
+    [Fact]
+    public async Task SendsAcceptEncoding()
+    {
+        string? accept = null;
+        var handler = new FuncHandler((req, _) =>
+        {
+            accept = req.Headers.AcceptEncoding.ToString();
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("x") };
+        });
+        using var http = new FeedHttp(handler);
+        await http.GetBytesAsync(new Uri("http://x/y"), CancellationToken.None);
+        Assert.Equal("gzip, deflate", accept);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task UnauthorizedThrowsFeedAuthException(HttpStatusCode code)
+    {
+        using var http = new FeedHttp(new FuncHandler((_, _) => new HttpResponseMessage(code)));
+        await Assert.ThrowsAsync<FeedAuthException>(() => http.GetBytesAsync(new Uri("http://x/y"), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task PostFormSendsBasicAuthAndForm()
+    {
+        HttpMethod? method = null; AuthenticationHeaderValue? auth = null; string? sent = null;
+        var handler = new FuncHandler((req, body) =>
+        {
+            method = req.Method; auth = req.Headers.Authorization; sent = body;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"ok\":1}") };
+        });
+        using var http = new FeedHttp(handler);
+        var reply = await http.PostFormAsync(new Uri("http://x/token"),
+            new Dictionary<string, string> { ["grant_type"] = "client_credentials" },
+            new AuthenticationHeaderValue("Basic", "dTpw"), CancellationToken.None);
+        Assert.Equal("{\"ok\":1}", reply);
+        Assert.Equal(HttpMethod.Post, method);
+        Assert.Equal("Basic", auth?.Scheme);
+        Assert.Equal("dTpw", auth?.Parameter);
+        Assert.Equal("grant_type=client_credentials", sent);
     }
 }

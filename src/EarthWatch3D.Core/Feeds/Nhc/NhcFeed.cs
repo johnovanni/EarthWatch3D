@@ -22,7 +22,7 @@ public sealed class NhcFeed(FeedHttp http, EventStore store, IAppLog log) : IEve
     public string Name => "NHC";
     public TimeSpan Interval => TimeSpan.FromMinutes(15);
 
-    public async Task RunOnceAsync(CancellationToken ct)
+    public async Task<FeedRunResult> RunOnceAsync(CancellationToken ct)
     {
         var bytes = await http.GetBytesAsync(StormsUrl, ct).ConfigureAwait(false);
         var storms = NhcReader.ReadCurrentStorms(new MemoryStream(bytes), log);
@@ -47,6 +47,7 @@ public sealed class NhcFeed(FeedHttp http, EventStore store, IAppLog log) : IEve
         // Forget storms that are no longer active.
         foreach (var id in _cache.Keys.Where(k => storms.All(s => s.Id != k)).ToList()) _cache.Remove(id);
         if (advisories.Count > 0) store.AddCycloneAdvisories(advisories);
+        return FeedRunResult.Ok;
     }
 
     private async Task<(IReadOnlyList<GeoLine> Lines, IReadOnlyList<GeoPolygon> Polygons)?> TryReadAsync(NhcStorm s, Uri url, CancellationToken ct)

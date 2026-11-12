@@ -82,9 +82,29 @@ public sealed class FeedScheduler : IDisposable
         FeedStatus status;
         try
         {
-            await Task.Run(() => slot.Feed.RunOnceAsync(ct), CancellationToken.None).ConfigureAwait(false);
+            var result = await Task.Run(() => slot.Feed.RunOnceAsync(ct), CancellationToken.None).ConfigureAwait(false);
             var now = _clock.UtcNow;
-            status = new FeedStatus(slot.Feed.Name, FeedState.Ok, now, null, 0, now + slot.Feed.Interval);
+            var next = now + slot.Feed.Interval;
+            FeedStatus before;
+            lock (_gate) before = slot.Status;
+            switch (result)
+            {
+                case FeedRunResult.Skipped:
+                    // Nothing was fetched: keep the status as it was and only move the next run. The state did not
+                    // change, so nobody is told.
+                    lock (_gate) { slot.Status = before with { NextRunUtc = next }; slot.EndRun(); }
+                    return;
+                case FeedRunResult.NotSetUp:
+                    status = new FeedStatus(slot.Feed.Name, FeedState.NotSetUp, before.LastSuccessUtc, null, 0, next);
+                    break;
+                case FeedRunResult.Paused:
+                    status = new FeedStatus(slot.Feed.Name, FeedState.Paused, before.LastSuccessUtc, null, 0, next,
+                        "Daily download limit reached");
+                    break;
+                default:
+                    status = new FeedStatus(slot.Feed.Name, FeedState.Ok, now, null, 0, next);
+                    break;
+            }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

@@ -12,13 +12,14 @@ public partial class StatusStrip : UserControl
     public StatusStrip() => InitializeComponent();
 }
 
-/// <summary>Ok green, Retrying amber, Failing red, NotSetUp / NotStarted grey.</summary>
+/// <summary>Ok green, Retrying amber, Failing red, Paused blue, NotSetUp / NotStarted grey.</summary>
 public sealed class FeedStateBrushConverter : IValueConverter
 {
     public static readonly FeedStateBrushConverter Instance = new();
     public static readonly SolidColorBrush Ok = Frozen(0x34, 0xC7, 0x59);
     public static readonly SolidColorBrush Retrying = Frozen(0xFF, 0xCC, 0x00);
     public static readonly SolidColorBrush Failing = Frozen(0xFF, 0x3B, 0x30);
+    public static readonly SolidColorBrush Paused = Frozen(0x0A, 0x84, 0xFF);
     public static readonly SolidColorBrush Idle = Frozen(0x8E, 0x8E, 0x93);
 
     public static SolidColorBrush For(FeedState s) => s switch
@@ -26,6 +27,7 @@ public sealed class FeedStateBrushConverter : IValueConverter
         FeedState.Ok => Ok,
         FeedState.Retrying => Retrying,
         FeedState.Failing => Failing,
+        FeedState.Paused => Paused,
         _ => Idle,
     };
 

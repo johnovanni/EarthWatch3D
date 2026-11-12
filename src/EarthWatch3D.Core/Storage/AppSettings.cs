@@ -20,6 +20,8 @@ public sealed record AppSettings
     public double NightStrength { get; init; } = 0.85;
     public bool ShowTerminator { get; init; } = true;
     public bool LayerStripExpanded { get; init; } = false;
+    /// <summary>Daily download limit in megabytes; null means no limit.</summary>
+    public int? DailyLimitMb { get; init; } = null;
 
     public DisplayFilter ToFilter() => new(ShowQuakes, ShowCyclones, ShowAlerts, ShowEonet,
         double.IsNaN(MinMagnitude) ? double.NegativeInfinity : MinMagnitude,

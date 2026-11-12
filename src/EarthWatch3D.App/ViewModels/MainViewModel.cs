@@ -1,6 +1,8 @@
 using System.ComponentModel;
-using System.Windows;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using EarthWatch3D.App.Services;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Storage;
 using EarthWatch3D.Core.Time;
@@ -13,22 +15,26 @@ public partial class MainViewModel : ObservableObject
     private static readonly TimeSpan MaxTickElapsed = TimeSpan.FromSeconds(5);
 
     private readonly IClock _clock;
+    private readonly IDialogService? _dialogs;
     private DateTime? _lastTick;
     // Replaced whole, never mutated, so feeds may read it from any thread.
     private volatile DisplayFilter _currentFilter;
 
     /// <param name="settings">Where layer and display choices are loaded from and saved to. In the app this is a
     /// <see cref="SettingsSaver"/>, so saves never block the UI thread.</param>
-    public MainViewModel(IClock clock, ISettingsStore settings)
+    /// <param name="dispatcher">The UI thread's dispatcher, used by the status dots; null in tests, where updates
+    /// apply directly.</param>
+    /// <param name="dialogs">Opens the Settings dialog; null in tests.</param>
+    public MainViewModel(IClock clock, ISettingsStore settings, Dispatcher? dispatcher = null, IDialogService? dialogs = null)
     {
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _dialogs = dialogs;
         ArgumentNullException.ThrowIfNull(settings);
         Timeline = new TimelineViewModel(clock);
         SunMoon = new SunMoonViewModel();
         Layers = new LayersViewModel(settings);
         Display = new DisplayOptionsViewModel(settings);
-        // In the app this is the UI thread's dispatcher; in tests (no Application) updates apply directly.
-        Status = new StatusViewModel(Application.Current?.Dispatcher);
+        Status = new StatusViewModel(dispatcher);
         Selection = new SelectionViewModel(() => DisplayTimeUtc);
         _currentFilter = BuildFilter();
         Layers.PropertyChanged += OnFilterInputChanged;
@@ -56,6 +62,10 @@ public partial class MainViewModel : ObservableObject
     public event EventHandler? FilterChanged;
 
     public DateTime DisplayTimeUtc => Timeline.DisplayTimeUtc;
+
+    /// <summary>Opens the Settings dialog (nothing is bound to it yet).</summary>
+    [RelayCommand]
+    private void OpenSettings() => _dialogs?.ShowSettings();
 
     /// <summary>Raised whenever the display time changes (live tick, step, scrub or playback).</summary>
     public event EventHandler? DisplayTimeChanged;

@@ -62,6 +62,7 @@
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
 
         <Button Grid.Column="0" Style="{StaticResource BarButton}" Content="◀◀ ▾" ToolTip="Step back"
@@ -121,5 +122,7 @@
         <ContentControl Grid.Column="7" x:Name="StatusHost" VerticalAlignment="Center">
             <local:StatusStrip DataContext="{Binding DataContext.Status, RelativeSource={RelativeSource AncestorType=Window}}"/>
         </ContentControl>
+        <TextBlock Grid.Column="8" FontFamily="Consolas" FontSize="12" Foreground="#C8CDD8" Margin="10,0,0,0"
+                   Text="{Binding DataContext.Status.DownloadText, RelativeSource={RelativeSource AncestorType=Window}}"/>
     </Grid>
 </UserControl>

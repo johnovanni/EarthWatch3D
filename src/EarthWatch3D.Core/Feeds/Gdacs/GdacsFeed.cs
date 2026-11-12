@@ -13,7 +13,7 @@ public sealed class GdacsFeed(FeedHttp http, EventStore store, IClock clock, IAp
     public string Name => "GDACS";
     public TimeSpan Interval => TimeSpan.FromMinutes(15);
 
-    public async Task RunOnceAsync(CancellationToken ct)
+    public async Task<FeedRunResult> RunOnceAsync(CancellationToken ct)
     {
         var now = clock.UtcNow;
         // The ';' separators are sent literally; GDACS accepts them.
@@ -45,5 +45,6 @@ public sealed class GdacsFeed(FeedHttp http, EventStore store, IClock clock, IAp
             _seen.Add(key);
         }
         if (advisories.Count > 0) store.AddCycloneAdvisories(advisories);
+        return FeedRunResult.Ok;
     }
 }

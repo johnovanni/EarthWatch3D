@@ -16,7 +16,7 @@ public sealed class UsgsFeed(FeedHttp http, EventStore store, IClock clock, IApp
     public string Name => "USGS";
     public TimeSpan Interval => TimeSpan.FromSeconds(60);
 
-    public async Task RunOnceAsync(CancellationToken ct)
+    public async Task<FeedRunResult> RunOnceAsync(CancellationToken ct)
     {
         var now = clock.UtcNow;
         var week = _lastWeekUtc is null || now - _lastWeekUtc.Value >= WeekEvery;
@@ -42,5 +42,6 @@ public sealed class UsgsFeed(FeedHttp http, EventStore store, IClock clock, IApp
         {
             store.UpsertEarthquakes(quakes);
         }
+        return FeedRunResult.Ok;
     }
 }
