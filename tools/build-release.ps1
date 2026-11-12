@@ -30,6 +30,13 @@
 .PARAMETER OutDir
     Output folder, relative to the repository root unless rooted.
 
+.PARAMETER MetadataPath
+    Only for -Signing Azure: the Artifact Signing metadata file (Endpoint, CodeSigningAccountName,
+    CertificateProfileName). Relative to the repository root unless rooted. Local only; see docs/release.md.
+
+.PARAMETER SigningLocalPath
+    Only for -Signing Azure: the file with the publisher ("CN=...") and publisherDisplayName. Same rules.
+
 .EXAMPLE
     pwsh tools/build-release.ps1 -Signing Test
 
@@ -43,7 +50,11 @@ param(
 
     [string] $BaseUri = 'https://github.com/johnovanni/EarthWatch3D/releases/latest/download/',
 
-    [string] $OutDir = 'artifacts\release'
+    [string] $OutDir = 'artifacts\release',
+
+    [string] $MetadataPath = 'packaging\metadata.json',
+
+    [string] $SigningLocalPath = 'packaging\signing.local.json'
 )
 
 Set-StrictMode -Version Latest
@@ -61,8 +72,13 @@ $ArtifactsDir = Join-Path $RepoRoot 'artifacts'
 $PublishDir = Join-Path $ArtifactsDir 'publish'
 $StageDir = Join-Path $ArtifactsDir 'stage'
 $CheckDir = Join-Path $ArtifactsDir 'selfcheck'
-if (-not [System.IO.Path]::IsPathRooted($OutDir)) { $OutDir = Join-Path $RepoRoot $OutDir }
-$OutDir = [System.IO.Path]::GetFullPath($OutDir)
+function Resolve-RepoPath([string] $Path) {
+    if (-not [System.IO.Path]::IsPathRooted($Path)) { $Path = Join-Path $RepoRoot $Path }
+    [System.IO.Path]::GetFullPath($Path)
+}
+$OutDir = Resolve-RepoPath $OutDir
+$MetadataPath = Resolve-RepoPath $MetadataPath
+$SigningLocalPath = Resolve-RepoPath $SigningLocalPath
 
 $MsixName = 'EarthWatch3D.msix'
 $AppInstallerName = 'EarthWatch3D.appinstaller'
@@ -73,6 +89,8 @@ $TestPublisher = 'CN=EarthWatch3D Test Signing'
 $TestPublisherDisplayName = 'EarthWatch3D test build'
 # signtool verify /pa on a test signature whose root is not trusted on this machine (signtool wraps the line).
 $UntrustedRootPattern = 'terminated in a root\s+certificate which is not trusted'
+# Artifact Signing's timestamp authority (its certificates last three days, so the timestamp is what keeps the signature valid).
+$AzureTimestampUrl = 'http://timestamp.acs.microsoft.com'
 
 if (-not $BaseUri.EndsWith('/')) { $BaseUri += '/' }
 $AppInstallerUri = $BaseUri + $AppInstallerName
@@ -142,18 +160,38 @@ Write-Step "EarthWatch3D $version (MSIX $msixVersion), signing: $Signing"
 # ---------------------------------------------------------------------------------------------------------------
 switch ($Signing) {
     'Azure' {
-        $signingLocal = Join-Path $PackagingDir 'signing.local.json'
-        if (-not (Test-Path -LiteralPath $signingLocal)) {
-            throw "-Signing Azure needs $signingLocal with { ""publisher"": ""CN=..."", ""publisherDisplayName"": ""..."" } " +
+        if (-not (Test-Path -LiteralPath $MetadataPath)) {
+            throw "-Signing Azure needs $MetadataPath (Endpoint, CodeSigningAccountName, CertificateProfileName). " +
+                  "Copy packaging/metadata.example.json to packaging/metadata.json and fill it in. See docs/release.md."
+        }
+        if (-not (Test-Path -LiteralPath $SigningLocalPath)) {
+            throw "-Signing Azure needs $SigningLocalPath with { ""publisher"": ""CN=..."", ""publisherDisplayName"": ""..."" } " +
                   "(publisher = the Artifact Signing certificate's subject, exactly). See docs/release.md."
         }
-        $local = Get-Content -LiteralPath $signingLocal -Raw | ConvertFrom-Json
+        $metadata = try { Get-Content -LiteralPath $MetadataPath -Raw | ConvertFrom-Json } catch { throw "$MetadataPath is not valid JSON: $($_.Exception.Message)" }
+        foreach ($field in 'Endpoint', 'CodeSigningAccountName', 'CertificateProfileName') {
+            if ($null -eq $metadata.PSObject.Properties[$field] -or [string]::IsNullOrWhiteSpace([string]$metadata.$field)) {
+                throw "$MetadataPath must set ""$field""."
+            }
+        }
+        if ([string]$metadata.Endpoint -notmatch '^https://[a-z0-9-]+\.codesigning\.azure\.net/?$') {
+            throw "${MetadataPath}: Endpoint must be your account's regional endpoint, like https://eus.codesigning.azure.net (list in docs/release.md)."
+        }
+        $local = try { Get-Content -LiteralPath $SigningLocalPath -Raw | ConvertFrom-Json } catch { throw "$SigningLocalPath is not valid JSON: $($_.Exception.Message)" }
         $publisher = [string]$local.publisher
         $publisherDisplayName = [string]$local.publisherDisplayName
         if ([string]::IsNullOrWhiteSpace($publisher) -or [string]::IsNullOrWhiteSpace($publisherDisplayName)) {
-            throw "$signingLocal must set both ""publisher"" and ""publisherDisplayName""."
+            throw "$SigningLocalPath must set both ""publisher"" and ""publisherDisplayName""."
         }
-        throw '-Signing Azure is not implemented yet (Plan 4 Task 6). Use -Signing Test.'
+        if (-not $publisher.StartsWith('CN=')) { throw "${SigningLocalPath}: publisher must start with ""CN="" (the certificate subject, exactly)." }
+
+        # The dlib signs as the Azure CLI's signed-in account (DefaultAzureCredential), so check that before the long build.
+        Write-Step 'Checking the Azure sign-in (az account show)'
+        $az = Get-Command az -ErrorAction SilentlyContinue
+        if ($null -eq $az) { throw 'The Azure CLI (az) was not found. Install it, then run az login first.' }
+        & $az.Source account show --output none 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Not signed in to Azure. Run az login first, then run this script again.' }
+        Write-Host '    signed in to Azure'
     }
     default {
         $publisher = $TestPublisher
@@ -230,128 +268,141 @@ foreach ($old in @($msixPath, $appInstallerPath, $cerPath)) {
     if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Force }
 }
 
-Write-Step "Packing $msixPath"
-Invoke-Tool $makeAppx @('pack', '/d', $StageDir, '/p', $msixPath, '/o') | Out-Null
+# From here on, any failure (pack, sign, appinstaller, self-check) removes every release output, so nothing unsigned or
+# unverified can be published by mistake. A successful run keeps them.
+try {
+    Write-Step "Packing $msixPath"
+    Invoke-Tool $makeAppx @('pack', '/d', $StageDir, '/p', $msixPath, '/o') | Out-Null
 
-# ---------------------------------------------------------------------------------------------------------------
-# 6. Sign
-# ---------------------------------------------------------------------------------------------------------------
-$testCert = $null
-switch ($Signing) {
-    'Test' {
-        Write-Step 'Signing with the test certificate (Cert:\CurrentUser\My)'
-        $testCert = Get-ChildItem Cert:\CurrentUser\My |
-            Where-Object { $_.Subject -eq $TestPublisher -and $_.HasPrivateKey -and $_.NotAfter -gt (Get-Date).AddDays(7) } |
-            Sort-Object NotAfter -Descending | Select-Object -First 1
-        if ($null -eq $testCert) {
-            Write-Host "    creating ""$TestPublisher"" in Cert:\CurrentUser\My (untrusted; no .pfx, no password)"
-            $testCert = New-SelfSignedCertificate -Type Custom -Subject $TestPublisher -KeyUsage DigitalSignature `
-                -FriendlyName 'EarthWatch3D test signing' -CertStoreLocation Cert:\CurrentUser\My `
-                -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')
+    # ---------------------------------------------------------------------------------------------------------------
+    # 6. Sign
+    # ---------------------------------------------------------------------------------------------------------------
+    $testCert = $null
+    switch ($Signing) {
+        'Test' {
+            Write-Step 'Signing with the test certificate (Cert:\CurrentUser\My)'
+            $testCert = Get-ChildItem Cert:\CurrentUser\My |
+                Where-Object { $_.Subject -eq $TestPublisher -and $_.HasPrivateKey -and $_.NotAfter -gt (Get-Date).AddDays(7) } |
+                Sort-Object NotAfter -Descending | Select-Object -First 1
+            if ($null -eq $testCert) {
+                Write-Host "    creating ""$TestPublisher"" in Cert:\CurrentUser\My (untrusted; no .pfx, no password)"
+                $testCert = New-SelfSignedCertificate -Type Custom -Subject $TestPublisher -KeyUsage DigitalSignature `
+                    -FriendlyName 'EarthWatch3D test signing' -CertStoreLocation Cert:\CurrentUser\My `
+                    -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')
+            }
+            Write-Host "    certificate: $($testCert.Subject), thumbprint $($testCert.Thumbprint), valid to $($testCert.NotAfter.ToString('yyyy-MM-dd'))"
+            # Public part only, for the user's one-time trust step (docs/release.md).
+            [System.IO.File]::WriteAllBytes($cerPath, $testCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+            Invoke-Tool $signTool @('sign', '/fd', 'SHA256', '/sha1', $testCert.Thumbprint, $msixPath) | Out-Null
         }
-        Write-Host "    certificate: $($testCert.Subject), thumbprint $($testCert.Thumbprint), valid to $($testCert.NotAfter.ToString('yyyy-MM-dd'))"
-        # Public part only, for the user's one-time trust step (docs/release.md).
-        [System.IO.File]::WriteAllBytes($cerPath, $testCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
-        Invoke-Tool $signTool @('sign', '/fd', 'SHA256', '/sha1', $testCert.Thumbprint, $msixPath) | Out-Null
+        'Azure' {
+            Write-Step 'Signing with Azure Artifact Signing (signtool + dlib; timestamp from Microsoft)'
+            Invoke-Tool $signTool @('sign', '/v', '/debug', '/fd', 'SHA256', '/tr', $AzureTimestampUrl, '/td', 'SHA256',
+                '/dlib', $dlib, '/dmdf', $MetadataPath, $msixPath) | Out-Null
+        }
+        'None' {
+            Write-Step 'Leaving the package unsigned (-Signing None: it cannot be installed)'
+        }
     }
-    'None' {
-        Write-Step 'Leaving the package unsigned (-Signing None: it cannot be installed)'
+
+    # ---------------------------------------------------------------------------------------------------------------
+    # 7. The .appinstaller
+    # ---------------------------------------------------------------------------------------------------------------
+    Write-Step "Writing $appInstallerPath"
+    $appInstallerText = Expand-Template (Join-Path $PackagingDir $AppInstallerName) @{
+        Version         = $msixVersion
+        Publisher       = $publisher
+        AppInstallerUri = $AppInstallerUri
+        MsixUri         = $MsixUri
     }
-}
+    Set-Content -LiteralPath $appInstallerPath -Value $appInstallerText -Encoding utf8NoBOM -NoNewline
 
-# ---------------------------------------------------------------------------------------------------------------
-# 7. The .appinstaller
-# ---------------------------------------------------------------------------------------------------------------
-Write-Step "Writing $appInstallerPath"
-$appInstallerText = Expand-Template (Join-Path $PackagingDir $AppInstallerName) @{
-    Version         = $msixVersion
-    Publisher       = $publisher
-    AppInstallerUri = $AppInstallerUri
-    MsixUri         = $MsixUri
-}
-Set-Content -LiteralPath $appInstallerPath -Value $appInstallerText -Encoding utf8NoBOM -NoNewline
+    # ---------------------------------------------------------------------------------------------------------------
+    # 8. Self-check: what was packed, what the .appinstaller says and what the exe says must agree.
+    #    A mismatch makes updates silently never apply (plan Review Focus 3).
+    # ---------------------------------------------------------------------------------------------------------------
+    Write-Step 'Self-check'
+    Remove-Folder $CheckDir
+    Invoke-Tool $makeAppx @('unpack', '/p', $msixPath, '/d', $CheckDir, '/o') | Out-Null
 
-# ---------------------------------------------------------------------------------------------------------------
-# 8. Self-check: what was packed, what the .appinstaller says and what the exe says must agree.
-#    A mismatch makes updates silently never apply (plan Review Focus 3).
-# ---------------------------------------------------------------------------------------------------------------
-Write-Step 'Self-check'
-Remove-Folder $CheckDir
-Invoke-Tool $makeAppx @('unpack', '/p', $msixPath, '/d', $CheckDir, '/o') | Out-Null
-
-$failures = [System.Collections.Generic.List[string]]::new()
-function Test-Equal([string] $What, [string] $Actual, [string] $Expected) {
-    $ok = $Actual -ceq $Expected
-    Write-Host ("    [{0}] {1}: {2}" -f ($(if ($ok) { 'ok' } else { 'MISMATCH' })), $What, $Actual)
-    if (-not $ok) { $failures.Add("$What is '$Actual', expected '$Expected'") }
-}
-
-$packedManifest = [xml](Get-Content -LiteralPath (Join-Path $CheckDir 'AppxManifest.xml') -Raw)
-$ns = [System.Xml.XmlNamespaceManager]::new($packedManifest.NameTable)
-$ns.AddNamespace('m', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
-$identity = $packedManifest.SelectSingleNode('/m:Package/m:Identity', $ns)
-
-$installer = [xml](Get-Content -LiteralPath $appInstallerPath -Raw)
-$ns.AddNamespace('ai', 'http://schemas.microsoft.com/appx/appinstaller/2018')
-$aiRoot = $installer.SelectSingleNode('/ai:AppInstaller', $ns)
-$aiMain = $installer.SelectSingleNode('/ai:AppInstaller/ai:MainPackage', $ns)
-if ($null -eq $identity -or $null -eq $aiRoot -or $null -eq $aiMain) { throw 'Self-check could not read the packed manifest or the .appinstaller.' }
-
-$exe = Join-Path $CheckDir $ExeName
-if (-not (Test-Path -LiteralPath $exe)) { throw "Self-check: $ExeName is not in the package." }
-$exeVersion = ((Get-Item -LiteralPath $exe).VersionInfo.ProductVersion -split '\+')[0]
-
-Write-Host "    Directory.Build.props Version: $version (package $msixVersion)"
-Test-Equal 'exe ProductVersion (without +commit)' $exeVersion $version
-Test-Equal 'package Identity Version' $identity.GetAttribute('Version') $msixVersion
-Test-Equal '.appinstaller Version' $aiRoot.GetAttribute('Version') $msixVersion
-Test-Equal '.appinstaller MainPackage Version' $aiMain.GetAttribute('Version') $msixVersion
-Test-Equal 'package Identity Publisher' $identity.GetAttribute('Publisher') $publisher
-Test-Equal '.appinstaller MainPackage Publisher' $aiMain.GetAttribute('Publisher') $publisher
-Test-Equal '.appinstaller MainPackage Name' $aiMain.GetAttribute('Name') $identity.GetAttribute('Name')
-Test-Equal '.appinstaller Uri' $aiRoot.GetAttribute('Uri') $AppInstallerUri
-Test-Equal '.appinstaller MainPackage Uri' $aiMain.GetAttribute('Uri') $MsixUri
-
-$signatureFile = Join-Path $CheckDir 'AppxSignature.p7x'
-if ($Signing -eq 'None') {
-    Test-Equal 'signature' $(if (Test-Path -LiteralPath $signatureFile) { 'present' } else { 'none' }) 'none'
-}
-else {
-    $verify = Invoke-Tool $signTool @('verify', '/pa', '/v', $msixPath) -AllowFailure
-    # Each error message, with signtool's wrapped continuation lines joined.
-    $verifyErrors = @([regex]::Matches($verify.Output, 'SignTool Error:[^\r\n]*(\r?\n\s+[^\r\n]+)*') |
-        ForEach-Object { $_.Value -replace '\s+', ' ' })
-    if ($verify.ExitCode -eq 0) {
-        Write-Host '    [ok] signtool verify /pa: signature verified, chain trusted'
+    $failures = [System.Collections.Generic.List[string]]::new()
+    function Test-Equal([string] $What, [string] $Actual, [string] $Expected) {
+        $ok = $Actual -ceq $Expected
+        Write-Host ("    [{0}] {1}: {2}" -f ($(if ($ok) { 'ok' } else { 'MISMATCH' })), $What, $Actual)
+        if (-not $ok) { $failures.Add("$What is '$Actual', expected '$Expected'") }
     }
-    elseif ($Signing -eq 'Test' -and $verifyErrors.Count -eq 1 -and $verifyErrors[0] -match $UntrustedRootPattern -and
-            $verify.Output -match 'Number of errors: 1\b') {
-        # Expected until the user trusts the test certificate (docs/release.md); the signature itself is intact,
-        # and the signer is checked just below.
-        Write-Host '    [ok] signtool verify /pa: signed; the only error is the untrusted test root (expected):'
-        Write-Host "         $($verifyErrors[0])"
+
+    $packedManifest = [xml](Get-Content -LiteralPath (Join-Path $CheckDir 'AppxManifest.xml') -Raw)
+    $ns = [System.Xml.XmlNamespaceManager]::new($packedManifest.NameTable)
+    $ns.AddNamespace('m', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+    $identity = $packedManifest.SelectSingleNode('/m:Package/m:Identity', $ns)
+
+    $installer = [xml](Get-Content -LiteralPath $appInstallerPath -Raw)
+    $ns.AddNamespace('ai', 'http://schemas.microsoft.com/appx/appinstaller/2018')
+    $aiRoot = $installer.SelectSingleNode('/ai:AppInstaller', $ns)
+    $aiMain = $installer.SelectSingleNode('/ai:AppInstaller/ai:MainPackage', $ns)
+    if ($null -eq $identity -or $null -eq $aiRoot -or $null -eq $aiMain) { throw 'Self-check could not read the packed manifest or the .appinstaller.' }
+
+    $exe = Join-Path $CheckDir $ExeName
+    if (-not (Test-Path -LiteralPath $exe)) { throw "Self-check: $ExeName is not in the package." }
+    $exeVersion = ((Get-Item -LiteralPath $exe).VersionInfo.ProductVersion -split '\+')[0]
+
+    Write-Host "    Directory.Build.props Version: $version (package $msixVersion)"
+    Test-Equal 'exe ProductVersion (without +commit)' $exeVersion $version
+    Test-Equal 'package Identity Version' $identity.GetAttribute('Version') $msixVersion
+    Test-Equal '.appinstaller Version' $aiRoot.GetAttribute('Version') $msixVersion
+    Test-Equal '.appinstaller MainPackage Version' $aiMain.GetAttribute('Version') $msixVersion
+    Test-Equal 'package Identity Publisher' $identity.GetAttribute('Publisher') $publisher
+    Test-Equal '.appinstaller MainPackage Publisher' $aiMain.GetAttribute('Publisher') $publisher
+    Test-Equal '.appinstaller MainPackage Name' $aiMain.GetAttribute('Name') $identity.GetAttribute('Name')
+    Test-Equal '.appinstaller Uri' $aiRoot.GetAttribute('Uri') $AppInstallerUri
+    Test-Equal '.appinstaller MainPackage Uri' $aiMain.GetAttribute('Uri') $MsixUri
+
+    $signatureFile = Join-Path $CheckDir 'AppxSignature.p7x'
+    if ($Signing -eq 'None') {
+        Test-Equal 'signature' $(if (Test-Path -LiteralPath $signatureFile) { 'present' } else { 'none' }) 'none'
     }
     else {
-        Write-Host $verify.Output
-        $failures.Add("signtool verify /pa failed (exit $($verify.ExitCode)): $($verifyErrors -join ' | ')")
-    }
+        $verify = Invoke-Tool $signTool @('verify', '/pa', '/v', $msixPath) -AllowFailure
+        # Each error message, with signtool's wrapped continuation lines joined.
+        $verifyErrors = @([regex]::Matches($verify.Output, 'SignTool Error:[^\r\n]*(\r?\n\s+[^\r\n]+)*') |
+            ForEach-Object { $_.Value -replace '\s+', ' ' })
+        if ($verify.ExitCode -eq 0) {
+            Write-Host '    [ok] signtool verify /pa: signature verified, chain trusted'
+        }
+        elseif ($Signing -eq 'Test' -and $verifyErrors.Count -eq 1 -and $verifyErrors[0] -match $UntrustedRootPattern -and
+                $verify.Output -match 'Number of errors: 1\b') {
+            # Expected until the user trusts the test certificate (docs/release.md); the signature itself is intact,
+            # and the signer is checked just below.
+            Write-Host '    [ok] signtool verify /pa: signed; the only error is the untrusted test root (expected):'
+            Write-Host "         $($verifyErrors[0])"
+        }
+        else {
+            Write-Host $verify.Output
+            $failures.Add("signtool verify /pa failed (exit $($verify.ExitCode)): $($verifyErrors -join ' | ')")
+        }
 
-    $signature = Get-AuthenticodeSignature -LiteralPath $msixPath
-    $signer = if ($null -ne $signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '(no signer)' }
-    Test-Equal 'signer subject' $signer $publisher
-    if ($Signing -eq 'Test') {
-        $signerThumb = if ($null -ne $signature.SignerCertificate) { $signature.SignerCertificate.Thumbprint } else { '' }
-        Test-Equal 'signer thumbprint' $signerThumb $testCert.Thumbprint
+        $signature = Get-AuthenticodeSignature -LiteralPath $msixPath
+        $signer = if ($null -ne $signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '(no signer)' }
+        Test-Equal 'signer subject' $signer $publisher
+        if ($Signing -eq 'Test') {
+            $signerThumb = if ($null -ne $signature.SignerCertificate) { $signature.SignerCertificate.Thumbprint } else { '' }
+            Test-Equal 'signer thumbprint' $signerThumb $testCert.Thumbprint
+        }
     }
-}
-Remove-Folder $CheckDir
+    Remove-Folder $CheckDir
 
-if ($failures.Count -gt 0) {
-    # Leave nothing behind that could be published by mistake.
-    foreach ($bad in @($msixPath, $appInstallerPath)) { Remove-Item -LiteralPath $bad -Force -ErrorAction SilentlyContinue }
-    throw "Self-check failed (the .msix and .appinstaller were deleted):`n  " + ($failures -join "`n  ")
+    if ($failures.Count -gt 0) {
+        throw "Self-check failed:`n  " + ($failures -join "`n  ")
+    }
+    Write-Host '    self-check passed'
 }
-Write-Host '    self-check passed'
+catch {
+    foreach ($bad in @($msixPath, $appInstallerPath, $cerPath)) { Remove-Item -LiteralPath $bad -Force -ErrorAction SilentlyContinue }
+    Remove-Folder $CheckDir
+    Write-Host "    build failed; deleted $MsixName, $AppInstallerName and $TestCerName from $OutDir" -ForegroundColor Red
+    throw
+}
 
 # ---------------------------------------------------------------------------------------------------------------
 # 9. Summary

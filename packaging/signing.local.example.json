@@ -1,0 +1,4 @@
+{
+  "publisher": "CN=<your name or organisation, exactly as in the certificate subject>, O=..., L=..., S=..., C=...",
+  "publisherDisplayName": "<the name shown to users>"
+}
