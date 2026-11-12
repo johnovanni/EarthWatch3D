@@ -46,6 +46,36 @@ public readonly struct Projector
         return true;
     }
 
+    /// <summary>
+    /// Where the ray from the eye through the screen point <paramref name="screen"/> first meets the unit sphere (the
+    /// globe's surface); false if it misses. Pure camera math: the inverse of <see cref="TryProject"/>.
+    /// </summary>
+    public bool TryHitUnitSphere(Point screen, out Point3D hit)
+    {
+        var dir = _forward + _right * ((screen.X - _halfW) / _focal) + _up * ((_halfH - screen.Y) / _focal);
+        return RayHitsUnitSphere(_eye, dir, out hit);
+    }
+
+    /// <summary>The nearest point ahead of <paramref name="origin"/> along <paramref name="direction"/> on the unit sphere.</summary>
+    public static bool RayHitsUnitSphere(Point3D origin, Vector3D direction, out Point3D hit)
+    {
+        hit = default;
+        var o = (Vector3D)origin;
+        double a = direction.LengthSquared;
+        if (a < 1e-24) return false;
+        // |o + t d|² = 1  →  a t² + 2 b t + c = 0
+        double b = Vector3D.DotProduct(o, direction);
+        double c = o.LengthSquared - 1;
+        double disc = b * b - a * c;
+        if (disc < 0) return false;
+        double root = Math.Sqrt(disc);
+        double t = (-b - root) / a;            // the entry point
+        if (t < 0) t = (-b + root) / a;        // the eye is inside the sphere: the exit point
+        if (t < 0) return false;               // the sphere is behind the eye
+        hit = origin + direction * t;
+        return true;
+    }
+
     public bool IsOnScreen(Point s, double margin = 0) =>
         s.X >= -margin && s.Y >= -margin && s.X <= Width + margin && s.Y <= Height + margin;
 

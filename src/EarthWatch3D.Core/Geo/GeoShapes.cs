@@ -43,6 +43,30 @@ public static class ListEquality
 /// </summary>
 public sealed record GeoPolygon(IReadOnlyList<IReadOnlyList<GeoPosition>> Rings)
 {
+    /// <summary>Lat/lon box around every ring, so <see cref="Contains"/> can reject far points without the ray cast.</summary>
+    private sealed class Box(double minLat, double minLon, double maxLat, double maxLon)
+    {
+        public bool Holds(double lat, double lon) => lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon;   // false for NaN
+
+        public static Box Of(IReadOnlyList<IReadOnlyList<GeoPosition>> rings)
+        {
+            double minLat = double.MaxValue, minLon = double.MaxValue, maxLat = double.MinValue, maxLon = double.MinValue;
+            foreach (var ring in rings)
+                foreach (var q in ring)
+                {
+                    minLat = Math.Min(minLat, q.LatitudeDeg); maxLat = Math.Max(maxLat, q.LatitudeDeg);
+                    minLon = Math.Min(minLon, q.LongitudeDeg); maxLon = Math.Max(maxLon, q.LongitudeDeg);
+                }
+            return new Box(minLat, minLon, maxLat, maxLon);
+        }
+    }
+
+    // Computed on the first Contains (a reference, so a racing second computation is harmless). Not part of equality,
+    // hashing or serialization, and not copied by `with` (see the copy constructor), so it never goes stale.
+    private Box? _box;
+
+    private GeoPolygon(GeoPolygon original) => Rings = original.Rings;
+
     public bool Equals(GeoPolygon? other) =>
         other is not null && ListEquality.Equal(Rings, other.Rings, (x, y) => ListEquality.Equal(x, y));
 
@@ -55,11 +79,12 @@ public sealed record GeoPolygon(IReadOnlyList<IReadOnlyList<GeoPosition>> Rings)
         return h.ToHashCode();
     }
 
-    /// <summary>Even-odd ray cast in lon/lat over all rings, so holes are respected.</summary>
+    /// <summary>Even-odd ray cast in lon/lat over all rings, so holes are respected. Points outside the bounding box are rejected first.</summary>
     public bool Contains(GeoPosition p)
     {
-        bool inside = false;
         double x = p.LongitudeDeg, y = p.LatitudeDeg;
+        if (!(_box ??= Box.Of(Rings)).Holds(y, x)) return false;
+        bool inside = false;
         foreach (var ring in Rings)
         {
             for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)

@@ -635,8 +635,9 @@ public sealed class SceneController
         var visible = _visible;
         var hit = EventPicker.Pick(mouse, projector, visible, null);
         if (hit is not null || visible.Alerts.Count == 0) return hit;
+        // Analytic ray/sphere hit: cheap enough for 30 Hz hover (a Viewport3D hit test walks every mesh in the scene).
         GeoPosition? surface = null;
-        if (_viewport.FindNearest(mouse, out Point3D p, out _, out _))
+        if (projector.TryHitUnitSphere(mouse, out Point3D p))
             surface = GeoPosition.FromVector(new Vector3d(p.X, p.Y, p.Z));
         return EventPicker.Pick(mouse, projector, visible, surface,
             // Hover must not touch the disk (it runs at 30 Hz); a click may.
@@ -757,8 +758,8 @@ public sealed class SceneController
         if (e.ChangedButton != MouseButton.Left || e.ClickCount != 2) return;
         e.Handled = true;   // keep Helix's own double-click (look-at) out of it
         if (Camera is not { } camera) return;
-        var pt = e.GetPosition(_viewport);
-        if (!_viewport.FindNearest(pt, out Point3D hit, out _, out _)) return;
+        var projector = new Projector(camera, _viewport.ActualWidth, _viewport.ActualHeight);
+        if (!projector.TryHitUnitSphere(e.GetPosition(_viewport), out Point3D hit)) return;
         var geo = GeoPosition.FromVector(new Vector3d(hit.X, hit.Y, hit.Z));
         double distance = ((Vector3D)camera.Position).Length;
         _animator.AnimateTo(CameraRules.LookDownOn(geo, distance).Position);

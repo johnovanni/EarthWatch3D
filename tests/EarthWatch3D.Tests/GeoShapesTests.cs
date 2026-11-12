@@ -91,4 +91,41 @@ public class GeoShapesTests
         var east = polys.Single(p => p.Bounds.MinLon == -180.0);
         Assert.True(east.Contains(new(10.5, -175.0)));
     }
+
+    // A concave "C" shape: the bounding box is lon 0..10, lat 0..10, and the notch (lon 3..10, lat 3..7) is outside.
+    private static GeoPolygon CShape() => new([[
+        new GeoPosition(0, 0), new GeoPosition(0, 10), new GeoPosition(3, 10), new GeoPosition(3, 3),
+        new GeoPosition(7, 3), new GeoPosition(7, 10), new GeoPosition(10, 10), new GeoPosition(10, 0), new GeoPosition(0, 0)]]);
+
+    [Fact]
+    public void ContainsRejectsOutsideBoxQuickly()
+    {
+        var c = CShape();
+        Assert.False(c.Contains(new GeoPosition(20, 5)));    // north of the box
+        Assert.False(c.Contains(new GeoPosition(-1, 5)));    // south
+        Assert.False(c.Contains(new GeoPosition(5, -1)));    // west
+        Assert.False(c.Contains(new GeoPosition(5, 11)));    // east
+        Assert.False(c.Contains(new GeoPosition(5, 8)));     // inside the box, in the notch
+        Assert.True(c.Contains(new GeoPosition(5, 1)));      // the spine of the C
+        Assert.True(c.Contains(new GeoPosition(1.5, 8)));    // the lower arm
+        Assert.True(c.Contains(new GeoPosition(8.5, 8)));    // the upper arm
+        Assert.False(c.Contains(new GeoPosition(double.NaN, 5)));
+    }
+
+    [Fact]
+    public void CachedBoxDoesNotAffectEqualityOrCopies()
+    {
+        var a = CShape();
+        var b = CShape();
+        int hashBefore = a.GetHashCode();
+        Assert.True(a.Contains(new GeoPosition(5, 1)));   // a has computed its box, b has not
+        Assert.Equal(a, b);
+        Assert.Equal(hashBefore, a.GetHashCode());
+        Assert.Equal(b.GetHashCode(), a.GetHashCode());
+
+        // A copy with other rings must not reuse the original's box.
+        var moved = a with { Rings = [[new GeoPosition(40, 40), new GeoPosition(40, 50), new GeoPosition(50, 50), new GeoPosition(50, 40), new GeoPosition(40, 40)]] };
+        Assert.True(moved.Contains(new GeoPosition(45, 45)));
+        Assert.False(moved.Contains(new GeoPosition(5, 1)));
+    }
 }
