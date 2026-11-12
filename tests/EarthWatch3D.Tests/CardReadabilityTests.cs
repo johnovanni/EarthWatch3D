@@ -84,6 +84,24 @@ public class CardReadabilityTests
     }
 
     [Fact]
+    public void AllAboutWindowTextIsLight()
+    {
+        Sta.Run(() =>
+        {
+            var vm = new AboutViewModel(new RecordingLinkOpener(), @"C:\Users\x\AppData\Local\EarthWatch3D", mtgAvailable: true);
+            var window = new AboutWindow(vm);
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+            content.Measure(new Size(480, 3000));
+            content.Arrange(new Rect(0, 0, 480, 3000));
+            content.UpdateLayout();
+            AssertAllLight(content, 20);
+            var texts = Descendants(content).OfType<TextBlock>().Select(TextOf).ToList();
+            Assert.Contains("Live earthquakes, storms and lightning on a 3D globe.", texts);
+            Assert.Contains("Shown for interest, not for safety decisions: follow your local weather service and authorities.", texts);
+        });
+    }
+
+    [Fact]
     public void HoverTipUsesTheDarkCardStyle()
     {
         Sta.Run(() =>

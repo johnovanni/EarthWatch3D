@@ -66,7 +66,7 @@ dotnet run --project src/EarthWatch3D.App -c Release
 `--recursive` also fetches the `external/AstroCore` submodule (the astronomy library). If you cloned without it,
 run `git submodule update --init`.
 
-Run the tests with `dotnet test --filter Category!=Perf`. The compose-time test is tagged `Perf`; run it in Release
+Run the tests with `dotnet test --filter "Category!=Perf&Category!=Network"`. The `Network` tests (for example, that every link in the About window still answers) use the internet; run them with `dotnet test --filter Category=Network`. The compose-time test is tagged `Perf`; run it in Release
 with `dotnet test -c Release --filter Category=Perf`.
 
 ## Controls
@@ -99,6 +99,7 @@ These command-line options are for checking the app without a screen capture too
 | `--layers <list>` | Switches the named layers on for this run only (nothing is saved): any of `quakes`, `cyclones`, `alerts`, `eonet`, `coastlines`, `plates`, separated by commas, for example `--layers plates`. |
 | `--look-at <lat,lon>` | Once the globe image is shown, turns the camera at once to look straight down on that point, in degrees (north and east positive), for example `--look-at 10,-165`. |
 | `--delay-ms <N>` | With `--snapshot`: wait N milliseconds before the picture (default 1500). |
+| `--dialog <about\|welcome>` | Once the globe is shown, opens that dialog over the main window. With `--snapshot`, the picture is of the dialog alone (the main window is not saved) and the app then exits. |
 | `--snapshot-recompose` | With `--snapshot <png path>`: saves two pictures instead of one, `<name>-a.png` and `<name>-b.png`. The second is taken after the app's clock is moved 6 hours ahead and the globe image recomposed and shown, so the night side should have moved about 90° west. This checks that a later recompose reaches the screen, not only the first. |
 | `--display-time <UTC time>` | Starts in replay at that time, written in ISO form with a `Z` or an offset, for example `2026-11-11T20:00:00Z`. A time more than 7 days ago is moved to the start of the 7 days. With `--offline-samples`, the app's clock starts at that time instead (see below). |
 | `--offline-samples <folder>` | Answers every data request from the sample files in the folder (`tests\Samples`) instead of the network. The event cache, zone outlines and settings go to a temporary folder (`%TEMP%\EarthWatch3D-offline-…`, deleted on exit), so your own cache and saved choices are not touched; the log still goes to the usual folder. With `--display-time`, the app's clock starts at that time, so the samples aren't treated as days old, and runs on from there. Sample data never looks live: the window title ends with "— SAMPLE DATA (offline)", and the time readout says **SAMPLE** (for example "SAMPLE 11 Nov 20:00 UTC") where it would say LIVE; the LIVE button reads NOW and is not lit. Folders left by offline runs that were killed are deleted at the next start once they are a day old. With `--snapshot`, the picture waits (at most 20 s) until every source has reported once, the zone outlines have loaded and any alert and cyclone areas are on the globe. |

@@ -15,16 +15,19 @@ namespace EarthWatch3D.App.Diagnostics;
 /// <c>--look-at &lt;lat,lon&gt;</c> turns the camera to that point once the globe is shown;
 /// <c>--layers &lt;list&gt;</c> switches the named layers on for this run only, without saving (comma list of
 /// quakes, cyclones, alerts, eonet, coastlines, plates, lightning, clouds; for example <c>--layers plates</c>).
+/// <c>--dialog about|welcome</c> opens that dialog once the globe is shown; with <c>--snapshot</c> the picture is of the
+/// dialog alone (not the main window).
 /// Unknown arguments are ignored. The older options (snapshot, delay) also ignore a missing or bad value; the newer
 /// ones report it in <see cref="Error"/>, one line per problem.
 /// </summary>
 public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int DelayMs, bool SnapshotRecompose = false,
                                    string? OfflineSamplesDir = null, DateTime? DisplayTimeUtc = null,
                                    GeoPosition? LookAt = null, string? Error = null,
-                                   IReadOnlyList<string>? Layers = null)
+                                   IReadOnlyList<string>? Layers = null, string? Dialog = null)
 {
     public const int DefaultDelayMs = 1500;
     public static readonly string[] LayerNames = ["quakes", "cyclones", "alerts", "eonet", "coastlines", "plates", "lightning", "clouds"];
+    public static readonly string[] DialogNames = ["about", "welcome"];
     public const string DisplayTimeExample = "2026-11-11T20:00:00Z";
 
     private static readonly string[] UtcFormats =
@@ -34,7 +37,7 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
     ];
 
     /// <summary>True when <see cref="Diagnostics.SnapshotDiagnostic"/> has something to do after the first compose.</summary>
-    public bool Any => SnapshotPath != null || FaceSun || LookAt != null;
+    public bool Any => SnapshotPath != null || FaceSun || LookAt != null || Dialog != null;
 
     public static LaunchOptions Parse(IReadOnlyList<string> args)
     {
@@ -44,6 +47,7 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
         DateTime? displayTime = null;
         GeoPosition? lookAt = null;
         List<string>? layers = null;
+        string? dialog = null;
         var errors = new List<string>();
         for (int i = 0; i < args.Count; i++)
         {
@@ -76,6 +80,11 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
                     if (TryParseLatLon(p, out var pos)) lookAt = pos;
                     else errors.Add($"--look-at: '{p}' is not a latitude,longitude pair in degrees (latitude −90 to 90, longitude −180 to 180, east positive), for example 10,-165.");
                     break;
+                case "--dialog":
+                    if (Value(args, ref i, errors, "one of " + string.Join(", ", DialogNames)) is not { } d) break;
+                    if (DialogNames.Contains(d.ToLowerInvariant())) dialog = d.ToLowerInvariant();
+                    else errors.Add($"--dialog: '{d}' is not a dialog. Use one of {string.Join(", ", DialogNames)}.");
+                    break;
                 case "--layers":
                     if (Value(args, ref i, errors, "a comma list such as plates, from " + string.Join(", ", LayerNames)) is not { } list) break;
                     var names = list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -88,7 +97,7 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
             }
         }
         return new LaunchOptions(snapshot, faceSun, delay, recompose, offline, displayTime, lookAt,
-                                 errors.Count == 0 ? null : string.Join(Environment.NewLine, errors), layers);
+                                 errors.Count == 0 ? null : string.Join(Environment.NewLine, errors), layers, dialog);
     }
 
     private static string? Value(IReadOnlyList<string> args, ref int i, List<string> errors, string what)

@@ -1,0 +1,149 @@
+EarthWatch3D: third-party notices
+=================================
+
+EarthWatch3D includes the software and data below. The MIT licence requires its notice to travel with copies of the
+software, which is why this file is installed with the app (About > Licence texts opens it).
+
+--------------------------------------------------------------------------------
+HelixToolkit.Wpf 3.1.2   (http://www.helix-toolkit.org/)
+MIT licence, text from the package's LICENSE file
+--------------------------------------------------------------------------------
+
+The MIT License (MIT)
+
+Copyright (c) 2023 Helix Toolkit contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+--------------------------------------------------------------------------------
+CommunityToolkit.Mvvm 8.4.0   (https://github.com/CommunityToolkit/dotnet)
+MIT licence, text from the project's License.md
+--------------------------------------------------------------------------------
+
+Copyright © .NET Foundation and Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+PureHDF 2.2.0   (https://github.com/Apollo3zehn/PureHDF)
+MIT licence, text from the project's LICENSE.md
+--------------------------------------------------------------------------------
+
+Copyright (c) [2022] [Apollo3zehn]
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+.NET runtime   (https://github.com/dotnet/runtime)
+MIT licence, text from the project's LICENSE.TXT
+--------------------------------------------------------------------------------
+
+Copyright (c) .NET Foundation and Contributors
+
+All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+Plate boundaries: PB2002
+--------------------------------------------------------------------------------
+
+Peter Bird (2003), An updated digital model of plate boundaries, Geochemistry,
+Geophysics, Geosystems 4(3):1027 (PB2002). GIS conversion by Hugo Ahlenius, Nordpil
+(https://github.com/fraxen/tectonicplates).
+
+Licensed under the Open Data Commons Attribution License (ODC-By) 1.0:
+https://opendatacommons.org/licenses/by/1-0/
+You are free to copy, distribute and use the data, to produce works from it and to
+modify, transform and build upon it, as long as you attribute it as above. EarthWatch3D
+merges the steps into polylines by kind and simplifies them to 0.01 degrees.
+
+--------------------------------------------------------------------------------
+Globe imagery: NASA Blue Marble
+--------------------------------------------------------------------------------
+
+NASA Earth Observatory, Blue Marble Next Generation with Topography and Bathymetry
+(July 2004, R. Stockli), resized to 8192x4096. NASA imagery is generally not
+copyrighted (NASA Media Usage Guidelines).
+
+--------------------------------------------------------------------------------
+Coastlines and borders: Natural Earth
+--------------------------------------------------------------------------------
+
+Natural Earth (https://www.naturalearthdata.com/), 1:50m coastline and land boundary
+lines. Public domain.
+
+--------------------------------------------------------------------------------
+Live data
+--------------------------------------------------------------------------------
+
+Earthquakes: U.S. Geological Survey. Tropical cyclones: NOAA National Hurricane Center
+and GDACS (European Commission and United Nations). Weather alerts: NOAA National
+Weather Service. Severe storms: NASA EONET. Lightning: NOAA GOES Geostationary
+Lightning Mapper. Clouds: NASA GIBS (VIIRS NOAA-21 true colour).

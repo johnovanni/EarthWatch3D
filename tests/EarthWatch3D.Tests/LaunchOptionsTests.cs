@@ -136,4 +136,26 @@ public class LaunchOptionsOfflineTests
     [Fact]
     public void UnknownLayerIsAnError() =>
         Assert.Contains("--layers", LaunchOptions.Parse(["--layers", "plates,mystery"]).Error);
+
+    [Theory]
+    [InlineData("about")]
+    [InlineData("welcome")]
+    public void ParsesDialog(string name)
+    {
+        var o = LaunchOptions.Parse(["--dialog", name]);
+        Assert.Null(o.Error);
+        Assert.Equal(name, o.Dialog);
+        Assert.True(o.Any);
+    }
+
+    [Fact]
+    public void UnknownDialogNamesTheAllowedValues()
+    {
+        var o = LaunchOptions.Parse(["--dialog", "nope"]);
+        Assert.Null(o.Dialog);
+        Assert.Contains("--dialog", o.Error);
+        Assert.Contains("about", o.Error);
+        Assert.Contains("welcome", o.Error);
+        Assert.Null(LaunchOptions.Parse([]).Dialog);
+    }
 }

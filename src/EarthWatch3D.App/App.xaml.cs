@@ -121,7 +121,8 @@ public partial class App : Application
             if (main is { } m) m.Units = saved.Units;
             meter.LimitBytes = AppSettings.DailyLimitBytes(saved.DailyLimitMb);
         }
-        var dialogs = new DialogService(() => mainWindow, _settings, credentials, eumetsat.TestAsync, Applied);
+        var dialogs = new DialogService(() => mainWindow, _settings, credentials, eumetsat.TestAsync, Applied,
+            new ShellLinkOpener(), paths.Root);
         var vm = main = new MainViewModel(clock, _settings, Dispatcher, dialogs);
         var zones = new ZoneCache(http, paths, wall, log);
         // The feed runs on a pool thread, so it reads the toggle from a field that PropertyChanged keeps up to date.
@@ -259,11 +260,25 @@ public partial class App : Application
 #endif
         scheduler.Start();
 
-        if (options.Any) _ = SnapshotDiagnostic.RunAsync(window, window.Scene, vm, options, offsetClock, waitForData, log);
+        if (options.Any)
+            _ = SnapshotDiagnostic.RunAsync(window, window.Scene, vm, options, offsetClock, waitForData, log, name => name switch
+            {
+                "about" => ShowAboutForDiagnostic(dialogs),
+                _ => throw new NotSupportedException($"--dialog {name} is not available yet"),
+            });
 #if PERF_LOG
         PerfRun.Start(window.Scene, e.Args, waitForData);
 #endif
         window.Show();
+    }
+
+    /// <summary>Opens About without blocking (the diagnostic goes on to save it), over the main window.</summary>
+    private Window ShowAboutForDiagnostic(DialogService dialogs)
+    {
+        var about = dialogs.CreateAbout();
+        if (MainWindow is { IsLoaded: true } owner) about.Owner = owner;
+        about.Show();
+        return about;
     }
 
     protected override void OnExit(ExitEventArgs e)

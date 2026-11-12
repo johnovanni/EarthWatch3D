@@ -85,6 +85,10 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void OpenSettings() => _dialogs?.ShowSettings();
 
+    /// <summary>Opens the About window.</summary>
+    [RelayCommand]
+    private void OpenAbout() => _dialogs?.ShowAbout();
+
     /// <summary>Raised whenever the display time changes (live tick, step, scrub or playback).</summary>
     public event EventHandler? DisplayTimeChanged;
 

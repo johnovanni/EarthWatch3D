@@ -5,4 +5,7 @@ public interface IDialogService
 {
     /// <summary>Shows the Settings dialog; true if the user saved changes.</summary>
     bool ShowSettings();
+
+    /// <summary>Shows the About window (version, credits, licences) and returns when it is closed.</summary>
+    void ShowAbout();
 }

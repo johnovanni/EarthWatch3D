@@ -25,7 +25,8 @@ public static class SnapshotDiagnostic
     /// <param name="waitForData">Offline samples only: completes when every feed has reported OK once and the zone
     /// downloads are done. Null to take the snapshot without waiting for data.</param>
     public static async Task RunAsync(Window window, SceneController scene, MainViewModel vm, LaunchOptions options,
-                                      OffsetClock? offsetClock = null, Func<Task>? waitForData = null, IAppLog? log = null)
+                                      OffsetClock? offsetClock = null, Func<Task>? waitForData = null, IAppLog? log = null,
+                                      Func<string, Window>? showDialog = null)
     {
         int exitCode = 0;
         try
@@ -38,9 +39,17 @@ public static class SnapshotDiagnostic
                 vm.SunMoon.FaceSunCommand.Execute(null);
                 while (scene.IsCameraAnimating) await Task.Delay(50);
             }
+            // --dialog: the dialog is opened (not modal, so this continues) and, with --snapshot, it alone is saved.
+            Window? dialog = options.Dialog is { } name ? showDialog?.Invoke(name) : null;
             if (options.SnapshotPath is null) return;
             await Task.Delay(options.DelayMs);
-            if (options.SnapshotRecompose && offsetClock != null)
+            if (dialog is not null)
+            {
+                dialog.UpdateLayout();
+                Save(dialog, options.SnapshotPath);
+                dialog.Close();
+            }
+            else if (options.SnapshotRecompose && offsetClock != null)
             {
                 Save(window, LaunchOptions.WithSuffix(options.SnapshotPath, "a"));
                 offsetClock.Offset += RecomposeOffset;
