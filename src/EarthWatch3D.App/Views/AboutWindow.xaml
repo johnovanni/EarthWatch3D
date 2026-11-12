@@ -45,7 +45,13 @@
 
     <!-- The Grid has no margin of its own, so the snapshot (which sizes itself from the content) covers the margins too. -->
     <Grid>
-    <StackPanel Margin="20,16,20,16">
+    <Grid.RowDefinitions>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <!-- The header and the lists scroll on a short screen; the message, data folder and buttons stay in view. -->
+    <ScrollViewer x:Name="Scroller" Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="20,16,20,0">
         <TextBlock Text="EarthWatch3D" FontSize="22" FontWeight="SemiBold"/>
         <TextBlock Text="{Binding Version}" Foreground="#C8CDD8" Margin="0,2,0,8"/>
         <TextBlock Text="Live earthquakes, storms and lightning on a 3D globe."/>
@@ -58,6 +64,10 @@
         <TextBlock Style="{StaticResource Heading}" Text="Software libraries"/>
         <ItemsControl ItemsSource="{Binding Licences}" ItemTemplate="{StaticResource LicenceTemplate}"/>
 
+    </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel x:Name="Footer" Grid.Row="1" Margin="20,0,20,16">
         <TextBlock Foreground="#FFB4A8" Margin="0,10,0,0" Text="{Binding Message}">
             <TextBlock.Style>
                 <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">

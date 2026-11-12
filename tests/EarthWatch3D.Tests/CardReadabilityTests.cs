@@ -102,6 +102,40 @@ public class CardReadabilityTests
     }
 
     [Fact]
+    public void AboutWindowFitsTheScreenAndKeepsItsButtonsOutsideTheScroller()
+    {
+        Sta.Run(() =>
+        {
+            var window = new AboutWindow(new AboutViewModel(new RecordingLinkOpener(), @"C:\data", mtgAvailable: true));
+            Assert.True(window.MaxHeight <= SystemParameters.WorkArea.Height);
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+            var scroller = Assert.IsType<ScrollViewer>(content.FindName("Scroller") ?? LogicalFind(content, "Scroller"));
+            Assert.Equal(ScrollBarVisibility.Auto, scroller.VerticalScrollBarVisibility);
+            var buttons = LogicalDescendants(content).OfType<Button>().ToList();
+            Assert.True(buttons.Count >= 3);
+            foreach (var b in buttons)
+                Assert.DoesNotContain(scroller, Ancestors(b));
+        });
+    }
+
+    private static object? LogicalFind(DependencyObject root, string name) =>
+        LogicalDescendants(root).OfType<FrameworkElement>().FirstOrDefault(e => e.Name == name);
+
+    private static IEnumerable<DependencyObject> LogicalDescendants(DependencyObject root)
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+        {
+            yield return child;
+            foreach (var d in LogicalDescendants(child)) yield return d;
+        }
+    }
+
+    private static IEnumerable<DependencyObject> Ancestors(DependencyObject d)
+    {
+        for (var p = LogicalTreeHelper.GetParent(d); p is not null; p = LogicalTreeHelper.GetParent(p)) yield return p;
+    }
+
+    [Fact]
     public void HoverTipUsesTheDarkCardStyle()
     {
         Sta.Run(() =>

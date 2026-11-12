@@ -13,6 +13,8 @@ public partial class AboutWindow : Window
     {
         InitializeComponent();
         DataContext = _vm = vm;
+        // On a short screen the window stops at the work area (the lists then scroll) instead of running off it.
+        MaxHeight = Math.Max(300, SystemParameters.WorkArea.Height - 40);
     }
 
     // A Hyperlink inside a DataTemplate has no visual-tree ancestors to bind a command through, so the click is routed here.
