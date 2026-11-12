@@ -35,6 +35,17 @@ public class TimelineViewModelTests
 
     [Fact] public void DisplayTimeChangedRaisedOnStep()
     { var vm = new TimelineViewModel(new FakeClock(T0)); int n = 0; vm.DisplayTimeChanged += (_, _) => n++; vm.StepMinus10MinCommand.Execute(null); Assert.Equal(1, n); }
+
+    [Fact] public void SliderSecondsTracksMinTimeInReplay()
+    {
+        var c = new FakeClock(T0); var vm = new TimelineViewModel(c);
+        vm.SliderSeconds = 1000;   // replay at a fixed time
+        var before = vm.SliderSeconds;
+        var fired = new List<string?>(); vm.PropertyChanged += (_, e) => fired.Add(e.PropertyName);
+        c.UtcNow = T0.AddSeconds(10); vm.Advance(TimeSpan.FromSeconds(10));
+        Assert.Equal(before - 10, vm.SliderSeconds, 3);
+        Assert.Contains("SliderSeconds", fired);
+    }
 }
 
 public class ThrottleTests

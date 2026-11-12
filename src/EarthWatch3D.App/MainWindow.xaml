@@ -6,11 +6,15 @@
         Title="EarthWatch3D" Height="720" Width="1100" Background="#04060E">
     <!-- The globe, markers, overlay and camera input are wired by Controllers/SceneController. -->
     <Grid x:Name="Root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
         <!-- Left-drag rotates. Helix's other default gestures are switched off: they swap in an orthographic camera
              (Ctrl+Shift+O), move the orbit centre off the Earth (pan, change look-at, WASD move, zoom rectangle),
              jump to fixed views (Ctrl+F/B/L/R/U/D) or change the field of view. Home, double-click and the wheel are
              the app's own (SceneController); its Home replaces zoom-extents and reset-camera. -->
-        <helix:HelixViewport3D x:Name="Viewport" Background="#04060E"
+        <helix:HelixViewport3D x:Name="Viewport" Grid.Row="0" Background="#04060E"
                                CameraRotationMode="Turntable" ModelUpDirection="0,0,1"
                                ShowViewCube="False" ShowCoordinateSystem="False" ZoomAroundMouseDownPoint="False"
                                IsHeadLightEnabled="False" ShowFrameRate="False"
@@ -32,7 +36,8 @@
                 </ModelVisual3D.Content>
             </ModelVisual3D>
         </helix:HelixViewport3D>
-        <views:SunMoonCard x:Name="Card" DataContext="{Binding SunMoon}"/>
-        <Canvas x:Name="Overlay" IsHitTestVisible="False"/>
+        <views:SunMoonCard x:Name="Card" Grid.Row="0" DataContext="{Binding SunMoon}"/>
+        <Canvas x:Name="Overlay" Grid.Row="0" IsHitTestVisible="False"/>
+        <views:TimeBar x:Name="Bar" Grid.Row="1" DataContext="{Binding Timeline}"/>
     </Grid>
 </Window>

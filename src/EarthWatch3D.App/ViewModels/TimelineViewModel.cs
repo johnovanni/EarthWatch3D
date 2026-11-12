@@ -60,6 +60,12 @@ public partial class TimelineViewModel : ObservableObject
     /// <summary>Moves the display time on by one tick of wall-clock time.</summary>
     public void Advance(TimeSpan wallElapsed)
     {
+        AdvanceCore(wallElapsed);
+        OnPropertyChanged(nameof(SliderSeconds));   // MinTimeUtc has moved, so the thumb position has too
+    }
+
+    private void AdvanceCore(TimeSpan wallElapsed)
+    {
         var max = MaxTimeUtc;
         if (IsLive) SetDisplay(max);
         else if (IsPlaying)
