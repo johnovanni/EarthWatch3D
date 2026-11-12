@@ -29,3 +29,14 @@ public sealed class WindowDaysIndexConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
         value is 1 ? 7 : value is 0 ? 1 : Binding.DoNothing;
 }
+
+/// <summary>Lightning window minutes ↔ chip index (5, 10, 15, 30, 60); anything else shows no chip selected.</summary>
+public sealed class LightningWindowIndexConverter : IValueConverter
+{
+    public static readonly LightningWindowIndexConverter Instance = new();
+    private static readonly int[] Minutes = [5, 10, 15, 30, 60];
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+        value is int m ? Array.IndexOf(Minutes, m) : -1;
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+        value is int i && i >= 0 && i < Minutes.Length ? Minutes[i] : Binding.DoNothing;
+}

@@ -11,6 +11,8 @@ using EarthWatch3D.Core.Feeds.Gdacs;
 using EarthWatch3D.Core.Feeds.Nhc;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Feeds.Usgs;
+using EarthWatch3D.Core.Geo;
+using EarthWatch3D.Core.Lightning;
 using EarthWatch3D.Core.Logging;
 using EarthWatch3D.Core.Storage;
 using EarthWatch3D.Core.Time;
@@ -143,7 +145,11 @@ public partial class App : Application
         }
         if (options.Layers is { } extraLayers) vm.Layers.TurnOnForThisRun(extraLayers);   // --layers: not saved
         vm.Tick();   // show real values immediately
-        var window = new MainWindow(vm, store, zones, log);
+        // The lightning feeds (a later task) fill the buffer; the scene reports the camera's sub-point in the view state.
+        var lightningBuffer = new LightningBuffer();
+        var lightning = new LiveLightningSource(lightningBuffer, () => false);
+        var view = new ViewState();
+        var window = new MainWindow(vm, store, zones, lightning, view, log);
         if (samplesDir is not null) window.Title += " — SAMPLE DATA (offline)";
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         timer.Tick += (_, _) => vm.Tick();   // also drives the globe's per-minute recompose

@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
 using EarthWatch3D.App.Controllers;
+using EarthWatch3D.App.Rendering;
 
 namespace EarthWatch3D.App.Diagnostics;
 
@@ -22,7 +23,10 @@ internal static class PerfRun
     /// <see cref="SnapshotDiagnostic.WaitForDataAsync"/>), so it measures the globe with events on it.</param>
     public static void Start(SceneController scene, string[] args, Func<Task>? waitForData = null)
     {
-        _ = RunAsync(scene, args.Contains("--bench"), waitForData);
+        int lightningCount = 0;
+        int at = Array.IndexOf(args, "--bench-lightning");
+        if (at >= 0 && at + 1 < args.Length) int.TryParse(args[at + 1], NumberStyles.None, CultureInfo.InvariantCulture, out lightningCount);
+        _ = RunAsync(scene, args.Contains("--bench") || lightningCount > 0, waitForData, lightningCount);
         _ = MinuteLogAsync(scene);
     }
 
@@ -54,7 +58,7 @@ internal static class PerfRun
         catch (Exception ex) { PerfLog.Write("minute log failed: " + ex); }
     }
 
-    private static async Task RunAsync(SceneController scene, bool bench, Func<Task>? waitForData)
+    private static async Task RunAsync(SceneController scene, bool bench, Func<Task>? waitForData, int lightningCount)
     {
         try
         {
@@ -71,11 +75,31 @@ internal static class PerfRun
             await Task.Delay(10_000);
             PerfLog.Write("10 s after load: " + PerfLog.Memory());
 
+            LightningLayer? benchLightning = null;
+            if (lightningCount > 0)
+            {
+                // n random flashes spread over 15 minutes, drawn through a layer of their own (the scene's lightning layer follows the live source).
+                var rng = new Random(1);
+                var now = DateTime.UtcNow;
+                var buffer = new Core.Lightning.LightningBuffer(lightningCount + 10);
+                buffer.Add(Enumerable.Range(0, lightningCount).Select(_ => new Core.Lightning.LightningFlash(
+                    now - TimeSpan.FromSeconds(rng.NextDouble() * 900),
+                    Math.Asin(rng.NextDouble() * 2 - 1) * 180 / Math.PI, rng.NextDouble() * 360 - 180, 0, Core.Lightning.LightningSensor.GoesEast)));
+                benchLightning = await scene.Viewport.Dispatcher.InvokeAsync(() =>
+                {
+                    var layer = new LightningLayer(scene.Viewport);
+                    var sw = Stopwatch.StartNew();
+                    layer.Update(new Core.Lightning.LiveLightningSource(buffer, () => false), now, TimeSpan.FromMinutes(15), true);
+                    PerfLog.Write($"lightning bench: {layer.PointCount} points built in {sw.ElapsedMilliseconds} ms");
+                    return layer;
+                });
+            }
+
             if (bench && scene.Camera is { } camera)
             {
                 var (frames, seconds) = await RotateAsync(camera, TimeSpan.FromSeconds(5));
                 PerfLog.Write(string.Create(CultureInfo.InvariantCulture,
-                    $"bench: {frames} frames in {seconds:F2} s = {frames / seconds:F1} fps (360° about +Z) {PerfLog.Memory()}"));
+                    $"bench: {frames} frames in {seconds:F2} s = {frames / seconds:F1} fps (360° about +Z, {benchLightning?.PointCount ?? 0} lightning points) {PerfLog.Memory()}"));
             }
 
             // How much of the working set is garbage that a full collection would return?

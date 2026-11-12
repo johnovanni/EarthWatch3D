@@ -119,6 +119,17 @@
                 <ListBoxItem Content="7 days"/>
             </ListBox>
 
+            <TextBlock Style="{StaticResource Section}" Text="LIGHTNING"/>
+            <TextBlock Text="Show the last" Margin="0,0,0,4"/>
+            <ListBox x:Name="LightningWindowChips" Style="{StaticResource Chips}"
+                     SelectedIndex="{Binding LightningWindowMinutes, Mode=TwoWay, Converter={x:Static local:LightningWindowIndexConverter.Instance}}">
+                <ListBoxItem Content="5 min"/>
+                <ListBoxItem Content="10 min"/>
+                <ListBoxItem Content="15 min"/>
+                <ListBoxItem Content="30 min"/>
+                <ListBoxItem Content="1 h"/>
+            </ListBox>
+
             <TextBlock Style="{StaticResource Section}" Text="US ALERTS"/>
             <CheckBox Content="Warnings" IsChecked="{Binding ShowWarnings}"/>
             <CheckBox Content="Watches" IsChecked="{Binding ShowWatches}"/>

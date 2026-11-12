@@ -16,6 +16,7 @@ using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Globe;
+using EarthWatch3D.Core.Lightning;
 using EarthWatch3D.Core.Logging;
 using EarthWatch3D.Core.Time;
 using HelixToolkit.Wpf;
@@ -97,6 +98,10 @@ public sealed class SceneController
     private bool _eventsDirty = true;
     // 1 while a store change is waiting to reach the UI thread (Changed fires on feed threads), so they coalesce.
     private int _storeChangePending;
+    private int _flashChangePending;
+    private readonly ILightningSource _lightningSource;
+    private readonly LightningLayer _lightning;
+    private readonly ViewState _view;
     private VisibleEvents _visible = VisibleEvents.None;
     private DateTime _visibleAtUtc;
     // Programmatic camera moves (CameraAnimator) do not always raise CameraChanged, so compare the pose too.
@@ -111,9 +116,11 @@ public sealed class SceneController
     /// <param name="window">The window hosting the viewport: its Loaded, Closed, StateChanged and PreviewKeyDown events drive the scene.</param>
     /// <param name="store">The events to draw.</param>
     /// <param name="zones">NWS zone shapes for alerts that name zones only (used from Task 15 on).</param>
+    /// <param name="lightning">Where the lightning flashes come from.</param>
+    /// <param name="view">Receives the camera's sub-point whenever the camera moves (the lightning feeds read it).</param>
     /// <param name="log">Where compose and load failures are written (none if null).</param>
     public SceneController(HelixViewport3D viewport, Canvas overlay, FrameworkElement card, MainViewModel vm, Window window,
-                           EventStore store, ZoneCache zones, IAppLog? log = null)
+                           EventStore store, ZoneCache zones, ILightningSource lightning, ViewState view, IAppLog? log = null)
     {
         _log = log ?? new NullLog();
         // Nothing need await the first compose (only the diagnostics do), so observe a fault here: otherwise it would
@@ -122,6 +129,8 @@ public sealed class SceneController
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         Store = store ?? throw new ArgumentNullException(nameof(store));
         Zones = zones ?? throw new ArgumentNullException(nameof(zones));
+        _lightningSource = lightning ?? throw new ArgumentNullException(nameof(lightning));
+        _view = view ?? throw new ArgumentNullException(nameof(view));
         _viewport = viewport ?? throw new ArgumentNullException(nameof(viewport));
         _overlayCanvas = overlay ?? throw new ArgumentNullException(nameof(overlay));
         _card = card ?? throw new ArgumentNullException(nameof(card));
@@ -134,6 +143,7 @@ public sealed class SceneController
         _markers = new SunMoonGlobeMarkers();
         _viewport.Children.Add(_globeVisual);
         _events = new EventScene(_viewport);   // after the globe, before the Sun/Moon markers
+        _lightning = new LightningLayer(_viewport);
         foreach (var v in _markers.Visuals) _viewport.Children.Add(v);
         _labels = new LabelOverlay(overlay);
 
@@ -156,6 +166,10 @@ public sealed class SceneController
         _vm.FilterChanged += OnFilterChanged;
         _vm.Timeline.PropertyChanged += OnTimelineChanged;
         Store.Changed += OnStoreChanged;
+        _lightningSource.FlashesChanged += OnFlashesChanged;
+        _vm.Ticked += OnTicked;
+        _vm.Layers.PropertyChanged += OnLightningSettingChanged;
+        _vm.Display.PropertyChanged += OnLightningSettingChanged;
         Zones.ZonesLoaded += OnZonesLoaded;
         _vm.SunMoon.PropertyChanged += OnSunMoonChanged;
         _vm.SunMoon.FaceRequested += OnFaceRequested;
@@ -201,6 +215,7 @@ public sealed class SceneController
 
     /// <summary>The viewport's camera, or null if something replaced it with a non-perspective camera.</summary>
     internal PerspectiveCamera? Camera => _viewport.Camera as PerspectiveCamera;
+    internal HelixViewport3D Viewport => _viewport;
 
     // ---------------------------------------------------------------- globe image
 
@@ -555,6 +570,40 @@ public sealed class SceneController
 
     private void OnFilterChanged(object? sender, EventArgs e) => _eventsDirty = true;
 
+    // ---------------------------------------------------------------- lightning
+
+    // Raised on a feed thread; coalesced like store changes. The layer itself rebuilds at most once a second.
+    private void OnFlashesChanged(object? sender, EventArgs e)
+    {
+        if (Interlocked.Exchange(ref _flashChangePending, 1) == 1) return;
+        _window.Dispatcher.BeginInvoke(() =>
+        {
+            Volatile.Write(ref _flashChangePending, 0);
+            if (!_closed) UpdateLightning();
+        });
+    }
+
+    private void OnTicked(object? sender, EventArgs e)
+    {
+        if (_closed) return;
+        _vm.Layers.LightningLegend = LightningLayer.LegendNote(_lightningSource.Coverage, _vm.DisplayTimeUtc);
+        UpdateLightning();
+    }
+
+    private void OnLightningSettingChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(LayersViewModel.ShowLightning) or nameof(DisplayOptionsViewModel.LightningWindowMinutes)) UpdateLightning();
+    }
+
+    private void UpdateLightning()
+    {
+        bool show = LightningLayer.IsShown(_vm.Layers.ShowLightning, _vm.Timeline.IsLive, _lightningSource.SupportsHistory);
+        _lightning.Update(_lightningSource, _vm.DisplayTimeUtc, TimeSpan.FromMinutes(_vm.Display.LightningWindowMinutes), show);
+    }
+
+    private void NoteSubPoint(PerspectiveCamera c) =>
+        _view.CameraSubPoint = GeoPosition.FromVector(new Vector3d(c.Position.X, c.Position.Y, c.Position.Z));
+
     private void OnTimelineChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(TimelineViewModel.IsLive)) _eventsDirty = true;   // rings only while live
@@ -575,6 +624,7 @@ public sealed class SceneController
         var pose = (c.Position, c.LookDirection, c.UpDirection, c.FieldOfView);
         if (pose == _lastPose) return;
         _lastPose = pose;
+        NoteSubPoint(c);
         _overlayDirty = true;
     }
 
@@ -713,6 +763,7 @@ public sealed class SceneController
     {
         _overlayDirty = true;
         if (_adjustingCamera || Camera is not { } camera) return;
+        NoteSubPoint(camera);
         _adjustingCamera = true;
         try
         {
@@ -815,6 +866,10 @@ public sealed class SceneController
         _vm.FilterChanged -= OnFilterChanged;
         _vm.Timeline.PropertyChanged -= OnTimelineChanged;
         Store.Changed -= OnStoreChanged;
+        _lightningSource.FlashesChanged -= OnFlashesChanged;
+        _vm.Ticked -= OnTicked;
+        _vm.Layers.PropertyChanged -= OnLightningSettingChanged;
+        _vm.Display.PropertyChanged -= OnLightningSettingChanged;
         Zones.ZonesLoaded -= OnZonesLoaded;
         _trailing.Stop();
         _trailing.Tick -= OnTrailingTick;

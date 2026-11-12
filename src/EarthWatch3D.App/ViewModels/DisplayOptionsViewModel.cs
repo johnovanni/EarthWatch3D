@@ -11,6 +11,7 @@ public partial class DisplayOptionsViewModel : ObservableObject
     private double _minMagnitude;
     private int _quakeWindowDays;
     private double _nightStrength;
+    private int _lightningWindowMinutes;
 
     [ObservableProperty] private bool _showWarnings;
     [ObservableProperty] private bool _showWatches;
@@ -31,6 +32,7 @@ public partial class DisplayOptionsViewModel : ObservableObject
         _showAdvisories = s.AlertTypes.HasFlag(AlertTypes.Advisories);
         _showStatements = s.AlertTypes.HasFlag(AlertTypes.Statements);
         _showTerminator = s.ShowTerminator;
+        _lightningWindowMinutes = LightningWindowChoices.Contains(s.LightningWindowMinutes) ? s.LightningWindowMinutes : DefaultLightningWindowMinutes;
     }
 
     /// <summary>Minimum-magnitude choices; NaN is "All".</summary>
@@ -74,6 +76,22 @@ public partial class DisplayOptionsViewModel : ObservableObject
         }
     }
 
+    public const int DefaultLightningWindowMinutes = 15;
+
+    /// <summary>Minutes of lightning kept on the globe.</summary>
+    public IReadOnlyList<int> LightningWindowChoices { get; } = [5, 10, 15, 30, 60];
+
+    /// <summary>How long a flash stays on the globe, in minutes: one of <see cref="LightningWindowChoices"/> (anything else becomes 15).</summary>
+    public int LightningWindowMinutes
+    {
+        get => _lightningWindowMinutes;
+        set
+        {
+            if (!SetProperty(ref _lightningWindowMinutes, LightningWindowChoices.Contains(value) ? value : DefaultLightningWindowMinutes)) return;
+            Save();
+        }
+    }
+
     /// <summary>Night-shade strength, 0 to 1 (clamped).</summary>
     public double NightStrength
     {
@@ -110,5 +128,6 @@ public partial class DisplayOptionsViewModel : ObservableObject
         AlertTypes = AlertTypes,
         NightStrength = NightStrength,
         ShowTerminator = ShowTerminator,
+        LightningWindowMinutes = LightningWindowMinutes,
     });
 }

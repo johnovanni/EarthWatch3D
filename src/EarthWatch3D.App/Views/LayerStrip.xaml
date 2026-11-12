@@ -179,6 +179,23 @@
                 </ToggleButton.ToolTip>
             </ToggleButton>
 
+            <ToggleButton x:Name="LightningButton" Style="{StaticResource LayerButton}" Tag="⚡" Content="Lightning"
+                          IsChecked="{Binding Layers.ShowLightning}">
+                <ToggleButton.ToolTip>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource LegendTitle}" Text="Lightning (GOES GLM, MTG LI)"/>
+                        <TextBlock Text="Colour by age within the display window:" Foreground="#C8CDD8" Margin="0,0,0,2"/>
+                        <StackPanel Style="{StaticResource Row}"><Rectangle Style="{StaticResource Swatch}" Fill="#FFF0B0"/><TextBlock Text="newest 10%"/></StackPanel>
+                        <StackPanel Style="{StaticResource Row}"><Rectangle Style="{StaticResource Swatch}" Fill="#FFD84A"/><TextBlock Text="10–35%"/></StackPanel>
+                        <StackPanel Style="{StaticResource Row}"><Rectangle Style="{StaticResource Swatch}" Fill="#FF9A2E"/><TextBlock Text="35–70%"/></StackPanel>
+                        <StackPanel Style="{StaticResource Row}"><Rectangle Style="{StaticResource Swatch}" Fill="#B4602A"/><TextBlock Text="oldest 30%"/></StackPanel>
+                        <TextBlock Style="{StaticResource LegendNote}" Text="{Binding Layers.LightningLegend}"/>
+                        <TextBlock Style="{StaticResource LegendNote}" Text="GOES GLM: NOAA. MTG LI: Contains EUMETSAT data."/>
+                        <TextBlock Style="{StaticResource LegendNote}" Text="Live only: hidden in replay. Choose the window under ⋯ Display."/>
+                    </StackPanel>
+                </ToggleButton.ToolTip>
+            </ToggleButton>
+
             <ToggleButton Style="{StaticResource LayerButton}" Tag="〰" Content="Coastlines"
                           IsChecked="{Binding Layers.ShowCoastlines}">
                 <ToggleButton.ToolTip>

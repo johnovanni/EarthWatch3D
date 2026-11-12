@@ -158,3 +158,25 @@ quarters every copy, including WPF's. The 8192 asset is still embedded and is sc
 - The frame rate is about the same at both sizes, so the texture size is not what limits it here.
 - 4096 px around the equator is about 10 km per pixel. At the closest zoom (about 300 km up) the image is visibly
   softer than at 8192. That is the cost of the fallback.
+
+## Plan 3, Task 8: 25,000 lightning flashes on the globe
+
+Measured **2026-11-12** (15:36 UTC), same machine and window size, .NET 10.0.15, `PERF_LOG` Release build, live (the
+real event cache: 1,842 quakes, 1,516 alerts). `--bench-lightning 25000` fills a buffer with 25,000 random flashes spread
+over 15 minutes (uniform over the sphere), draws them through `LightningLayer` (four `PointsVisual3D`, one per age
+bucket) and then runs the usual 360° rotation. The layer is built in 33 ms.
+
+```
+dotnet build src/EarthWatch3D.App -c Release "-p:DefineConstants=TRACE%3BRELEASE%3BPERF_LOG"
+src\EarthWatch3D.App\bin\Release\net10.0-windows\EarthWatch3D.App.exe --bench --bench-lightning 25000
+```
+
+| Measurement | Value |
+|---|---|
+| FPS while rotating, 25,000 flashes | **38.6 fps** (194 frames in 5.02 s) |
+| Working set 10 s after load (before the flashes) | 771 MB (712 MB private, 269 MB managed) |
+| Working set after the bench | 857 MB (787 MB private, 340 MB managed) |
+
+Above the 30 fps target (spec §10), so drawing the flashes as points stays. One run, and no 0-flash run on this day's
+live data to compare with (the working set before the flashes was already higher than in earlier notes because the live
+cache is larger), so the cost of the flashes alone is not isolated.

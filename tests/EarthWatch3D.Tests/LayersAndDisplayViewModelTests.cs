@@ -133,6 +133,64 @@ public class LayersAndDisplayViewModelTests
     }
 
     [Fact]
+    public void LightningToggleAndWindowAreSaved()
+    {
+        var store = new FakeSettingsStore();
+        var layers = new LayersViewModel(store);
+        var display = new DisplayOptionsViewModel(store);
+        Assert.True(layers.ShowLightning);
+        Assert.Equal(15, display.LightningWindowMinutes);
+        Assert.Equal([5, 10, 15, 30, 60], display.LightningWindowChoices);
+
+        layers.ShowLightning = false;
+        display.LightningWindowMinutes = 30;
+        Assert.False(store.Saved[^1].ShowLightning);
+        Assert.Equal(30, store.Saved[^1].LightningWindowMinutes);
+        display.LightningWindowMinutes = 7;   // not a choice: back to the default
+        Assert.Equal(15, display.LightningWindowMinutes);
+
+        var again = new LayersViewModel(store);
+        var again2 = new DisplayOptionsViewModel(store);
+        Assert.False(again.ShowLightning);
+        Assert.Equal(15, again2.LightningWindowMinutes);
+        display.LightningWindowMinutes = 60;
+        Assert.Equal(60, new DisplayOptionsViewModel(store).LightningWindowMinutes);
+    }
+
+    [Fact]
+    public void LightningTurnedOnForThisRunIsNotSaved()
+    {
+        var store = new FakeSettingsStore(new AppSettings { ShowLightning = false });
+        var layers = new LayersViewModel(store);
+        layers.TurnOnForThisRun(["lightning"]);
+        Assert.True(layers.ShowLightning);
+        layers.IsExpanded = true;
+        Assert.False(store.Saved[^1].ShowLightning);
+    }
+
+    [Fact]
+    public void LightningFlyoutChipsBind()
+    {
+        Sta.Run(() =>
+        {
+            var vm = new MainViewModel(new TestClock(T0), new FakeSettingsStore());
+            var flyout = new DisplayFlyout { DataContext = vm.Display };
+            Layout(flyout);
+            var chips = (ListBox)flyout.FindName("LightningWindowChips");
+            Assert.Equal(5, chips.Items.Count);
+            Assert.Equal(2, chips.SelectedIndex);
+            chips.SelectedIndex = 4;
+            Assert.Equal(60, vm.Display.LightningWindowMinutes);
+            var strip = new LayerStrip { DataContext = vm };
+            Layout(strip);
+            var lightning = (ToggleButton)strip.FindName("LightningButton");
+            Assert.True(lightning.IsChecked);
+            lightning.IsChecked = false;
+            Assert.False(vm.Layers.ShowLightning);
+        });
+    }
+
+    [Fact]
     public void LayerStripFlyoutAndStatusDotsBind()
     {
         Sta.Run(() =>

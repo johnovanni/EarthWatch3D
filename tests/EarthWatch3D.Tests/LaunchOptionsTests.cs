@@ -128,6 +128,7 @@ public class LaunchOptionsOfflineTests
         var o = LaunchOptions.Parse(["--layers", "plates, Coastlines"]);
         Assert.Null(o.Error);
         Assert.Equal(["plates", "coastlines"], o.Layers);
+        Assert.Equal(["lightning"], LaunchOptions.Parse(["--layers", "Lightning"]).Layers);
         Assert.Null(LaunchOptions.Parse([]).Layers);
     }
 

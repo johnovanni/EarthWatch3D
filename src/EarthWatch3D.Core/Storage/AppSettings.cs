@@ -13,6 +13,10 @@ public sealed record AppSettings
     public bool ShowCoastlines { get; init; } = true;
     /// <summary>Tectonic plate boundaries (PB2002), off by default.</summary>
     public bool ShowPlates { get; init; } = false;
+    /// <summary>Lightning flashes (live only), on by default.</summary>
+    public bool ShowLightning { get; init; } = true;
+    /// <summary>How many minutes of lightning stay on the globe: 5, 10, 15, 30 or 60.</summary>
+    public int LightningWindowMinutes { get; init; } = 15;
     /// <summary>Minimum earthquake magnitude; NaN means "All".</summary>
     public double MinMagnitude { get; init; } = 2.5;
     /// <summary>1 or 7.</summary>
