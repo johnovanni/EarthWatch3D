@@ -21,6 +21,26 @@ public class SunMoonViewModelTests
     }
 
     [Fact]
+    public void SunDistanceAndMilesTooltips()
+    {
+        var t = new DateTime(2026, 12, 21, 12, 0, 0, DateTimeKind.Utc);
+        var vm = new SunMoonViewModel(); vm.Refresh(t);
+        double sunKm = SubPoints.Sun(t).DistanceKm, moonKm = SubPoints.Moon(t).DistanceKm;
+        Assert.Equal(sunKm, vm.SunDistanceKm);
+        Assert.InRange(sunKm, 147.0e6, 148.0e6);   // near perihelion (early January)
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        Assert.Equal((sunKm / 1e6).ToString("F1", inv) + " million km", vm.SunDistanceText);
+        Assert.Equal("From Earth's centre to the Sun's centre:\n"
+            + (sunKm / 1e6).ToString("F2", inv) + " million km\n"
+            + (sunKm / 1.609344 / 1e6).ToString("F2", inv) + " million miles\n"
+            + (sunKm / 149_597_870.7).ToString("F5", inv) + " AU", vm.SunDistanceToolTip);
+        Assert.Equal("From Earth's centre to the Moon's centre:\n"
+            + moonKm.ToString("N0", inv) + " km\n"
+            + (moonKm / 1.609344).ToString("N0", inv) + " miles\n"
+            + "The point where the Moon is overhead is 6,371 km (3,959 miles) closer.", vm.MoonDistanceToolTip);
+    }
+
+    [Fact]
     public void RefreshUsesTheGivenTime()
     {
         var t = new DateTime(2026, 11, 11, 0, 0, 0, DateTimeKind.Utc);
@@ -55,7 +75,8 @@ public class SunMoonViewModelTests
         vm.PropertyChanged += (_, e) => names.Add(e.PropertyName);
         vm.Refresh(new DateTime(2026, 6, 21, 12, 0, 0, DateTimeKind.Utc));
         foreach (var n in new[] { nameof(vm.SubSolar), nameof(vm.SubLunar), nameof(vm.SubSolarText), nameof(vm.SubLunarText),
-                                  nameof(vm.MoonDistanceText), nameof(vm.MoonDistanceKm), nameof(vm.MoonIlluminatedPercent) })
+                                  nameof(vm.MoonDistanceText), nameof(vm.MoonDistanceKm), nameof(vm.MoonIlluminatedPercent),
+                                  nameof(vm.SunDistanceKm), nameof(vm.SunDistanceText), nameof(vm.SunDistanceToolTip), nameof(vm.MoonDistanceToolTip) })
             Assert.Contains(n, names);
     }
 }

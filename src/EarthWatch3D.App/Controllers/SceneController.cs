@@ -148,6 +148,7 @@ public sealed class SceneController
         _viewport.MouseMove += OnViewportMouseMove;
         _viewport.MouseLeave += OnViewportMouseLeave;
         _markerTip.PlacementTarget = _viewport;
+        _markerTip.Style = DarkToolTipStyle();
         _hoverTimer.Tick += OnHoverTimerTick;
         _viewport.SizeChanged += OnViewportSizeChanged;
         _card.SizeChanged += OnViewportSizeChanged;   // collapsing the card changes the area the arrows avoid
@@ -615,6 +616,10 @@ public sealed class SceneController
         foreach (var b in HoverBlockers) if (b.IsMouseOver) return true;
         return false;
     }
+
+    /// <summary>The cards' dark tooltip (light text on dark), for the hover tip, instead of the system's light one.</summary>
+    public static Style DarkToolTipStyle() =>
+        (Style)new ResourceDictionary { Source = new Uri("/EarthWatch3D.App;component/Views/CardStyles.xaml", UriKind.Relative) }[typeof(ToolTip)];
 
     private void UpdateHover(Point mouse)
     {

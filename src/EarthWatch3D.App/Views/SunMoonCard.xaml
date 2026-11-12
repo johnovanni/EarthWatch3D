@@ -13,6 +13,12 @@
                 <Setter Property="Foreground" Value="White"/>
                 <Setter Property="FontSize" Value="13"/>
             </Style>
+            <!-- Must follow the implicit style it is based on (a StaticResource only sees what is above it). -->
+            <!-- Each icon gets a fixed-width slot: the ☀ and ☾ glyphs differ in width, and ☾ draws past its own edge. -->
+            <Style x:Key="Icon" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                <Setter Property="Width" Value="18"/>
+                <Setter Property="TextAlignment" Value="Center"/>
+            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
     <Border Background="#CC101624" CornerRadius="8" Padding="12,8">
@@ -31,7 +37,11 @@
                 <Button DockPanel.Dock="Right" Style="{StaticResource CardButton}" Padding="6,0"
                         Command="{Binding ToggleCollapsedCommand}" ToolTip="Collapse / expand"
                         Content="{Binding IsCollapsed, Converter={x:Static local:ChevronConverter.Instance}}"/>
-                <TextBlock DockPanel.Dock="Left" Text="☀ ☾" Visibility="{Binding IsCollapsed, Converter={StaticResource B2V}}"/>
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center"
+                            Visibility="{Binding IsCollapsed, Converter={StaticResource B2V}}">
+                    <TextBlock Style="{StaticResource Icon}" Text="☀"/>
+                    <TextBlock Style="{StaticResource Icon}" Text="☾" Margin="6,0,10,0"/>
+                </StackPanel>
                 <TextBlock DockPanel.Dock="Left" Text="Sun &amp; Moon" FontWeight="SemiBold">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
@@ -54,9 +64,20 @@
                         </Style.Triggers>
                     </Style>
                 </StackPanel.Style>
-                <TextBlock><Run Text="☀ "/><Run Text="{Binding SubSolarText, Mode=OneWay}"/></TextBlock>
-                <TextBlock Margin="0,2,0,0"><Run Text="☾ "/><Run Text="{Binding SubLunarText, Mode=OneWay}"/></TextBlock>
-                <TextBlock Margin="0,2,0,0"><Run Text="☾ distance "/><Run Text="{Binding MoonDistanceText, Mode=OneWay}"/></TextBlock>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Style="{StaticResource Icon}" HorizontalAlignment="Left" Text="☀"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SubSolarText}"/>
+                    <TextBlock Grid.Row="1" Style="{StaticResource Icon}" HorizontalAlignment="Left" Margin="0,2,0,0" Text="☾"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,2,0,0" Text="{Binding SubLunarText}"/>
+                    <TextBlock Grid.Row="2" Style="{StaticResource Icon}" HorizontalAlignment="Left" Margin="0,2,0,0" Text="☀"
+                               ToolTip="{Binding SunDistanceToolTip}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,2,0,0" ToolTip="{Binding SunDistanceToolTip}"><Run Text="distance "/><Run Text="{Binding SunDistanceText, Mode=OneWay}"/></TextBlock>
+                    <TextBlock Grid.Row="3" Style="{StaticResource Icon}" HorizontalAlignment="Left" Margin="0,2,0,0" Text="☾"
+                               ToolTip="{Binding MoonDistanceToolTip}"/>
+                    <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,2,0,0" ToolTip="{Binding MoonDistanceToolTip}"><Run Text="distance "/><Run Text="{Binding MoonDistanceText, Mode=OneWay}"/></TextBlock>
+                </Grid>
                 <TextBlock Margin="0,2,0,0">
                     <Run Text="{Binding MoonIlluminatedPercent, Mode=OneWay}"/><Run Text="% lit, "/><Run Text="{Binding MoonWaxing, Mode=OneWay, Converter={x:Static local:PhaseConverter.Instance}}"/>
                 </TextBlock>
