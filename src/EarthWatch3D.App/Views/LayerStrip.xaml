@@ -242,6 +242,11 @@
                    IsOpen="{Binding IsChecked, ElementName=DisplayButton, Mode=TwoWay}">
                 <local:DisplayFlyout DataContext="{Binding Display}"/>
             </Popup>
+
+            <!-- A command, not a toggle: Click unchecks it again. -->
+            <ToggleButton Style="{StaticResource StripCommandButton}" Tag="⚙" Content="Settings"
+                          ToolTip="Settings: EUMETSAT key, download limit, units"
+                          Command="{Binding OpenSettingsCommand}" Click="Settings_Click"/>
         </StackPanel>
     </Border>
 </UserControl>

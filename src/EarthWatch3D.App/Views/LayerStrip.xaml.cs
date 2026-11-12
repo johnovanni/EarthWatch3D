@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 
 namespace EarthWatch3D.App.Views;
@@ -8,6 +10,8 @@ namespace EarthWatch3D.App.Views;
 public partial class LayerStrip : UserControl
 {
     public LayerStrip() => InitializeComponent();
+
+    private void Settings_Click(object sender, RoutedEventArgs e) => ((ToggleButton)sender).IsChecked = false;
 }
 
 public sealed class InverseBoolConverter : IValueConverter

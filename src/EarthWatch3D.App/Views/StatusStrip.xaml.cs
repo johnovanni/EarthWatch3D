@@ -1,7 +1,10 @@
 using System.Globalization;
+using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Data;
 using System.Windows.Media;
+using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.Core.Feeds;
 
 namespace EarthWatch3D.App.Views;
@@ -10,6 +13,17 @@ namespace EarthWatch3D.App.Views;
 public partial class StatusStrip : UserControl
 {
     public StatusStrip() => InitializeComponent();
+
+    // A dot that needs the user's key (MTG not set up, or key rejected) opens Settings when clicked.
+    private void Dot_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: StatusItem item } && DataContext is StatusViewModel status
+            && status.OpensSettings(item) && Window.GetWindow(this)?.DataContext is MainViewModel main)
+        {
+            main.OpenSettingsCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
 }
 
 /// <summary>Ok green, Retrying amber, Failing red, Paused blue, NotSetUp / NotStarted grey.</summary>

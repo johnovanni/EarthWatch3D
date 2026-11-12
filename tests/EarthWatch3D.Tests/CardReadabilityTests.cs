@@ -59,6 +59,26 @@ public class CardReadabilityTests
     }
 
     [Fact]
+    public void AllSettingsWindowTextIsLight()
+    {
+        Sta.Run(() =>
+        {
+            var store = new FakeSettingsStore(new EarthWatch3D.Core.Storage.AppSettings { EumetsatKeyProtected = "P:k", EumetsatSecretProtected = "P:s" });
+            var creds = new EarthWatch3D.Core.Lightning.Mtg.EumetsatCredentialStore(store, new FakeProtector());
+            var vm = new SettingsViewModel(store, creds, (_, _) => throw new InvalidOperationException(), _ => { });
+            vm.Error = "Daily limit: a whole number of MB from 10 to 100,000, or empty for no limit.";
+            vm.TestStatus = "Key accepted.";
+            var window = new SettingsWindow(vm);
+            // A window that was never shown has no visual tree of its own; its content is measured instead.
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+            content.Measure(new Size(440, 900));
+            content.Arrange(new Rect(0, 0, 440, 900));
+            content.UpdateLayout();
+            AssertAllLight(content, 10);
+        });
+    }
+
+    [Fact]
     public void HoverTipUsesTheDarkCardStyle()
     {
         Sta.Run(() =>

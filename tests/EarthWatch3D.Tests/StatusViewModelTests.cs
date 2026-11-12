@@ -80,4 +80,22 @@ public class StatusViewModelTests
             Assert.Single(vm.Items);
         });
     }
+
+    [Fact]
+    public void OnlyANotSetUpOrKeyRejectedMtgDotOpensSettings()
+    {
+        var vm = new StatusViewModel(null);
+        vm.Apply(new FeedStatus("MTG", FeedState.NotSetUp, null, null, 0, T0));
+        vm.Apply(new FeedStatus("USGS", FeedState.NotSetUp, null, null, 0, T0));
+        Assert.True(vm.OpensSettings(vm.Items[0]));
+        Assert.False(vm.OpensSettings(vm.Items[1]));   // not the MTG dot
+
+        vm.Apply(new FeedStatus("MTG", FeedState.Failing, null, "EUMETSAT key rejected. Check it in Settings.", 3, T0));
+        Assert.True(vm.OpensSettings(vm.Items[0]));
+
+        vm.Apply(new FeedStatus("MTG", FeedState.Failing, null, "HTTP 503", 3, T0));
+        Assert.False(vm.OpensSettings(vm.Items[0]));
+        vm.Apply(new FeedStatus("MTG", FeedState.Ok, T0, null, 0, T0));
+        Assert.False(vm.OpensSettings(vm.Items[0]));
+    }
 }

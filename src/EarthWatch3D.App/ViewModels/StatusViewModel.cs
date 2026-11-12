@@ -3,10 +3,11 @@ using System.Globalization;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using EarthWatch3D.Core.Feeds;
+using EarthWatch3D.Core.Lightning.Mtg;
 
 namespace EarthWatch3D.App.ViewModels;
 
-public sealed record StatusItem(string Name, FeedState State, string Tooltip);
+public sealed record StatusItem(string Name, FeedState State, string Tooltip, string? LastError = null);
 
 /// <summary>One status dot per data source, in the order the sources first report.</summary>
 public sealed partial class StatusViewModel(Dispatcher? dispatcher) : ObservableObject
@@ -34,7 +35,7 @@ public sealed partial class StatusViewModel(Dispatcher? dispatcher) : Observable
 
     private void ApplyHere(FeedStatus s)
     {
-        var item = new StatusItem(s.Name, s.State, TooltipFor(s));
+        var item = new StatusItem(s.Name, s.State, TooltipFor(s), s.LastError);
         for (int i = 0; i < Items.Count; i++)
         {
             if (Items[i].Name != s.Name) continue;
@@ -42,6 +43,19 @@ public sealed partial class StatusViewModel(Dispatcher? dispatcher) : Observable
             return;
         }
         Items.Add(item);
+    }
+
+    /// <summary>The name of the MTG lightning source's dot.</summary>
+    public const string MtgName = "MTG";
+
+    /// <summary>
+    /// Whether clicking the dot should open Settings: the MTG dot when it is not set up, or when EUMETSAT rejected the key.
+    /// </summary>
+    public bool OpensSettings(StatusItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        return item.Name == MtgName
+            && (item.State == FeedState.NotSetUp || item.LastError == new EumetsatKeyRejectedException().Message);
     }
 
     public static string TooltipFor(FeedStatus s)

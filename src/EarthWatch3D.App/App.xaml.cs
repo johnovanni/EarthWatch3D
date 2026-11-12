@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using EarthWatch3D.App.Diagnostics;
+using EarthWatch3D.App.Services;
 using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.Core;
 using EarthWatch3D.Core.Events;
@@ -15,6 +16,7 @@ using EarthWatch3D.Core.Feeds.Usgs;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Globe;
 using EarthWatch3D.Core.Lightning;
+using EarthWatch3D.Core.Lightning.Mtg;
 using EarthWatch3D.Core.Logging;
 using EarthWatch3D.Core.Storage;
 using EarthWatch3D.Core.Time;
@@ -100,8 +102,19 @@ public partial class App : Application
         var cache = new EventCache(paths, log);
         var store = LoadCachedEvents(cache, paths, wall, log);
 
-        var vm = new MainViewModel(clock, _settings, Dispatcher);
         var http = _http = samplesDir is null ? new FeedHttp() : new FeedHttp(OfflineSamples.CreateHandler(samplesDir));
+        // The user's own EUMETSAT key and secret: encrypted in the settings file, tested through the app's HTTP client.
+        var eumetsat = new EumetsatClient(http, wall);
+        var credentials = new EumetsatCredentialStore(_settings, new DpapiProtector());
+        MainViewModel? main = null;
+        MainWindow? mainWindow = null;
+        // Everything that must change when Settings is saved; one place, so each setting is applied the same way.
+        void Applied(AppSettings saved)
+        {
+            if (main is { } m) m.Units = saved.Units;
+        }
+        var dialogs = new DialogService(() => mainWindow, _settings, credentials, eumetsat.TestAsync, Applied);
+        var vm = main = new MainViewModel(clock, _settings, Dispatcher, dialogs);
         var zones = new ZoneCache(http, paths, wall, log);
         // The feed runs on a pool thread, so it reads the toggle from a field that PropertyChanged keeps up to date.
         bool wantClouds = vm.Layers.ShowClouds;
@@ -162,7 +175,7 @@ public partial class App : Application
         var lightningBuffer = new LightningBuffer();
         var lightning = new LiveLightningSource(lightningBuffer, () => false);
         var view = new ViewState();
-        var window = new MainWindow(vm, store, zones, lightning, view, log);
+        var window = mainWindow = new MainWindow(vm, store, zones, lightning, view, log);
         if (samplesDir is not null) window.Title += " — SAMPLE DATA (offline)";
         // Raised on the feed's thread; the scene is used on the UI thread.
         clouds.ImageReady += (_, image) => Dispatcher.BeginInvoke(() => window.Scene.SetCloudImage(image));

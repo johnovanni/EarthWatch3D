@@ -31,6 +31,10 @@ public sealed record AppSettings
     public int? DailyLimitMb { get; init; } = null;
     /// <summary>Kilometres or miles for every distance and speed shown.</summary>
     public DistanceUnits Units { get; init; } = DistanceUnits.Kilometres;
+    /// <summary>The EUMETSAT consumer key, encrypted (base64 DPAPI blob); null means not set. Never stored in plain text.</summary>
+    public string? EumetsatKeyProtected { get; init; } = null;
+    /// <summary>The EUMETSAT consumer secret, encrypted (base64 DPAPI blob); null means not set.</summary>
+    public string? EumetsatSecretProtected { get; init; } = null;
 
     public DisplayFilter ToFilter() => new(ShowQuakes, ShowCyclones, ShowAlerts, ShowEonet,
         double.IsNaN(MinMagnitude) ? double.NegativeInfinity : MinMagnitude,

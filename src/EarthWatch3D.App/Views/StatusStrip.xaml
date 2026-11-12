@@ -18,7 +18,7 @@
             <DataTemplate>
                 <!-- A transparent cell around each dot makes the tooltip easy to hit. -->
                 <Border Background="Transparent" Padding="3,6" ToolTip="{Binding Tooltip}"
-                        ToolTipService.InitialShowDelay="200">
+                        ToolTipService.InitialShowDelay="200" MouseLeftButtonUp="Dot_Click">
                     <Ellipse Width="10" Height="10"
                              Fill="{Binding State, Converter={x:Static local:FeedStateBrushConverter.Instance}}"/>
                 </Border>
