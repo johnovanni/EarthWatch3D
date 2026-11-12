@@ -48,6 +48,33 @@ public class SelectionViewModelTests
     }
 
     [Fact]
+    public void TyphoonIsNamedForItsBasin()
+    {
+        var typhoon = Storm(120) with { Location = new GeoPosition(15, 140) };
+        var vm = Vm();
+        vm.Select(typhoon);
+        Assert.Equal("Category 4 typhoon", vm.Lines.First(l => l.Label == "Category").Value);
+        Assert.Equal("PENA · Category 4 typhoon · 120 kt", SelectionViewModel.HoverText(typhoon, Now));
+    }
+
+    [Fact]
+    public void EonetUsesTheFixAtTheDisplayTime()
+    {
+        // Fixes at T-3h (30 kt) and T (50 kt); the display time is T-1h, so the storm is drawn at the first fix.
+        var s = new EonetStorm("e1", T.AddHours(-3), new GeoPosition(1, 1), "Storm X", null,
+            [new StormFix(T.AddHours(-3), new GeoPosition(0, 0), 30), new StormFix(T, new GeoPosition(1, 1), 50)], null);
+        var at = T.AddHours(-1);
+        var visible = EventVisibility.At(new EventSnapshot([], [], [], [s], 1), at, DisplayFilter.Default);
+        Assert.Equal(30, Assert.Single(visible.Eonet).Fix.WindKt);
+
+        var vm = new SelectionViewModel(() => at);
+        vm.Select(s);
+        Assert.Contains(("Wind", "30 kt (56 km/h)"), vm.Lines);
+        Assert.Contains(("Last fix", "2026-11-12 03:00 UTC (2 h ago)"), vm.Lines);
+        Assert.Equal("Storm X · 30 kt", SelectionViewModel.HoverText(s, at));
+    }
+
+    [Fact]
     public void CycloneLines()
     {
         var vm = Vm();

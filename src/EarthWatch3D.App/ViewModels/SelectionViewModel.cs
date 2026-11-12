@@ -55,14 +55,6 @@ public sealed partial class SelectionViewModel : ObservableObject
 
     // ---------------------------------------------------------------- text
 
-    /// <summary>The basin is not modelled, so typhoons and cyclones say "hurricane" too.</summary>
-    public static string CategoryText(int category) => category switch
-    {
-        <= -1 => "Tropical depression",
-        0 => "Tropical storm",
-        _ => $"Category {category} hurricane",
-    };
-
     private static string TitleFor(EarthEvent e) => e switch
     {
         Earthquake q => string.IsNullOrWhiteSpace(q.Title) ? "Earthquake " + Magnitude(q) : q.Title,
@@ -86,7 +78,7 @@ public sealed partial class SelectionViewModel : ObservableObject
             case CycloneAdvisory c:
                 return
                 [
-                    ("Category", CategoryText(c.Category)),
+                    ("Category", StormNames.CategoryText(c.Category, c.Location)),
                     ("Wind", Wind(c.WindKt)),
                     ("Pressure", c.PressureHpa is { } p ? Num(p, 0) + " hPa" : "unknown"),
                     ("Advisory time", TimeWithAge(c.TimeUtc, nowUtc)),
@@ -102,7 +94,7 @@ public sealed partial class SelectionViewModel : ObservableObject
                     ("Headline", a.Title),
                 ];
             case EonetStorm s:
-                var fix = LastFix(s);
+                var fix = EventVisibility.FixAt(s, nowUtc);   // the fix the globe shows at the display time
                 return
                 [
                     ("Wind", Wind(fix?.WindKt)),
@@ -122,14 +114,14 @@ public sealed partial class SelectionViewModel : ObservableObject
             case Earthquake q:
                 return $"{Magnitude(q)} · {Km(q.DepthKm)} deep · {Age(q.TimeUtc, nowUtc)}";
             case CycloneAdvisory c:
-                return $"{TitleFor(c)} · {CategoryText(c.Category)}" + (c.WindKt is { } w ? $" · {Num(w, 0)} kt" : "");
+                return $"{TitleFor(c)} · {StormNames.CategoryText(c.Category, c.Location)}" + (c.WindKt is { } w ? $" · {Num(w, 0)} kt" : "");
             case WeatherAlert a:
                 var end = EndOf(a);
                 return $"{a.EventType} · until " + (end.Date == nowUtc.Date
                     ? end.ToString("HH:mm", CultureInfo.InvariantCulture) + " UTC"
                     : Utc(end)) + EndNote(a);
             case EonetStorm s:
-                return s.Title + (LastFix(s)?.WindKt is { } fw ? $" · {Num(fw, 0)} kt" : "");
+                return s.Title + (EventVisibility.FixAt(s, nowUtc)?.WindKt is { } fw ? $" · {Num(fw, 0)} kt" : "");
             default:
                 return e.Title;
         }
@@ -143,13 +135,6 @@ public sealed partial class SelectionViewModel : ObservableObject
         a.CancelledUtc is { } c && c < a.EndsUtc
             ? a.EndReason == AlertEndReason.Cancelled ? " (cancelled)" : " (superseded)"
             : "";
-
-    private static StormFix? LastFix(EonetStorm s)
-    {
-        StormFix? best = null;
-        foreach (var f in s.Fixes) if (best is null || f.TimeUtc > best.TimeUtc) best = f;
-        return best;
-    }
 
     private static string Magnitude(Earthquake q) => "M" + Num(q.Magnitude, 1);
     private static string Km(double km) => Num(km, 0) + " km";

@@ -58,14 +58,20 @@ public static class EventVisibility
             foreach (var e in s.Eonet)
             {
                 if (e.ClosedUtc is { } closed && closed < t) continue;
-                StormFix? fix = null;
-                foreach (var x in e.Fixes)
-                    if (x.TimeUtc <= t && (fix is null || x.TimeUtc > fix.TimeUtc)) fix = x;
-                if (fix is null) continue;
+                if (FixAt(e, t) is not { } fix) continue;
                 if (merged.Any(c => GeoMath.DistanceKm(c.Location, fix.Position) <= CycloneMerger.SameStormKm)) continue;
                 eonet.Add(new VisibleEonet(e, fix));
             }
 
         return new VisibleEvents(quakes, merged, alerts, eonet);
+    }
+
+    /// <summary>The storm's latest fix at or before <paramref name="t"/>, or null if it has none yet.</summary>
+    public static StormFix? FixAt(EonetStorm e, DateTime t)
+    {
+        StormFix? fix = null;
+        foreach (var x in e.Fixes)
+            if (x.TimeUtc <= t && (fix is null || x.TimeUtc > fix.TimeUtc)) fix = x;
+        return fix;
     }
 }
