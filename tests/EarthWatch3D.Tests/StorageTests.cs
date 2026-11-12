@@ -178,7 +178,7 @@ public sealed class StorageTests : IDisposable
     [Fact]
     public void AppStartsEmptyWhenCachedEventsCannotBeUsed()
     {
-        // Loads (lists and elements present) but an EONET storm has no fix list, so the startup prune throws.
+        // An EONET storm with no fix list would make the startup prune throw; the cache now rejects it on load.
         new EventCache(_paths, new NullLog()).Save(Sample());
         var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_paths.EventsFile))!;
         json["Eonet"]![0]!["Fixes"] = null;
@@ -190,7 +190,98 @@ public sealed class StorageTests : IDisposable
         Assert.Empty(store.Snapshot.Earthquakes);
         Assert.Empty(store.Snapshot.Eonet);
         Assert.False(File.Exists(_paths.EventsFile));
-        Assert.StartsWith("Event cache unusable; deleting it and starting empty", Assert.Single(log.Warnings));
+        Assert.StartsWith("Event cache unreadable; deleting it", Assert.Single(log.Warnings));
+    }
+
+    [Theory]
+    [InlineData(null)]   // written before the version existed
+    [InlineData(1)]
+    [InlineData(99)]
+    public void OldSchemaIsDiscarded(int? version)
+    {
+        new EventCache(_paths, new NullLog()).Save(Sample());
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_paths.EventsFile))!.AsObject();
+        Assert.Equal(EventCache.CurrentSchemaVersion, (int)json["SchemaVersion"]!);
+        if (version is { } v) json["SchemaVersion"] = v; else json.Remove("SchemaVersion");
+        File.WriteAllText(_paths.EventsFile, json.ToJsonString());
+
+        var log = new ListLog();
+        Assert.Null(new EventCache(_paths, log).Load());
+        Assert.False(File.Exists(_paths.EventsFile));
+        Assert.Contains("schema", Assert.Single(log.Warnings));
+    }
+
+    [Theory]
+    [InlineData("Cyclones", "PastTrack")]
+    [InlineData("Cyclones", "ForecastTrack")]
+    [InlineData("Cyclones", "Cone")]
+    [InlineData("Cyclones", "WindAreas")]
+    [InlineData("Alerts", "Areas")]
+    [InlineData("Alerts", "ZoneIds")]
+    [InlineData("Eonet", "Fixes")]
+    [InlineData("Earthquakes", "Id")]
+    [InlineData("Earthquakes", "Title")]
+    [InlineData("Earthquakes", "Place")]
+    [InlineData("Cyclones", "Name")]
+    [InlineData("Alerts", "EventType")]
+    [InlineData("Alerts", "Severity")]
+    [InlineData("Alerts", "Description")]
+    [InlineData("Eonet", "Title")]
+    public void RecordWithNullListIsDiscarded(string list, string field)
+    {
+        new EventCache(_paths, new NullLog()).Save(Sample());
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_paths.EventsFile))!;
+        Assert.NotNull(json[list]![0]![field]);
+        json[list]![0]![field] = null;
+        File.WriteAllText(_paths.EventsFile, json.ToJsonString());
+
+        var log = new ListLog();
+        Assert.Null(new EventCache(_paths, log).Load());
+        Assert.False(File.Exists(_paths.EventsFile));
+        Assert.Single(log.Warnings);
+    }
+
+    [Theory]
+    [InlineData("Cyclones", "Cone")]          // a null polygon inside a list
+    [InlineData("Cyclones", "PastTrack")]     // a null line
+    [InlineData("Cyclones", "WindAreas")]     // a null wind area
+    [InlineData("Alerts", "Areas")]
+    [InlineData("Alerts", "ZoneIds")]         // a null zone id
+    [InlineData("Alerts", "SupersedesIds")]
+    [InlineData("Eonet", "Fixes")]            // a null fix
+    public void RecordWithNullInsideAListIsDiscarded(string list, string field)
+    {
+        new EventCache(_paths, new NullLog()).Save(Sample());
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_paths.EventsFile))!;
+        json[list]![0]![field]!.AsArray().Add(null);
+        File.WriteAllText(_paths.EventsFile, json.ToJsonString());
+
+        var log = new ListLog();
+        Assert.Null(new EventCache(_paths, log).Load());
+        Assert.False(File.Exists(_paths.EventsFile));
+    }
+
+    [Fact]
+    public void PolygonWithNullRingIsDiscarded()
+    {
+        new EventCache(_paths, new NullLog()).Save(Sample());
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_paths.EventsFile))!;
+        json["Alerts"]![0]!["Areas"]![0]!["Rings"]!.AsArray().Add(null);
+        File.WriteAllText(_paths.EventsFile, json.ToJsonString());
+        Assert.Null(new EventCache(_paths, new ListLog()).Load());
+    }
+
+    [Fact]
+    public void NullSupersedesIdsAndLinksAreAllowed()
+    {
+        new EventCache(_paths, new NullLog()).Save(Sample());
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_paths.EventsFile))!;
+        json["Alerts"]![0]!["SupersedesIds"] = null;
+        json["Earthquakes"]![0]!["Link"] = null;
+        File.WriteAllText(_paths.EventsFile, json.ToJsonString());
+        var back = new EventCache(_paths, new ListLog()).Load();
+        Assert.NotNull(back);
+        Assert.Null(back!.Alerts[0].SupersedesIds);
     }
 
     [Fact]
