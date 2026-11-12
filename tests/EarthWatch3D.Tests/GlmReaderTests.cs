@@ -40,6 +40,7 @@ public class GlmReaderTests
     {
         using var s = File.OpenRead(Sample("glm_g18_sample.nc"));
         var flashes = GlmReader.Read(s, LightningSensor.GoesWest);
+        Assert.NotEmpty(flashes);
         Assert.All(flashes, f =>
         {
             Assert.Equal(LightningSensor.GoesWest, f.Sensor);
@@ -62,5 +63,29 @@ public class GlmReaderTests
     {
         using var s = new MemoryStream(new byte[] { 1, 2, 3, 4, 5 });
         Assert.Throws<FormatException>(() => GlmReader.Read(s, LightningSensor.GoesEast));
+    }
+}
+
+public class GlmLongitudeTests
+{
+    [Theory]
+    [InlineData(540.0)]
+    [InlineData(1e30)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(-361.0)]
+    public void RejectsCorruptLongitudes(double lon) => Assert.False(GlmReader.TryNormalizeLon(lon, out _));
+
+    [Theory]
+    [InlineData(0.0, 0.0)]
+    [InlineData(180.0, 180.0)]
+    [InlineData(-180.0, 180.0)]
+    [InlineData(190.0, -170.0)]
+    [InlineData(-190.0, 170.0)]
+    [InlineData(360.0, 0.0)]
+    [InlineData(-360.0, 0.0)]
+    public void WrapsLongitude(double lon, double expected)
+    {
+        Assert.True(GlmReader.TryNormalizeLon(lon, out var r));
+        Assert.Equal(expected, r);
     }
 }

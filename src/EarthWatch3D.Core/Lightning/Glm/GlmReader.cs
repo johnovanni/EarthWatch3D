@@ -35,12 +35,13 @@ public static class GlmReader
             for (var i = 0; i < n; i++)
             {
                 double la = lat[i], lo = lon[i];
-                if (!double.IsFinite(la) || !double.IsFinite(lo) || la < -90 || la > 90) continue;
+                // Skipped: non-finite or out-of-range position, or a fill (65535) time offset.
+                if (!double.IsFinite(la) || la < -90 || la > 90 || !TryNormalizeLon(lo, out var wrapped)) continue;
                 if (offset[i] == Unsigned16Fill) continue; // no time: cannot be placed
                 var seconds = productTime + offset[i] * tScale + tAdd;
                 var time = ProductEpoch.AddTicks((long)Math.Round(seconds * TimeSpan.TicksPerSecond));
                 var joules = energy[i] == Unsigned16Fill ? 0 : energy[i] * eScale + eAdd;
-                result.Add(new LightningFlash(time, la, NormalizeLon(lo), joules, sensor));
+                result.Add(new LightningFlash(time, la, wrapped, joules, sensor));
             }
             return result;
         }
@@ -51,11 +52,14 @@ public static class GlmReader
         }
     }
 
-    /// <summary>Wraps to (-180, 180].</summary>
-    private static double NormalizeLon(double lon)
+    /// <summary>Wraps a longitude to (-180, 180]. False for non-finite values or |lon| > 360 (corrupt or fill values).</summary>
+    internal static bool TryNormalizeLon(double lon, out double result)
     {
-        while (lon > 180) lon -= 360;
-        while (lon <= -180) lon += 360;
-        return lon;
+        result = 0;
+        if (!double.IsFinite(lon) || lon > 360 || lon < -360) return false;
+        if (lon > 180) lon -= 360;
+        else if (lon <= -180) lon += 360;
+        result = lon;
+        return true;
     }
 }
