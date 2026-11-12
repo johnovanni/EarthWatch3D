@@ -20,19 +20,24 @@ public static class AreaRasterizer
         var visual = new DrawingVisual();
         using (var dc = visual.RenderOpen())
         {
+            var styles = new Dictionary<Color, (Brush Fill, Pen Edge)>();
             foreach (var (area, color) in areas)
             {
-                var fill = new SolidColorBrush(Color.FromArgb(FillAlpha, color.R, color.G, color.B)); fill.Freeze();
-                var pen = new Pen(new SolidColorBrush(Color.FromArgb(255, color.R, color.G, color.B)), 1.0);
-                pen.Brush.Freeze(); pen.Freeze();
+                if (!styles.TryGetValue(color, out var st))
+                {
+                    var fill = new SolidColorBrush(Color.FromArgb(FillAlpha, color.R, color.G, color.B)); fill.Freeze();
+                    var edgeBrush = new SolidColorBrush(Color.FromArgb(255, color.R, color.G, color.B)); edgeBrush.Freeze();
+                    var edgePen = new Pen(edgeBrush, 1.0); edgePen.Freeze();
+                    styles[color] = st = (fill, edgePen);
+                }
                 var fillGeo = new StreamGeometry { FillRule = FillRule.EvenOdd };
                 var edgeGeo = new StreamGeometry();
                 using (var fc = fillGeo.Open())
                 using (var ec = edgeGeo.Open())
                     foreach (var ring in area.Rings) AddRing(fc, ec, ring, width, height);
                 fillGeo.Freeze(); edgeGeo.Freeze();
-                dc.DrawGeometry(fill, null, fillGeo);
-                dc.DrawGeometry(null, pen, edgeGeo);
+                dc.DrawGeometry(st.Fill, null, fillGeo);
+                dc.DrawGeometry(null, st.Edge, edgeGeo);
             }
         }
         var rtb = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
@@ -62,11 +67,12 @@ public static class AreaRasterizer
         for (int i = 1; i < n; i++) fill.LineTo(P(i), true, false);
 
         // Edges lying on lon = +-180 (made by DateLine splitting) are not real boundaries: leave them unstroked.
+        bool open = false;
         for (int i = 0; i < n; i++)
         {
             int j = (i + 1) % n;
-            if (Math.Abs(ring[i].LongitudeDeg) == 180 && Math.Abs(ring[j].LongitudeDeg) == 180) continue;
-            edge.BeginFigure(P(i), false, false);
+            if (Math.Abs(ring[i].LongitudeDeg) == 180 && Math.Abs(ring[j].LongitudeDeg) == 180) { open = false; continue; }
+            if (!open) { edge.BeginFigure(P(i), false, false); open = true; }
             edge.LineTo(P(j), true, false);
         }
     }

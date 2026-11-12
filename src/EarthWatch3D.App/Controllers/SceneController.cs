@@ -417,20 +417,28 @@ public sealed class SceneController
             do
             {
                 _areasPending = false;
-                var visible = _visible;
-                var filter = _vm.CurrentFilter;
-                int w = _composed!.Width, h = _composed.Height;
-                int lastKey = _areasKey;
-                var zones = Zones;
-                var result = await RunOnStaThread(() => BuildAreasLayer(visible, filter, zones, w, h, lastKey));
-                if (_closed) return;
-                if (result is not { } r) continue;   // nothing that shows has changed
-                _areasKey = r.Key;
-                _areas = r.Image;   // null when nothing is to be drawn
-                Recompose();
+                try
+                {
+                    var visible = _visible;
+                    var filter = _vm.CurrentFilter;
+                    int w = _composed!.Width, h = _composed.Height;
+                    int lastKey = _areasKey;
+                    var zones = Zones;
+                    var result = await RunOnStaThread(() => BuildAreasLayer(visible, filter, zones, w, h, lastKey));
+                    if (_closed) return;
+                    if (result is not { } r) continue;   // nothing that shows has changed
+                    _areasKey = r.Key;
+                    _areas = r.Image;   // null when nothing is to be drawn
+                    Recompose();
+                }
+                catch (Exception ex)
+                {
+                    // One bad pass must not stop later ones: forget the key so the next trigger rebuilds.
+                    Trace.TraceError($"Areas layer failed: {ex}");
+                    _areasKey = 0;
+                }
             } while (_areasPending && !_closed);
         }
-        catch (Exception ex) { Trace.TraceError($"Areas layer failed: {ex}"); }
         finally { _areasRunning = false; }
     }
 

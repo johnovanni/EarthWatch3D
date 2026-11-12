@@ -97,4 +97,58 @@ public class AreaRasterizerTests
         Assert.Equal((0xFF, 0x95, 0x00), ((int)wind.R, (int)wind.G, (int)wind.B));
         Assert.Null(second);
     }
+
+    [Fact]
+    public void ProjectionPixelCentreConvention()
+    {   // lon -10..10 -> x 170..190, lat 20..30 -> y 60..70 (north up: row 0 is lat 90)
+        var img = Raster([(Box(20, -10, 30, 10), Color.FromRgb(255, 0, 0))], 360, 180);
+        int minX = int.MaxValue, maxX = -1, minY = int.MaxValue, maxY = -1;
+        for (int y = 0; y < 180; y++)
+            for (int x = 0; x < 360; x++)
+                if (Px(img, x, y).A != 0 && !(x < 168 || x > 191 || y < 58 || y > 71))
+                { minX = Math.Min(minX, x); maxX = Math.Max(maxX, x); minY = Math.Min(minY, y); maxY = Math.Max(maxY, y); }
+        // Pixels 170..189 x 60..69 have their centres inside; the 1 px edge straddles the boundary, so it also
+        // touches the outer neighbours (169, 190, 59, 70) but nothing further out.
+        Assert.Equal(169, minX); Assert.Equal(190, maxX);
+        Assert.Equal(59, minY); Assert.Equal(70, maxY);
+        Assert.InRange(Px(img, 171, 61).A, 88, 90);
+        Assert.InRange(Px(img, 188, 68).A, 88, 90);
+        Assert.InRange(Px(img, 180, 65).A, 88, 90);
+        Assert.Equal(0, Px(img, 180, 20).A);    // north of the box (lat ~70) is empty
+        Assert.Equal(0, Px(img, 180, 110).A);   // the mirrored southern latitude is empty
+        Assert.Equal(0, Px(img, 168, 65).A);    // >1 px outside the west edge
+        Assert.Equal(0, Px(img, 191, 65).A);    // >1 px outside the east edge
+    }
+
+    [Fact]
+    public async Task ZoneOnlyAlertIsDrawnOnceZoneResolvable()
+    {
+        const string url = "https://api.weather.gov/zones/forecast/PZZ150";
+        var handler = new EarthWatch3D.Core.Feeds.SampleHttpHandler();
+        handler.Map(url, System.IO.Path.Combine(AppContext.BaseDirectory, "Samples", "nws_zone.json"));
+        var paths = new EarthWatch3D.Core.Storage.AppPaths(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ew3d-ar-" + Guid.NewGuid().ToString("N")));
+        paths.EnsureCreated();
+        using var http = new EarthWatch3D.Core.Feeds.FeedHttp(handler);
+        var zc = new EarthWatch3D.Core.Feeds.Nws.ZoneCache(http, paths, new TestClock(new DateTime(2026, 11, 12, 6, 0, 0, DateTimeKind.Utc)), new RecordingLog());
+        var t = new DateTime(2026, 11, 12, 6, 0, 0, DateTimeKind.Utc);
+        var alert = new EarthWatch3D.Core.Events.WeatherAlert("a1", t, new GeoPosition(0, 0), "t", null, "Gale Warning", "Severe",
+            t, t.AddHours(2), null, [], [url], "");
+        var vis = new EarthWatch3D.Core.Events.VisibleEvents([], [], [alert], []);
+        var f = EarthWatch3D.Core.Events.DisplayFilter.Default;
+        (int Key, Bgra32Image? Image)? before = null, after = null, again = null;
+        Sta.Run(() => before = EarthWatch3D.App.Controllers.SceneController.BuildAreasLayer(vis, f, zc, 360, 180, 0));
+        Assert.Null(before!.Value.Image);   // zone not loaded: nothing drawn
+
+        zc.Request([url]);
+        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Sta.Run(() =>
+        {
+            after = EarthWatch3D.App.Controllers.SceneController.BuildAreasLayer(vis, f, zc, 360, 180, before!.Value.Key);
+            again = EarthWatch3D.App.Controllers.SceneController.BuildAreasLayer(vis, f, zc, 360, 180, after!.Value.Key);
+        });
+        Assert.NotNull(after);                       // the key changed
+        Assert.NotEqual(before!.Value.Key, after!.Value.Key);
+        Assert.Contains(after.Value.Image!.Pixels.Where((_, i) => i % 4 == 3), a => a != 0);
+        Assert.Null(again);
+    }
 }
