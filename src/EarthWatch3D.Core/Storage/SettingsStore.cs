@@ -28,5 +28,11 @@ public sealed class SettingsStore(AppPaths paths, IAppLog log)
         }
     }
 
-    public void Save(AppSettings s) => AtomicFile.WriteAllText(paths.SettingsFile, JsonSerializer.Serialize(s, Options));
+    /// <summary>Returns false (and logs a warning) if the file could not be written; never throws for I/O failures.</summary>
+    public bool Save(AppSettings s)
+    {
+        if (AtomicFile.TryWriteAllText(paths.SettingsFile, JsonSerializer.Serialize(s, Options), out var error)) return true;
+        log.Warn("Could not save settings", error);
+        return false;
+    }
 }

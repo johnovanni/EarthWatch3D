@@ -23,13 +23,41 @@ public sealed record AppPaths(string Root)
 
 internal static class AtomicFile
 {
-    /// <summary>Writes to <c>file.tmp</c>, then moves it over <paramref name="file"/>.</summary>
-    public static void WriteAllText(string file, string text)
+    private const int Attempts = 3;
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// Writes to <c>file.tmp</c>, then moves it over <paramref name="file"/>, retrying the move (e.g. while an
+    /// antivirus scan holds the destination). Returns false, leaving no .tmp behind, if it still fails.
+    /// </summary>
+    public static bool TryWriteAllText(string file, string text, out Exception? error)
     {
-        var dir = Path.GetDirectoryName(file);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        error = null;
         var tmp = file + ".tmp";
-        File.WriteAllText(tmp, text);
-        File.Move(tmp, file, overwrite: true);
+        try
+        {
+            var dir = Path.GetDirectoryName(file);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            File.WriteAllText(tmp, text);
+            for (var i = 1; ; i++)
+            {
+                try
+                {
+                    File.Move(tmp, file, overwrite: true);
+                    return true;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    if (i >= Attempts) throw;
+                    Thread.Sleep(RetryDelay);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            error = ex;
+            try { File.Delete(tmp); } catch (Exception) { }
+            return false;
+        }
     }
 }

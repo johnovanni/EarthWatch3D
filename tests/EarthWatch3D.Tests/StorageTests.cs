@@ -123,6 +123,30 @@ public sealed class StorageTests : IDisposable
     }
 
     [Fact]
+    public void SaveWhileDestinationLockedLogsAndDoesNotThrow()
+    {
+        var log = new ListLog();
+        var settings = new SettingsStore(_paths, log);
+        var cache = new EventCache(_paths, log);
+        settings.Save(new AppSettings());
+        cache.Save(Sample());
+
+        using (new FileStream(_paths.SettingsFile, FileMode.Open, FileAccess.Read, FileShare.None))
+        using (new FileStream(_paths.EventsFile, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.False(settings.Save(new AppSettings { ShowQuakes = false }));
+            Assert.False(cache.Save(Sample()));
+            Assert.Equal(2, log.Warnings.Count);
+            Assert.False(File.Exists(_paths.SettingsFile + ".tmp"));
+            Assert.False(File.Exists(_paths.EventsFile + ".tmp"));
+        }
+
+        Assert.True(settings.Save(new AppSettings { ShowQuakes = false }));
+        Assert.True(cache.Save(Sample()));
+        Assert.False(settings.Load().ShowQuakes);
+    }
+
+    [Fact]
     public void CorruptCacheIsDeletedAndIgnored()
     {
         File.WriteAllText(_paths.EventsFile, "{ truncated");

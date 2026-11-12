@@ -38,9 +38,12 @@ public sealed class EventCache(AppPaths paths, IAppLog log)
         }
     }
 
-    public void Save(EventSnapshot s)
+    /// <summary>Returns false (and logs a warning) if the file could not be written; never throws for I/O failures.</summary>
+    public bool Save(EventSnapshot s)
     {
         var dto = new Dto([.. s.Earthquakes], [.. s.Cyclones], [.. s.Alerts], [.. s.Eonet], s.Version);
-        AtomicFile.WriteAllText(paths.EventsFile, JsonSerializer.Serialize(dto, Options));
+        if (AtomicFile.TryWriteAllText(paths.EventsFile, JsonSerializer.Serialize(dto, Options), out var error)) return true;
+        log.Warn("Could not save event cache", error);
+        return false;
     }
 }
