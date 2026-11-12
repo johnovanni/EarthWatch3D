@@ -180,3 +180,30 @@ src\EarthWatch3D.App\bin\Release\net10.0-windows\EarthWatch3D.App.exe --bench --
 Above the 30 fps target (spec §10), so drawing the flashes as points stays. One run, and no 0-flash run on this day's
 live data to compare with (the working set before the flashes was already higher than in earlier notes because the live
 cache is larger), so the cost of the flashes alone is not isolated.
+
+## Plan 3, Task 11: 10 minutes live with lightning on
+
+Measured **2026-11-12** (16:16-16:26 UTC), same machine, .NET 10.0.15, `PERF_LOG` Release build, real network, default
+view (the Americas), `--layers lightning --bench` (lightning on for the run only). The app was closed with a normal
+window close at the end of 10 minutes; the download meter file then read 33,128,412 bytes. Once a minute the app logs
+(`%TEMP%\EarthWatch3D-perf.log`, "lightning minute" lines) the frames per second over that minute, memory, flashes held
+and the bytes downloaded that minute.
+
+```
+dotnet build src/EarthWatch3D.App -c Release "-p:DefineConstants=TRACE%3BRELEASE%3BPERF_LOG"
+src\EarthWatch3D.Appin\Release
+et10.0-windows\EarthWatch3D.App.exe --layers lightning --bench
+```
+
+| Measurement | Value |
+|---|---|
+| FPS, per-minute average over minutes 1-10 | 46.1 to 49.1 (mostly 48.1 to 48.8) |
+| FPS in the 5 s rotation at 10 s after load (no flashes yet) | 37.4 (187 frames) |
+| Working set, minutes 1-10 | 624 to 946 MB (private 570 to 871 MB; it moves with garbage collections) |
+| Flashes held after minute 1 / minute 10 | 12,982 / 21,801 (East 12,629 / 21,208; West 353 / 593); the buffer keeps 60 minutes |
+| Downloaded in minute 1 | 20.5 MB (the 15-minute catch-up of up to 45 files per feed, plus the events and zones) |
+| Downloaded in minutes 2-10 | 11.9 MB in 9 minutes = about 1.3 MB per minute = **about 80 MB per hour** |
+| Total in 10 minutes | 33.1 MB |
+
+The frame rate with lightning on stayed well above 30 fps. The 25,000-flash rotation figure (38.6 fps) is in Task 8
+above. The first-minute figure of 20.5 MB shows what the daily limit sees when lightning is switched on.

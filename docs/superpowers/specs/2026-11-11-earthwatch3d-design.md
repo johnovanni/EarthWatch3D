@@ -21,7 +21,7 @@ package, so it has to work without developer tools and explain itself to non-tec
   shading follows the real terminator.
 - The time slider replays the last 7 days of earthquakes and the last 24 hours of storms and alerts. The Sun,
   Moon and night shading move with it.
-- Data use stays small: roughly 100 MB per hour with lightning on (estimate, to be measured), and only a few MB
+- Data use stays small: about 80 MB per hour with lightning on (measured 2026-11-12, `docs/perf.md`; the first minute adds about 20 MB of catch-up), and only a few MB
   per day with lightning off.
 - It installs, updates itself and uninstalls cleanly as a signed MSIX.
 
@@ -48,6 +48,16 @@ package, so it has to work without developer tools and explain itself to non-tec
 | R7 | NWS Update and Cancel messages end the alerts they reference: the referenced alert's `CancelledUtc` becomes the newer message's sent time, including when the reference arrives first (§5.4) |
 | R8 | A merged NHC storm takes GDACS's past track when NHC has none, as it already took the wind bands (§5.3) |
 | R10 | Plate boundaries are drawn 3 px wide, fully opaque, in saturated colours (convergent #FF3030, divergent #FFE600, transform #00E5FF) instead of 1.5 px at 85% (§6, 5a) |
+
+### Rulings made while building Plan 3
+
+| Ruling | Decision |
+|---|---|
+| P3-1 | Clouds are keyed on brightness above the Blue Marble: the alpha comes from how much brighter the VIIRS pixel is than the same pixel of the Blue Marble, so land and desert that look as they do in the base stay clear (§5.6) |
+| P3-2 | The partial-day black check on the VIIRS image looks only between 60° N and 60° S, where a daily mosaic should be fully covered (§5.6) |
+| P3-3 | The Paused status dot (daily limit reached) is blue, #0A84FF (§5.7, §7) |
+| P3-4 | The GLM feed downloads the newest files first, at most 45 files per poll, and only files inside the lightning window (§5.7) |
+| P3-5 | MTG is not built yet: the app has no EUMETSAT lightning feed until the user's EUMETSAT key works. `mtgActive` is false, so GLM covers its whole footprint (§5.7) |
 
 ### Out of scope
 

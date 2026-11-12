@@ -229,6 +229,34 @@ public partial class App : Application
             ShutDownServices();
         };
         timer.Start();
+#if PERF_LOG
+        // Once a minute: frames per second over that minute, memory, flashes held per sensor and today's download volume.
+        {
+            int frames = 0;
+            var lastFrame = TimeSpan.MinValue;
+            System.Windows.Media.CompositionTarget.Rendering += (_, ev) =>
+            {
+                var rt = ((System.Windows.Media.RenderingEventArgs)ev).RenderingTime;
+                if (rt != lastFrame) { lastFrame = rt; frames++; }
+            };
+            long lastBytes = meter.TodayBytes;
+            var started = DateTime.UtcNow;
+            var perfTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+            perfTimer.Tick += (_, _) =>
+            {
+                var span = DateTime.UtcNow - started;
+                started = DateTime.UtcNow;
+                long bytes = meter.TodayBytes;
+                var all = lightningBuffer.Between(DateTime.MinValue, DateTime.MaxValue);
+                Diagnostics.PerfLog.Write(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"lightning minute: fps={frames / span.TotalSeconds:F1} {Diagnostics.PerfLog.Memory()} flashes={all.Count} " +
+                    $"east={all.Count(f => f.Sensor == LightningSensor.GoesEast)} west={all.Count(f => f.Sensor == LightningSensor.GoesWest)} " +
+                    $"downloaded this minute={(bytes - lastBytes) / 1e6:F2} MB today={bytes / 1e6:F1} MB"));
+                frames = 0; lastBytes = bytes;
+            };
+            perfTimer.Start();
+        }
+#endif
         scheduler.Start();
 
         if (options.Any) _ = SnapshotDiagnostic.RunAsync(window, window.Scene, vm, options, offsetClock, waitForData, log);

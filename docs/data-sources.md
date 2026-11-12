@@ -180,6 +180,15 @@ Summary:
 - A G18 file with only 4 to 12 flashes is still about 165 KB, so there is a large fixed part per file (event/group/field-of-view variables). A G19 file with 690 to 757 flashes is about 390 KB.
   Size is not proportional to flash count. Typical flashes per 20 s file: G19 690 to 757 here, G18 4 to 12 here.
 
+### Measured in the app (2026-11-12, 10 minutes live, default view of the Americas)
+
+The app's download meter counts the bytes on the wire for every request. In 10 minutes with lightning on it counted
+33.1 MB: **20.5 MB in the first minute** (the 15-minute catch-up, at most 45 files per satellite, plus the other feeds'
+first downloads) and then **11.9 MB over the next 9 minutes, about 1.3 MB per minute or about 80 MB per hour** for both
+GLM feeds together (the other feeds add only a few MB per day). That is a little below the 102 MB/h the file sizes
+above give for both satellites running all the time, because the West feed polls only while the camera faces GOES-18
+and its files are small. Details in `docs/perf.md`.
+
 ### File layout (NetCDF-4 / HDF5, read with netCDF4 and PureHDF)
 
 - Dimensions: `number_of_flashes`, `number_of_groups`, `number_of_events`, `number_of_time_bounds`, plus field-of-view and wavelength bounds.

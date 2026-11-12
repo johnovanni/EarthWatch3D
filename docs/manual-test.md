@@ -86,6 +86,32 @@ last update time or its error.
       so the cache is saved) and start it again. The cached events appear straight away, and the dots go amber and
       then red as above.
 
+## Lightning, clouds and Settings (Plan 3)
+
+- [ ] **Lightning on/off:** the lightning button (bolt) in the layer strip shows and hides the flashes. Turn it on and
+      within about a minute flashes appear over the Americas (GOES East) in age colours, newest brightest. The status bar
+      shows **GLM East** (and **GLM West** when you turn the globe towards the Pacific) as dots, and **Today: ... MB** at
+      the right of the time bar grows.
+- [ ] **Window chips:** in the Display flyout, choosing 5, 15, 30 or 60 minutes changes how long a flash stays on the
+      globe; fewer flashes at 5 than at 60. The choice is remembered after a restart.
+- [ ] **Lightning hides in replay:** with lightning on, drag the time slider back (or press the step-back button): all
+      flashes disappear, and come back when you press **NOW**. (Lightning is live only.)
+- [ ] **Clouds on/off:** the cloud button shows and hides the live cloud layer (it is off by default); there is no
+      black gap in the clouds between 60° N and 60° S, and the globe looks as before with it off.
+- [ ] **Settings, no key:** open Settings (gear). With the EUMETSAT key and secret empty, **Test** says a key is needed
+      and nothing is saved. The **MTG** dot is grey. (Needs MTG: when MTG is available.)
+- [ ] **Settings, invalid key:** type a made-up key and secret, press **Test**: it says EUMETSAT rejected the key and
+      the key is not stored. (When MTG is available: the MTG dot turns red and clicking it opens Settings.)
+- [ ] **Settings, valid key:** enter your own EUMETSAT key and secret, press **Test**: it says it worked, and after
+      **Save** the key is stored encrypted (not readable in `%LOCALAPPDATA%\EarthWatch3D\settings.json`). The **MTG**
+      dot turns green and Europe/Africa flashes appear. (When MTG is available.)
+- [ ] **Daily limit:** in Settings set the daily limit to **10** MB and Save. As soon as **Today:** reaches 10 MB the
+      GLM dots turn **blue** (paused), no new flashes arrive, and the other layers keep updating. Setting the limit to
+      empty (no limit) resumes lightning at the next update (within 20 s). The count is kept when you restart the app
+      on the same day.
+- [ ] **Units:** in Settings switch between **km** and **miles**: the details panel, the Sun and Moon card and the
+      distances all change at once, and the choice is remembered.
+
 ## Errors
 
 - [ ] Start the app with a bad option, for example `--display-time yesterday`. A message explains what is wrong and
@@ -99,7 +125,12 @@ To check the drawing without depending on today's weather, start the app on the 
 ```
 dotnet run --project src/EarthWatch3D.App -c Release -- --offline-samples tests\Samples --display-time 2026-11-11T20:00:00Z
 dotnet run --project src/EarthWatch3D.App -c Release -- --offline-samples tests\Samples --display-time 2026-11-11T20:00:00Z --look-at 10,-165
+dotnet run --project src/EarthWatch3D.App -c Release -- --offline-samples tests\Samples --display-time 2026-11-11T19:10:00Z --look-at 0,-60 --layers lightning,clouds
 ```
+
+The third command shows the lightning samples (the GLM files are from 19:00 UTC, so a 15-minute window ending at
+19:10 holds them; at 20:00 they would already have faded out): about 700 flashes over South America in orange age
+colours, plus clouds. The **Today:** figure counts the sample files' bytes.
 
 The window title ends with **— SAMPLE DATA (offline)** and the readout says **SAMPLE 11 Nov 20:00 UTC** (never
 LIVE), with all five dots green. The LIVE button reads **NOW** and is not lit red. Stepping back shows REPLAY as usual; **NOW** returns to SAMPLE. The app uses a
