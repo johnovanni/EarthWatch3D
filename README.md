@@ -2,8 +2,8 @@
 
 A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is happening on it now.
 
-> **Work in progress.** This is the end of plan 1 of 4 (the foundation). Earthquakes, storms, weather alerts,
-> lightning, clouds, the time slider and the installer come in plans 2–4 and are **not** in the app yet.
+> **Work in progress.** This is the end of plan 2 of 4 (events and time). Lightning, clouds, the Settings dialog
+> and the installer come in plans 3–4 and are **not** in the app yet.
 
 ## What works today
 
@@ -19,12 +19,35 @@ A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is
   is dimmed and labelled "Sun (behind Earth)" / "Moon (behind Earth)".
 - **Sun & Moon card** (top right): the sub-solar and sub-lunar points, the Moon's distance and how much of it is lit,
   updated every second, with **Face Sun** and **Face Moon** buttons. The chevron collapses the card.
+- **Earthquakes** (USGS, every minute): a disc on the globe for each quake, sized by magnitude and coloured by age,
+  with a label on M5 and above. Quakes under an hour old pulse while the view is live.
+- **Tropical cyclones** (NHC every 15 min, GDACS every 15 min): a glyph coloured by category, the past track as a
+  solid white line, the forecast track dashed, the forecast cone in white and the GDACS wind areas, all drawn
+  correctly across the date line. When NHC and GDACS report the same storm it is shown once, from NHC.
+- **US weather alerts** (NWS, every 2 min): the alert areas drawn on the globe in the standard NWS colours. Alerts that
+  name forecast zones instead of giving an outline are drawn once the zone outlines have downloaded (kept on disk for
+  30 days). Warnings are shown by default; watches, advisories and statements can be added.
+- **Severe storms** (NASA EONET, every 30 min): a dot with its recent track, for storms not already shown from NHC or
+  GDACS.
+- **Hover and click:** hovering over an event shows a one-line tooltip; clicking it opens a details panel with a link
+  to the source's own page.
+- **Time bar** (bottom): the display time is live, or any time in the last 7 days. Step back or forward by 10 minutes
+  or an hour, drag the slider, or play the replay at 1×, 60×, 600× or 3600×. The Sun, Moon, night side and events all
+  follow the display time. **LIVE** jumps back to now.
+- **Layer strip and Display options** (top left): show or hide each layer, choose the minimum quake magnitude, 24 h or
+  7 days of quakes, which kinds of US alerts to show, the night-shade strength and the day/night line. Choices are
+  saved.
+- **Status dots** (bottom right): one per data source, green when its last update worked, amber while it is retrying
+  and red after three failures in a row; hover for details. Events are cached on disk, so a restart without a network
+  still shows them.
+- **Errors:** a failed update affects only that source, and an unexpected error is logged and shown once, while the
+  app keeps running. If the globe image ever fails to compose, the plain Blue Marble is shown until the next try.
+  The log is in `%LOCALAPPDATA%\EarthWatch3D\logs`.
 
-### Coming in plans 2–4
+### Coming in plans 3–4
 
 | Plan | Adds |
 |---|---|
-| 2. Events and time | Earthquakes (USGS), tropical cyclones (GDACS, NHC), US weather alerts (NWS), NASA EONET storms, a details panel, and a time bar that replays the last 7 days |
 | 3. Lightning, clouds, data use | Live lightning (GOES GLM, and Meteosat MTG with your own EUMETSAT key), live clouds (NASA GIBS), a data-use meter and the Settings dialog |
 | 4. Ship | Welcome and About screens, a signed MSIX installer with automatic updates |
 
@@ -53,27 +76,48 @@ with `dotnet test -c Release --filter Category=Perf`.
 | Double-click the globe | Turn that point to the centre |
 | Home | Back to the starting view (20° N, 40° W) |
 | **Face Sun** / **Face Moon** (card) | Turn the globe so the point under the Sun or the Moon faces you |
+| Hover over an event | A one-line tooltip (quake, storm, alert area or EONET storm; also the Sun and Moon markers) |
+| Click an event | Open its details panel; click empty space, **×** or press Esc to close it |
+| Layer strip buttons | Show or hide earthquakes, cyclones, US alerts, EONET storms, coastlines and borders; ☰ shows the labels |
+| **⋯** / **Display ▸** | Display options: minimum magnitude, 24 h or 7 days, alert types, night shade, day/night line |
+| ◀◀ ▾ / ▾ ▶▶ | Step the display time back or forward (10 min or 1 hour) |
+| Time slider | Pick any time in the last 7 days |
+| ▶ and the speed box | Play the replay at 1×, 60×, 600× or 3600×; it becomes live when it reaches now |
+| **LIVE** | Back to the present |
 
 ## Diagnostics
 
-These command-line options are for checking the app without a screen capture tool:
+These command-line options are for checking the app without a screen capture tool. A bad value for
+`--offline-samples`, `--display-time` or `--look-at` shows a message saying what is wrong, and the app closes.
 
 | Option | What it does |
 |---|---|
 | `--snapshot <png path>` | Once the globe image is shown, saves a picture of the window (rendered by the app itself, at the window's DPI) as a PNG and exits. Exit code 1 if saving failed. |
 | `--face-sun` | Once the globe image is shown, turns the camera to the Sun (as the Face Sun button does). With `--snapshot`, the picture is taken after the turn. |
+| `--look-at <lat,lon>` | Once the globe image is shown, turns the camera at once to look straight down on that point, in degrees (north and east positive), for example `--look-at 10,-165`. |
 | `--delay-ms <N>` | With `--snapshot`: wait N milliseconds before the picture (default 1500). |
 | `--snapshot-recompose` | With `--snapshot <png path>`: saves two pictures instead of one, `<name>-a.png` and `<name>-b.png`. The second is taken after the app's clock is moved 6 hours ahead and the globe image recomposed and shown, so the night side should have moved about 90° west. This checks that a later recompose reaches the screen, not only the first. |
+| `--display-time <UTC time>` | Starts in replay at that time, written in ISO form with a `Z` or an offset, for example `2026-11-11T20:00:00Z`. A time more than 7 days ago is moved to the start of the 7 days. |
+| `--offline-samples <folder>` | Answers every data request from the sample files in the folder (`tests\Samples`) instead of the network. The event cache, zone outlines and settings go to a temporary folder (`%TEMP%\EarthWatch3D-offline-…`, deleted on exit), so your own cache and saved choices are not touched; the log still goes to the usual folder. With `--display-time`, the app's clock starts at that time, so the samples aren't treated as days old. With `--snapshot`, the picture waits (at most 20 s) until every source has reported once, the zone outlines have loaded and the alert and cyclone areas are on the globe. |
+
+The samples were captured around 19:15–20:30 UTC on 2026-11-11. They hold the outline of only one NWS zone (PZZ150,
+off the Washington coast), so offline every alert that names zones is drawn in that one zone: enough to see that
+zones load and draw, not where those alerts really were. The GDACS track and wind areas are Pena's only; the other
+GDACS storms appear as glyphs without tracks.
 
 For example:
 
 ```
 dotnet run --project src/EarthWatch3D.App -c Release -- --face-sun --snapshot %TEMP%\earth.png
 dotnet run --project src/EarthWatch3D.App -c Release -- --face-sun --snapshot %TEMP%\earth.png --snapshot-recompose
+dotnet run --project src/EarthWatch3D.App -c Release -- --offline-samples tests\Samples --display-time 2026-11-11T20:00:00Z --look-at 10,-165 --snapshot %TEMP%\pena.png
 ```
 
 The second command writes `earth-a.png` (the day side, facing the Sun) and `earth-b.png` (6 hours later: the
-terminator runs down the middle of the view, with the night side on the right).
+terminator runs down the middle of the view, with the night side on the right). The third shows Tropical Storm Pena in
+the central Pacific with its tracks, cone and wind areas, from the samples.
+
+For hands-on checks (the mouse, the time bar, the network), see [docs/manual-test.md](docs/manual-test.md).
 
 Performance logging is compiled in only when you ask for it:
 
@@ -85,7 +129,8 @@ dotnet build src/EarthWatch3D.App -c Release "-p:DefineConstants=TRACE%3BRELEASE
 `RELEASE` (the .NET SDK has no `ExtraDefineConstants` property to add to the list instead).
 
 That build appends load and compose timings and memory use to `%TEMP%\EarthWatch3D-perf.log`, and accepts
-`--bench`, which spins the globe once (360° over 5 s) and logs the frame rate. Rebuild normally afterwards. The
+`--bench`, which spins the globe once (360° over 5 s) and logs the frame rate. With `--offline-samples`, the bench
+waits until the sample events are drawn, so it measures the globe with events on it. Rebuild normally afterwards. The
 measured numbers are in [docs/perf.md](docs/perf.md).
 
 ## Credits
@@ -96,5 +141,12 @@ measured numbers are in [docs/perf.md](docs/perf.md).
   (included as a git submodule).
 - **3D:** [HelixToolkit.Wpf](https://github.com/helix-toolkit/helix-toolkit).
 - **MVVM:** [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet).
+- **Earthquakes:** [U.S. Geological Survey](https://earthquake.usgs.gov/earthquakes/feed/) real-time GeoJSON feeds.
+- **Tropical cyclones:** [NOAA National Hurricane Center](https://www.nhc.noaa.gov/) (current storms, forecast tracks
+  and cones) and [GDACS](https://www.gdacs.org/), the Global Disaster Alert and Coordination System (European
+  Commission and United Nations).
+- **US weather alerts:** [NOAA National Weather Service](https://www.weather.gov/) API, alerts and forecast zones.
+- **Severe storms:** [NASA EONET](https://eonet.gsfc.nasa.gov/), the Earth Observatory Natural Event Tracker.
 
-Data sources for the coming plans are listed in [docs/data-sources.md](docs/data-sources.md).
+The data sources, their URLs and how often they are read are listed in [docs/data-sources.md](docs/data-sources.md).
+The events are shown for interest, not for safety decisions: follow your local weather service and authorities.

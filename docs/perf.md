@@ -67,6 +67,39 @@ the remaining gap to the baseline is therefore not the rings. The likely causes 
 updates of the other line visuals and billboards while the camera moves, and the label placement. Neither has been
 measured separately.
 
+## Plan 2, Task 17: with the offline samples
+
+Measured **2026-11-12** (07:11 UTC), same machine and window size, .NET 10.0.15, `PERF_LOG` Release build:
+
+```
+dotnet build src/EarthWatch3D.App -c Release "-p:DefineConstants=TRACE%3BRELEASE%3BPERF_LOG"
+src\EarthWatch3D.App\bin\Release\net10.0-windows\EarthWatch3D.App.exe --bench --offline-samples tests\Samples --display-time 2026-11-11T20:00:00Z
+```
+
+All five feeds read the samples, so every kind of event is loaded: 1,856 quakes, 5 cyclone advisories (Pena from both
+NHC and GDACS, shown as one storm; Cempaka; two older GDACS storms not shown at 20:00), the 428 alerts of the NWS
+sample and 4 EONET storms. At 20:00 UTC with the default filter (M2.5+, last 24 h) 33 quake discs are drawn (7 of them M5+), with the
+Pena and Cempaka glyphs, Pena's tracks, cone and wind areas, the US warning areas and one EONET storm. The bench waits
+until that is drawn (0.45 s after the first globe image) and then spins the default view, which shows the Atlantic,
+the Americas, Europe and Africa; Pena and the Pacific come into view during the turn.
+
+| Measurement | Value |
+|---|---|
+| FPS while rotating | **59.0 fps** (295 frames in 5.00 s) |
+| Working set when the events were first drawn | 570 MB (505 MB private, 116 MB managed) |
+| Working set 10 s after load | **523 MB** (452 MB private, 117 MB managed) |
+| Working set after the bench | 556 MB (482 MB private) |
+| Working set after a forced full GC (experiment) | 542 MB (466 MB private, 109 MB managed) |
+| `Get-Process` from outside, 30 s after launch | 526 MB |
+| Compose (4096×2048), first and second | 52 ms and 51 ms |
+
+The frame rate is higher than Task 14's 46.3 fps because this run is a replay (the display time is fixed at 20:00
+UTC): quake rings pulse only while the view is live, so none were animating, and fewer discs were drawn (33 against
+45). It is one run, so it includes run-to-run variation too. The second compose is the one that adds the Areas layer;
+the areas image (another 4096×2048 BGRA image, 32 MiB) and WPF's copy of the new texture account for most of the
+working set's rise from 424 MB at the first globe image to 562 MB just after. Working set stays under the 800 MB
+target.
+
 ## What the memory is
 
 At 8192×4096 one BGRA copy of the globe is 128 MiB. In the 8192 run the managed heap held only the base image
