@@ -4,6 +4,7 @@ using AstroCore.Earth;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Nhc;
+using EarthWatch3D.Core.Geo;
 
 namespace EarthWatch3D.Tests;
 
@@ -66,6 +67,41 @@ public sealed class NhcTests
         var (l, p, g) = KmlReader.ReadKmz(ms, log);
         Assert.Empty(l); Assert.Empty(p); Assert.Empty(g);
         Assert.Single(log.Warnings);
+    }
+
+    private static MemoryStream Kmz(string kml)
+    {
+        var ms = new MemoryStream();
+        using (var z = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+        using (var w = new StreamWriter(z.CreateEntry("a.kml").Open())) w.Write(kml);
+        ms.Position = 0;
+        return ms;
+    }
+
+    [Fact]
+    public void OversizedKmlEntryRejected()
+    {
+        var big = "<kml><!--" + new string('x', 21 * 1024 * 1024) + "--></kml>";
+        Assert.Throws<InvalidDataException>(() => KmlReader.ReadKmz(Kmz(big)));
+    }
+
+    [Fact]
+    public void NonFiniteKmlCoordinateSkipped()
+    {
+        var log = new RecordingLog();
+        var (lines, points, _) = KmlReader.ReadKmz(Kmz(
+            "<kml xmlns=\"http://www.opengis.net/kml/2.2\"><LineString><coordinates>1,2 Infinity,3 NaN,4</coordinates></LineString>"
+            + "<Point><coordinates>10,20</coordinates></Point></kml>"), log);
+        Assert.Empty(lines);
+        Assert.Single(points);
+        Assert.Single(log.Warnings);
+    }
+
+    [Fact]
+    public void DateLineRejectsNonFiniteInput()
+    {
+        Assert.Throws<ArgumentException>(() => DateLine.SplitLine([(0, 0), (double.PositiveInfinity, 1)]));
+        Assert.Throws<ArgumentException>(() => DateLine.SplitPolygon([[(0, 0), (double.NaN, 1), (1, 1)]]));
     }
 
     [Fact]

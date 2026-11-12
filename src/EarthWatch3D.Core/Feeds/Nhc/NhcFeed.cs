@@ -31,12 +31,12 @@ public sealed class NhcFeed(FeedHttp http, EventStore store, IAppLog log) : IEve
         foreach (var s in storms)
         {
             if (!_cache.TryGetValue(s.Id, out var c)) _cache[s.Id] = c = new Cache();
-            if (s.TrackKmz is not null && (c.TrackAdv is null || c.TrackAdv != s.TrackAdv))
+            if (s.TrackKmz is not null && c.TrackAdv != (s.TrackAdv ?? ""))
             {
                 var kmz = await TryReadAsync(s, s.TrackKmz, ct).ConfigureAwait(false);
                 if (kmz is not null) { c.Track = kmz.Value.Lines; c.TrackAdv = s.TrackAdv ?? ""; }
             }
-            if (s.ConeKmz is not null && (c.ConeAdv is null || c.ConeAdv != s.ConeAdv))
+            if (s.ConeKmz is not null && c.ConeAdv != (s.ConeAdv ?? ""))
             {
                 var kmz = await TryReadAsync(s, s.ConeKmz, ct).ConfigureAwait(false);
                 if (kmz is not null) { c.Cone = kmz.Value.Polygons; c.ConeAdv = s.ConeAdv ?? ""; }

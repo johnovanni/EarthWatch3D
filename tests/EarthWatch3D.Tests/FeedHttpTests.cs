@@ -21,6 +21,13 @@ public sealed class FeedHttpTests
     }
 
     [Fact]
+    public async Task OversizedBodyRejected()
+    {
+        using var http = new FeedHttp(new RecordingHandler(new string('a', 2048)), maxBodyBytes: 1024);
+        await Assert.ThrowsAsync<HttpRequestException>(() => http.GetBytesAsync(new Uri("http://x/y"), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task FeedHttpSendsUserAgentAndCountsBytes()
     {
         var h = new RecordingHandler("hello wörld");

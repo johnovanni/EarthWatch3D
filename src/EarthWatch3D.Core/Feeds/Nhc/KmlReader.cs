@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Xml;
 using System.Xml.Linq;
 using AstroCore.Earth;
 using EarthWatch3D.Core.Geo;
@@ -10,6 +11,30 @@ namespace EarthWatch3D.Core.Feeds.Nhc;
 /// <summary>Reads lines, points and polygons (outer boundaries) from a KMZ. Elements are matched by local name.</summary>
 public static class KmlReader
 {
+    private const long MaxKmlBytes = 20L * 1024 * 1024;
+
+    private sealed class LimitedStream(Stream inner, long max) : Stream
+    {
+        private long _read;
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            int n = inner.Read(buffer, offset, count);
+            _read += n;
+            if (_read > max) throw new InvalidDataException($"KML entry larger than {max / (1024 * 1024)} MB");
+            return n;
+        }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        protected override void Dispose(bool disposing) { if (disposing) inner.Dispose(); base.Dispose(disposing); }
+    }
+
     public static (IReadOnlyList<GeoLine> Lines, IReadOnlyList<GeoPosition> Points, IReadOnlyList<GeoPolygon> Polygons) ReadKmz(Stream kmz, IAppLog? log = null)
     {
         var lines = new List<GeoLine>();
@@ -18,8 +43,13 @@ public static class KmlReader
         using var zip = new ZipArchive(kmz, ZipArchiveMode.Read, leaveOpen: true);
         var entry = zip.Entries.FirstOrDefault(e => e.FullName.EndsWith(".kml", StringComparison.OrdinalIgnoreCase));
         if (entry is null) { log?.Warn("KMZ contains no .kml file"); return (lines, points, polys); }
+        if (entry.Length > MaxKmlBytes) throw new InvalidDataException($"KML entry larger than {MaxKmlBytes / (1024 * 1024)} MB");
         XDocument doc;
-        using (var es = entry.Open()) doc = XDocument.Load(es);
+        // The declared Length can lie, so the stream itself is capped. DTDs are prohibited and no resolver is used (XXE / entity expansion).
+        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
+        using (var es = new LimitedStream(entry.Open(), MaxKmlBytes))
+        using (var xr = XmlReader.Create(es, settings))
+            doc = XDocument.Load(xr);
 
         foreach (var e in doc.Descendants())
         {
@@ -60,6 +90,7 @@ public static class KmlReader
                 || !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon)
                 || !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat))
                 throw new FormatException($"bad KML coordinate '{tuple}'");
+            if (!double.IsFinite(lon) || !double.IsFinite(lat)) throw new FormatException($"non-finite KML coordinate '{tuple}'");
             result.Add((lon, lat));
         }
         return result;

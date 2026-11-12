@@ -10,12 +10,14 @@ public sealed class FeedHttp : IDisposable
 {
     private readonly HttpClient _client;
     private readonly TimeSpan _timeout;
+    private readonly long _maxBytes;
 
     /// <summary>Raised with the number of body bytes read (after decompression).</summary>
     public event Action<long>? BytesReceived;
 
-    public FeedHttp(HttpMessageHandler? handler = null, TimeSpan? timeout = null)
+    public FeedHttp(HttpMessageHandler? handler = null, TimeSpan? timeout = null, long maxBodyBytes = 50L * 1024 * 1024)
     {
+        _maxBytes = maxBodyBytes;
         _timeout = timeout ?? TimeSpan.FromSeconds(30);
         handler ??= new SocketsHttpHandler
         {
@@ -49,6 +51,7 @@ public sealed class FeedHttp : IDisposable
         int n;
         while ((n = await s.ReadAsync(buf, ct).ConfigureAwait(false)) > 0)
         {
+            if (ms.Length + n > _maxBytes) throw new HttpRequestException($"response larger than {_maxBytes / (1024.0 * 1024):0.###} MB");
             ms.Write(buf, 0, n);
             BytesReceived?.Invoke(n);
         }
