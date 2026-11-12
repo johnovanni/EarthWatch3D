@@ -112,4 +112,39 @@ public class EventVisibilityTests
         var v = EventVisibility.At(s, T, f);
         Assert.Empty(v.Quakes); Assert.Empty(v.Cyclones);
     }
+
+    [Fact]
+    public void EonetShownNearCycloneWhenCyclonesHidden()
+    {
+        var near = new GeoPosition(10 + 100 / 111.19, 20);
+        var s = Snap(c: [Adv("nhc:1", T.AddHours(-1))], e: [Eonet(near, T.AddHours(-2))]);
+        var v = EventVisibility.At(s, T, DisplayFilter.Default with { ShowCyclones = false });
+        Assert.Single(v.Eonet);
+        Assert.Empty(v.Cyclones);
+    }
+
+    [Fact]
+    public void QuakeExactlyAtWindowEdgeIsVisibleWithFractionOne()
+    {
+        var s = Snap(q: [Quake("edge", T.AddHours(-24), 4)]);
+        Assert.Equal(1, Assert.Single(EventVisibility.At(s, T, DisplayFilter.Default).Quakes).AgeFraction, 9);
+    }
+
+    [Fact]
+    public void AlertBoundaries()
+    {
+        var s = Snap(a: [Alert("Tornado Warning", T, T.AddHours(2))]);
+        Assert.Single(EventVisibility.At(s, T, DisplayFilter.Default).Alerts);
+        Assert.Empty(EventVisibility.At(s, T.AddHours(2), DisplayFilter.Default).Alerts);
+        var c = Snap(a: [Alert("Tornado Warning", T, T.AddHours(2), T.AddMinutes(-30))]);
+        foreach (var h in new[] { -1.0, 0, 0.5, 1 })
+            Assert.Empty(EventVisibility.At(c, T.AddHours(h), DisplayFilter.Default).Alerts);
+    }
+
+    [Fact]
+    public void GdacsOnlyStormSurvivesMerge()
+    {
+        var s = Snap(c: [Adv("gdacs:1", T.AddHours(-1), src: EventSource.Gdacs, name: "PENA-26")]);
+        Assert.Equal("gdacs:1", Assert.Single(EventVisibility.At(s, T, DisplayFilter.Default).Cyclones).Id);
+    }
 }

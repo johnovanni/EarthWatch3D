@@ -32,13 +32,17 @@ public static class EventVisibility
                 quakes.Add(new VisibleQuake(q, frac));
             }
 
-        // Cyclones are computed even when hidden: EONET de-duplication uses them.
-        var latest = s.Cyclones
-            .Where(a => a.TimeUtc <= t && t - a.TimeUtc <= CycloneWindow)
-            .GroupBy(a => a.Id)
-            .Select(g => g.MaxBy(a => a.TimeUtc)!)
-            .ToList();
-        var merged = CycloneMerger.Merge(latest);
+        // Cyclones are only needed when shown, or when EONET storms must be de-duplicated against them.
+        IReadOnlyList<CycloneAdvisory> merged = [];
+        if (f.ShowCyclones)
+        {
+            var latest = s.Cyclones
+                .Where(a => a.TimeUtc <= t && t - a.TimeUtc <= CycloneWindow)
+                .GroupBy(a => a.Id)
+                .Select(g => g.MaxBy(a => a.TimeUtc)!)
+                .ToList();
+            merged = CycloneMerger.Merge(latest);
+        }
 
         var alerts = new List<WeatherAlert>();
         if (f.ShowAlerts)
@@ -62,6 +66,6 @@ public static class EventVisibility
                 eonet.Add(new VisibleEonet(e, fix));
             }
 
-        return new VisibleEvents(quakes, f.ShowCyclones ? merged : [], alerts, eonet);
+        return new VisibleEvents(quakes, merged, alerts, eonet);
     }
 }
