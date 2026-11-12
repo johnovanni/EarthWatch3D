@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using EarthWatch3D.App.Diagnostics;
@@ -30,31 +31,56 @@ public partial class App : Application
     private FeedScheduler? _scheduler;
     private EventCacheWriter? _cacheWriter;
     private Timer? _pruneTimer;
+    private string? _offlineRoot;
     private bool _shutDown;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        var options = LaunchOptions.Parse(e.Args);
-        // --snapshot-recompose moves the app's time forward part-way through, so the display runs on an adjustable
-        // clock. Everything else (log, store retention, feeds) always uses the real time.
-        OffsetClock? offsetClock = options.SnapshotRecompose ? new OffsetClock(new SystemClock()) : null;
-        IClock clock = offsetClock is null ? new SystemClock() : offsetClock;
-        IClock wall = new SystemClock();
+        // The log comes first (it always uses the real time and the usual folder), so even a bad command line is logged.
+        string logsDir = AppPaths.Default.LogsDir;
+        var log = _log = new FileLog(logsDir, new SystemClock());
+        log.Info($"EarthWatch3D {AppInfo.Version} starting" + (e.Args.Length > 0 ? " with " + string.Join(" ", e.Args) : ""));
+        // Shown on the UI thread: unobserved task faults arrive on the finalizer thread.
+        new CrashHandler(log, message => Dispatcher.BeginInvoke(() =>
+            MessageBox.Show(message + Environment.NewLine + Environment.NewLine + "Log folder: " + logsDir,
+                "EarthWatch3D", MessageBoxButton.OK, MessageBoxImage.Warning))).Install(this);
 
+        var options = LaunchOptions.Parse(e.Args);
+        string? samplesDir = options.OfflineSamplesDir is { } dir ? Path.GetFullPath(dir) : null;
+        string? optionsError = options.Error;
+        if (samplesDir is not null && !Directory.Exists(samplesDir))
+            optionsError = (optionsError is null ? "" : optionsError + Environment.NewLine) + $"--offline-samples: the folder {samplesDir} does not exist.";
+        if (optionsError is not null)
+        {
+            log.Error("Command line: " + optionsError);
+            MessageBox.Show(optionsError, "EarthWatch3D: command line", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(2);
+            return;
+        }
+
+        // With offline samples the app's clock starts at --display-time, so the samples (captured 2026-11-11) are
+        // neither pruned by the store's retention nor treated as ended because of today's date; it then runs on in
+        // real time. Otherwise the display runs on an adjustable clock only for --snapshot-recompose, which moves the
+        // app's time forward part-way through. The log always uses the real time.
+        var sampleOffset = samplesDir is not null && options.DisplayTimeUtc is { } start ? start - DateTime.UtcNow : TimeSpan.Zero;
+        IClock wall = sampleOffset == TimeSpan.Zero ? new SystemClock() : new OffsetClock(new SystemClock()) { Offset = sampleOffset };
+        OffsetClock? offsetClock = options.SnapshotRecompose ? new OffsetClock(new SystemClock()) { Offset = sampleOffset } : null;
+        IClock clock = offsetClock is null ? wall : offsetClock;
+
+        // Offline, the cache, zone files and settings live in a temporary folder (deleted on exit), so the user's own
+        // cache and saved layer choices are not touched. The log still goes to the usual logs folder.
         var paths = AppPaths.Default;
+        if (samplesDir is not null)
+            paths = new AppPaths(_offlineRoot = Path.Combine(Path.GetTempPath(), "EarthWatch3D-offline-" + Guid.NewGuid().ToString("N")));
         // The app must still start without its data folders: settings fall back to defaults, the cache to empty,
         // and failed writes are logged (FileLog itself never throws). Logged once the log exists.
         Exception? foldersError = null;
         try { paths.EnsureCreated(); }
         catch (Exception ex) { foldersError = ex; }
-        var log = _log = new FileLog(paths.LogsDir, wall);
-        log.Info($"EarthWatch3D {AppInfo.Version} starting");
-        // Shown on the UI thread: unobserved task faults arrive on the finalizer thread.
-        new CrashHandler(log, message => Dispatcher.BeginInvoke(() =>
-            MessageBox.Show(message + Environment.NewLine + Environment.NewLine + "Log folder: " + paths.LogsDir,
-                "EarthWatch3D", MessageBoxButton.OK, MessageBoxImage.Warning))).Install(this);
         if (foldersError is not null) log.Error($"Could not create the data folders under {paths.Root}", foldersError);
+        if (samplesDir is not null)
+            log.Info($"Offline samples from {samplesDir}; data folder {paths.Root}; clock moved by {sampleOffset.TotalHours:F2} h");
         // Saves are debounced and written off the UI thread (a failed write can sleep while it retries).
         _settings = new SettingsSaver(new SettingsStore(paths, log), log: log);
 
@@ -62,7 +88,7 @@ public partial class App : Application
         var store = LoadCachedEvents(cache, paths, wall, log);
 
         var vm = new MainViewModel(clock, _settings);
-        var http = _http = new FeedHttp();
+        var http = _http = samplesDir is null ? new FeedHttp() : new FeedHttp(OfflineSamples.CreateHandler(samplesDir));
         var zones = new ZoneCache(http, paths, wall, log);
         IEventFeed[] feeds =
         [
@@ -75,10 +101,24 @@ public partial class App : Application
         var scheduler = _scheduler = new FeedScheduler(feeds, wall, log);
         foreach (var status in scheduler.Statuses) vm.Status.Apply(status);   // grey dots until each first run
         scheduler.StatusChanged += (_, status) => vm.Status.Apply(status);   // background thread: Apply uses BeginInvoke
+        // Offline, the diagnostics wait for the data: every feed has reported OK once and the zone downloads the NWS
+        // feed asked for are done.
+        Func<Task>? waitForData = null;
+        if (samplesDir is not null)
+        {
+            var allOk = AllFeedsOkOnce(scheduler, feeds.Select(f => f.Name));
+            waitForData = async () => { await allOk; await zones.WhenIdleAsync(); };
+        }
 
         _cacheWriter = new EventCacheWriter(store, s => cache.Save(s), log: log);
         _pruneTimer = new Timer(_ => PruneStore(store, log), null, PruneInterval, PruneInterval);
 
+        if (options.DisplayTimeUtc is { } replayAt)
+        {
+            vm.Timeline.ReplayAt(replayAt);
+            if (vm.DisplayTimeUtc != replayAt)
+                log.Warn($"--display-time {replayAt:yyyy-MM-ddTHH:mm:ssZ} is outside the last 7 days; showing {vm.DisplayTimeUtc:yyyy-MM-ddTHH:mm:ssZ}");
+        }
         vm.Tick();   // show real values immediately
         var window = new MainWindow(vm, store, zones, log);
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -91,9 +131,9 @@ public partial class App : Application
         timer.Start();
         scheduler.Start();
 
-        if (options.Any) _ = SnapshotDiagnostic.RunAsync(window, window.Scene, vm, options, offsetClock);
+        if (options.Any) _ = SnapshotDiagnostic.RunAsync(window, window.Scene, vm, options, offsetClock, waitForData, log);
 #if PERF_LOG
-        PerfRun.Start(window.Scene, e.Args);
+        PerfRun.Start(window.Scene, e.Args, waitForData);
 #endif
         window.Show();
     }
@@ -102,6 +142,19 @@ public partial class App : Application
     {
         ShutDownServices();
         base.OnExit(e);
+    }
+
+    /// <summary>Completes once every named feed has reported <see cref="FeedState.Ok"/> at least once.</summary>
+    private static Task AllFeedsOkOnce(FeedScheduler scheduler, IEnumerable<string> names)
+    {
+        var waiting = new HashSet<string>(names, StringComparer.Ordinal);
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        scheduler.StatusChanged += (_, status) =>
+        {
+            if (status.State != FeedState.Ok) return;
+            lock (waiting) { if (waiting.Remove(status.Name) && waiting.Count == 0) done.TrySetResult(); }
+        };
+        return done.Task;
     }
 
     /// <summary>
@@ -136,7 +189,8 @@ public partial class App : Application
 
     /// <summary>
     /// Stops the feeds, saves the event cache and settings once, then disposes. Runs once. Each step has its own
-    /// try/catch, so one failure (a slow or throwing Stop, say) doesn't skip the saves after it.
+    /// try/catch, so one failure (a slow or throwing Stop, say) doesn't skip the saves after it. An offline run's
+    /// temporary data folder is deleted last.
     /// </summary>
     private void ShutDownServices()
     {
@@ -149,6 +203,7 @@ public partial class App : Application
         Step("save settings", () => _settings?.Flush());
         Step("stop the settings saver", () => _settings?.Dispose());
         Step("dispose the HTTP client", () => _http?.Dispose());
+        if (_offlineRoot is { } root) Step("delete the offline data folder", () => Directory.Delete(root, recursive: true));
         _log?.Info("EarthWatch3D exiting");
         _log?.Dispose();
     }

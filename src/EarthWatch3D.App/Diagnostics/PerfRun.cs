@@ -10,15 +10,18 @@ using EarthWatch3D.App.Controllers;
 namespace EarthWatch3D.App.Diagnostics;
 
 /// <summary>
-/// PERF_LOG builds only. After load: working set at 10 s, the optional <c>--bench</c> rotation (360° about +Z over 5 s,
+/// PERF_LOG builds only. After load (and, with offline samples, once their events are drawn): working set at 10 s, the optional <c>--bench</c> rotation (360° about +Z over 5 s,
 /// average FPS from CompositionTarget.Rendering frames) and a forced-GC experiment.
 /// Every compose is logged by the SceneController.
 /// </summary>
 internal static class PerfRun
 {
-    public static void Start(SceneController scene, string[] args) => _ = RunAsync(scene, args.Contains("--bench"));
+    /// <param name="waitForData">Offline samples only: the bench waits for the events to be drawn first (see
+    /// <see cref="SnapshotDiagnostic.WaitForDataAsync"/>), so it measures the globe with events on it.</param>
+    public static void Start(SceneController scene, string[] args, Func<Task>? waitForData = null) =>
+        _ = RunAsync(scene, args.Contains("--bench"), waitForData);
 
-    private static async Task RunAsync(SceneController scene, bool bench)
+    private static async Task RunAsync(SceneController scene, bool bench, Func<Task>? waitForData)
     {
         try
         {
@@ -27,6 +30,11 @@ internal static class PerfRun
                           $"server GC={GCSettings.IsServerGC}, render tier={RenderCapability.Tier >> 16}, bench={bench}");
             await scene.FirstComposeDisplayed;
             PerfLog.Write("first compose displayed: " + PerfLog.Memory());
+            if (waitForData is not null)
+            {
+                await SnapshotDiagnostic.WaitForDataAsync(scene, waitForData, SnapshotDiagnostic.DataTimeout, new Core.Logging.NullLog());
+                PerfLog.Write($"offline data drawn (areas shown={scene.AreasDisplayed}): " + PerfLog.Memory());
+            }
             await Task.Delay(10_000);
             PerfLog.Write("10 s after load: " + PerfLog.Memory());
 

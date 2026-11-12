@@ -168,6 +168,16 @@ public sealed class SceneController
 
     public bool IsCameraAnimating => _animator.IsRunning;
 
+    /// <summary>True when the globe image on screen includes an Areas layer (alert zones, cyclone cones or wind bands).</summary>
+    internal bool AreasDisplayed { get; private set; }
+
+    /// <summary>
+    /// True while a compose or an Areas rebuild is running or queued, or a store, zone or display-time change has not
+    /// yet been worked into the visible events. The diagnostics wait for this to clear before a snapshot.
+    /// </summary>
+    internal bool IsBusy => _composing || _recomposePending || _areasRunning || _areasPending || _eventsDirty
+                            || Volatile.Read(ref _storeChangePending) != 0 || Volatile.Read(ref _zonesChangePending) != 0;
+
     /// <summary>The event store the scene will draw from.</summary>
     internal EventStore Store { get; }
 
@@ -216,13 +226,14 @@ public sealed class SceneController
 #if PERF_LOG
                 var sw = Stopwatch.StartNew();
 #endif
-                await Task.Run(() => ComposeOrPlain(composer, layers, target, plain, log));
+                bool composed = await Task.Run(() => ComposeOrPlain(composer, layers, target, plain, log));
 #if PERF_LOG
                 long composeMs = sw.ElapsedMilliseconds;
 #endif
                 if (_closed) return;
                 ImageConversions.CopyInto(target, _bitmap!);
                 _globeVisual.Content ??= new GeometryModel3D(GlobeMesh.Create(), new DiffuseMaterial(new ImageBrush(_bitmap)));
+                AreasDisplayed = composed && layers.Areas is not null;
 #if PERF_LOG
                 PerfLog.Write(string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"compose #{++_composeCount} utc={now:yyyy-MM-ddTHH:mm:ss.fffZ} subsolar lat={subSolar.LatitudeDeg:F3} lon={subSolar.LongitudeDeg:F3} compose={composeMs} ms total={sw.ElapsedMilliseconds} ms {PerfLog.Memory()}"));
@@ -656,6 +667,16 @@ public sealed class SceneController
 
     private void ApplyRotationSensitivity(PerspectiveCamera camera) =>
         _viewport.RotationSensitivity = CameraRules.RotationSensitivity(((Vector3D)camera.Position).Length);
+
+    /// <summary>Turns the camera at once (no animation) to look straight down on <paramref name="p"/>, keeping its distance.</summary>
+    public void LookAt(GeoPosition p)
+    {
+        if (Camera is not { } camera) return;
+        _animator.Cancel();
+        var (pos, look, up) = CameraRules.LookDownOn(p, ((Vector3D)camera.Position).Length);
+        camera.Position = pos; camera.LookDirection = look; camera.UpDirection = up;
+        _overlayDirty = true;
+    }
 
     private void OnFaceRequested(object? sender, GeoPosition p)
     {

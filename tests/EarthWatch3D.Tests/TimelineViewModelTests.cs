@@ -33,6 +33,13 @@ public class TimelineViewModelTests
     public void GoLiveAfterReplayRestores()
     { var vm = new TimelineViewModel(new FakeClock(T0)); vm.SliderSeconds = 0; vm.GoLiveCommand.Execute(null); Assert.True(vm.IsLive); Assert.Equal(T0, vm.DisplayTimeUtc); }
 
+    [Fact] public void ReplayAtLeavesLiveAndClampsToTheRange()
+    { var vm = new TimelineViewModel(new FakeClock(T0)); vm.IsPlaying = true;
+      vm.ReplayAt(T0.AddHours(-5)); Assert.False(vm.IsLive); Assert.False(vm.IsPlaying); Assert.Equal(T0.AddHours(-5), vm.DisplayTimeUtc);
+      Assert.StartsWith("REPLAY", vm.ReadoutText);
+      vm.ReplayAt(T0.AddDays(-30)); Assert.Equal(T0 - TimelineViewModel.Range, vm.DisplayTimeUtc);
+      vm.Advance(TimeSpan.FromSeconds(1)); Assert.False(vm.IsLive); }
+
     [Fact] public void DisplayTimeChangedRaisedOnStep()
     { var vm = new TimelineViewModel(new FakeClock(T0)); int n = 0; vm.DisplayTimeChanged += (_, _) => n++; vm.StepMinus10MinCommand.Execute(null); Assert.Equal(1, n); }
 

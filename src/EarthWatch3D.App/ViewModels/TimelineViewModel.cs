@@ -92,6 +92,14 @@ public partial class TimelineViewModel : ObservableObject
     [RelayCommand] private void StepPlus1Hour() => Step(TimeSpan.FromHours(1));
     [RelayCommand] private void SetSpeed(double speed) => Speed = speed;
 
+    /// <summary>Leaves live and stops playback at <paramref name="utc"/>, clamped to the range (the --display-time option).</summary>
+    public void ReplayAt(DateTime utc)
+    {
+        IsLive = false;
+        IsPlaying = false;
+        SetDisplay(utc);
+    }
+
     private void Step(TimeSpan delta)
     {
         var from = DisplayTimeUtc;
