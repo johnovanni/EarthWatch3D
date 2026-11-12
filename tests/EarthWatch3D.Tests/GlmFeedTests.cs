@@ -110,6 +110,27 @@ public sealed class GlmFeedTests
     }
 
     [Fact]
+    public async Task LimitReachedDuringACatchUpStopsBeforeTheNextFile()
+    {
+        using var r = new Rig { Window = TimeSpan.FromMinutes(15) };
+        bool limitInForce = true;
+        // The limit is reached by the first file downloaded (the meter counts it as it arrives).
+        var feed = new GlmFeed(r.Http, r.Buffer, LightningSensor.GoesEast, r.Clock, r.View, () => r.Window,
+            () => limitInForce && r.Downloads.Any(), () => false, () => true, r.Log);
+        Assert.Equal(FeedRunResult.Paused, await feed.RunOnceAsync(CancellationToken.None));
+        var all = GlmListing.Parse(File.OpenRead(Sample("glm_g19_listing.xml")));
+        var inWindow = all.Where(o => o.EndUtc > r.Clock.UtcNow - r.Window).OrderByDescending(o => o.EndUtc).ToList();
+        Assert.Equal(46, inWindow.Count);
+        Assert.Equal([Bucket + inWindow[0].Key], r.Downloads);   // the newest file only
+
+        // The limit lifted (a new day, or a higher limit): the files left over are still pending and are fetched while
+        // inside the window, newest first, at most 45 a run.
+        limitInForce = false;
+        Assert.Equal(FeedRunResult.Ok, await feed.RunOnceAsync(CancellationToken.None));
+        Assert.Equal(inWindow.Take(46).Select(o => Bucket + o.Key), r.Downloads);
+    }
+
+    [Fact]
     public async Task BadFileIsSkippedOthersLoad()
     {
         using var r = new Rig();

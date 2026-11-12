@@ -89,6 +89,57 @@ public class LightningBufferTests
     }
 
     [Fact]
+    public void CapEvictedKeyIsReleased()
+    {
+        var b = new LightningBuffer(3);
+        b.Add(new[] { F(T0.AddSeconds(1)), F(T0.AddSeconds(2)), F(T0.AddSeconds(3)) });
+        Assert.Equal(1, b.Add(new[] { F(T0.AddSeconds(4)) }));   // the cap evicts the flash at +1 s
+        b.PruneBefore(T0.AddSeconds(3));                          // room again: +3 s and +4 s are left
+        Assert.Equal(2, b.Count);
+        Assert.Equal(1, b.Add(new[] { F(T0.AddSeconds(1)) }));   // the evicted key was released, so it is new again
+        Assert.Equal(new[] { T0.AddSeconds(1), T0.AddSeconds(3), T0.AddSeconds(4) }, b.Between(T0, T0.AddDays(1)).Select(f => f.TimeUtc));
+    }
+
+    [Fact]
+    public void NewestFirstCatchUpStaysSortedDeduplicatedAndCapped()
+    {
+        // The GLM catch-up: 45 files of 2,000 flashes each, 20 s per file, downloaded newest file first. Adjacent files
+        // overlap by about a second, so the first 100 flashes of each file repeat the last 100 of the file before it.
+        const int files = 45, perFile = 2000, cap = 50_000;
+        var b = new LightningBuffer(cap);
+        static LightningFlash Flash(int i) => F(T0.AddMilliseconds(i * 10), lat: i % 80, lon: -80 + i % 50 * 0.001);
+        int total = 0;
+        for (int file = files - 1; file >= 0; file--)
+        {
+            int first = file * (perFile - 100);
+            total += b.Add(Enumerable.Range(first, perFile).Select(Flash));
+        }
+        int distinct = (files - 1) * (perFile - 100) + perFile;
+        var all = b.Between(DateTime.MinValue, DateTime.MaxValue);
+        Assert.Equal(cap, b.Count);
+        Assert.Equal(cap, all.Count);
+        for (int i = 1; i < all.Count; i++) Assert.True(all[i - 1].TimeUtc <= all[i].TimeUtc, $"out of order at {i}");
+        // The newest `cap` distinct flashes are the ones held, each once.
+        Assert.Equal(Flash(distinct - cap).TimeUtc, all[0].TimeUtc);
+        Assert.Equal(Flash(distinct - 1).TimeUtc, all[^1].TimeUtc);
+        Assert.Equal(cap, all.Select(f => f.TimeUtc).Distinct().Count());
+        // Files older than everything held while the buffer is full add nothing.
+        Assert.Equal(cap, total);
+    }
+
+    [Fact]
+    public void MergedBatchKeepsTimeOrderAndArrivalOrderForEqualTimes()
+    {
+        var b = new LightningBuffer();
+        b.Add(new[] { F(T0.AddSeconds(1)), F(T0.AddSeconds(3)), F(T0.AddSeconds(5)) });
+        Assert.Equal(4, b.Add(new[] { F(T0.AddSeconds(4)), F(T0.AddSeconds(3), lat: 20), F(T0), F(T0.AddSeconds(6)), F(T0) }));
+        var r = b.Between(T0, T0.AddDays(1));
+        Assert.Equal(new[] { 0, 1, 3, 3, 4, 5, 6 }, r.Select(f => (int)(f.TimeUtc - T0).TotalSeconds));
+        Assert.Equal(10, r[2].Lat);   // the flash already held comes first among equal times
+        Assert.Equal(20, r[3].Lat);
+    }
+
+    [Fact]
     public void NewestIsPerSensor()
     {
         var b = new LightningBuffer();
@@ -157,8 +208,8 @@ public class LightningBufferTests
                 if (i % 500 == 0) b.PruneBefore(T0.AddMilliseconds(i));
             }
         })).ToArray();
-        await Task.WhenAll(writers);
-        cts.Cancel();
+        try { await Task.WhenAll(writers); }
+        finally { cts.Cancel(); }   // the readers stop even if a writer throws
         await Task.WhenAll(readers);
         Assert.Empty(errors);
         Assert.True(b.Count <= 5000);

@@ -309,7 +309,8 @@ The endpoints and fields below were verified against the live services on 2026-1
   - If latency turns out to be well over a few minutes, the legend shows the actual age of the newest MTG flash
     and nothing is described as "live".
 - **Overlap rules** (each flash is kept by exactly one satellite, decided by longitude):
-  - GOES-West: west of 106.2°W.
+  - GOES-West: west of 106.2°W, including across the date line (GOES-18 sees to about 165°E, where no other
+    imager reaches).
   - GOES-East: from 106.2°W to 37.6°W.
   - MTG: east of 37.6°W, out to its edge of coverage.
   - With no MTG key, GOES-East keeps everything it sees east of 106.2°W.

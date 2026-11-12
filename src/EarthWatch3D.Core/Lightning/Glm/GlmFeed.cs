@@ -72,9 +72,12 @@ public sealed class GlmFeed : IEventFeed
 
         _pending.RemoveAll(o => o.EndUtc <= cutoff);
         var batch = _pending.OrderByDescending(o => o.EndUtc).Take(MaxFilesPerRun).ToList();
+        bool paused = false;
         foreach (var o in batch)
         {
             ct.ThrowIfCancellationRequested();
+            // The daily limit can be reached part-way through a catch-up: stop there, leaving the rest pending.
+            if (_paused()) { paused = true; break; }
             _pending.Remove(o);   // a file that fails is logged once and not retried
             try
             {
@@ -90,7 +93,7 @@ public sealed class GlmFeed : IEventFeed
         }
 
         _buffer.PruneBefore(now - BufferHorizon);
-        return FeedRunResult.Ok;
+        return paused ? FeedRunResult.Paused : FeedRunResult.Ok;
     }
 
     private static DateTime TruncateToHour(DateTime t) => new(t.Year, t.Month, t.Day, t.Hour, 0, 0, DateTimeKind.Utc);

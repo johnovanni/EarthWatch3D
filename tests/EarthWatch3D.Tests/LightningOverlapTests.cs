@@ -26,10 +26,19 @@ public class LightningOverlapTests
         Assert.True(LightningOverlap.Keep(F(-37.6, LightningSensor.Mtg), true));
     }
 
-    [Theory] [InlineData(-37.6)] [InlineData(-37.59)] [InlineData(0)] [InlineData(150)]
+    [Theory] [InlineData(-37.6)] [InlineData(-37.59)] [InlineData(0)] [InlineData(-100)]
     public void WithoutMtgGoesEastKeepsEverythingEastOfTheBoundary(double lon)
     {
         Assert.True(LightningOverlap.Keep(F(lon, LightningSensor.GoesEast), mtgActive: false));
         Assert.False(LightningOverlap.Keep(F(lon, LightningSensor.GoesWest), mtgActive: false));
+    }
+
+    // GOES-18 at 137.2°W sees past the date line to about 160–165°E, where no other imager reaches.
+    [Theory] [InlineData(170)] [InlineData(180)] [InlineData(-180)] [InlineData(163)]
+    public void GoesWestKeepsFlashesAcrossTheDateLine(double lon)
+    {
+        Assert.True(LightningOverlap.Keep(F(lon, LightningSensor.GoesWest), mtgActive: true));
+        Assert.True(LightningOverlap.Keep(F(lon, LightningSensor.GoesWest), mtgActive: false));
+        Assert.False(LightningOverlap.Keep(F(-100, LightningSensor.GoesWest), mtgActive: false));
     }
 }
