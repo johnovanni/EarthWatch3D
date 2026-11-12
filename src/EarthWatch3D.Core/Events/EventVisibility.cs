@@ -32,7 +32,8 @@ public static class EventVisibility
                 quakes.Add(new VisibleQuake(q, frac));
             }
 
-        // Cyclones are only needed when shown, or when EONET storms must be de-duplicated against them.
+        // Cyclones are worked out only when shown. EONET storms are de-duplicated against the visible cyclones only
+        // (spec §5.5), so with the cyclone layer off every EONET storm shows.
         IReadOnlyList<CycloneAdvisory> merged = [];
         if (f.ShowCyclones)
         {
