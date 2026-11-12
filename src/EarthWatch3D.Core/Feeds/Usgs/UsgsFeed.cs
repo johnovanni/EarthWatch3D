@@ -24,9 +24,18 @@ public sealed class UsgsFeed(FeedHttp http, EventStore store, IClock clock, IApp
         var (quakes, generated) = UsgsReader.Read(new MemoryStream(bytes), log);
         if (week)
         {
-            // Only quakes inside the feed's own time span may be removed: the CDN copy can be up to a minute old.
-            var end = generated ?? (quakes.Count > 0 ? quakes.Max(q => q.TimeUtc) : DateTime.MinValue);
-            store.ReplaceEarthquakeWeek([.. quakes], now - TimeSpan.FromDays(7), end);
+            if (quakes.Count == 0)
+            {
+                // The world never has a week without earthquakes: an empty list is a bad response, and replacing the
+                // week with it would delete every stored quake. Keep what we have; the next week refresh tries again.
+                log.Warn("USGS: the week feed came back empty; kept the stored earthquakes");
+            }
+            else
+            {
+                // Only quakes inside the feed's own time span may be removed: the CDN copy can be up to a minute old.
+                var end = generated ?? quakes.Max(q => q.TimeUtc);
+                store.ReplaceEarthquakeWeek([.. quakes], now - TimeSpan.FromDays(7), end);
+            }
             _lastWeekUtc = now;
         }
         else

@@ -97,4 +97,27 @@ public sealed class UsgsTests
         await feed.RunOnceAsync(CancellationToken.None);
         Assert.Equal([WeekUrl, HourUrl, WeekUrl], handler.Requests);
     }
+
+    [Fact]
+    public async Task EmptyWeekResponseRemovesNothing()
+    {
+        var handler = new SampleHttpHandler();
+        handler.Map(WeekUrl, Sample("usgs_all_week.geojson"));
+        var t0 = new DateTime(2026, 11, 11, 12, 0, 0, DateTimeKind.Utc);
+        var clock = new TestClock(t0);
+        var store = new EventStore(clock);
+        var log = new RecordingLog();
+        using var http = new FeedHttp(handler);
+        var feed = new UsgsFeed(http, store, clock, log);
+        await feed.RunOnceAsync(CancellationToken.None);
+        Assert.Equal(1806, store.Snapshot.Earthquakes.Count);
+
+        // A week feed with no quakes at all (but a generated time) is a bad response, not a quiet week.
+        handler.MapText(WeekUrl, """{"type":"FeatureCollection","metadata":{"generated":1794428504000},"features":[]}""");
+        clock.UtcNow = t0.AddMinutes(31);
+        await feed.RunOnceAsync(CancellationToken.None);
+        Assert.Equal(2, handler.Requests.Count(r => r == WeekUrl));
+        Assert.Equal(1806, store.Snapshot.Earthquakes.Count);
+        Assert.Contains(log.Warnings, w => w.Contains("empty", StringComparison.OrdinalIgnoreCase));
+    }
 }
