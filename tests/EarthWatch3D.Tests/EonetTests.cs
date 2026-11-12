@@ -70,6 +70,21 @@ public sealed class EonetTests
     }
 
     [Fact]
+    public void SkipsNonObjectEventsAndWarnsOnBadClosed()
+    {
+        const string json = """
+        {"events":[null,"x",
+         {"id":"A","title":"t","link":"https://e/a","closed":"not a date","geometry":[
+           {"magnitudeValue":40,"magnitudeUnit":"kts","date":"2026-11-07T00:00:00Z","type":"Point","coordinates":[1,2]}]}]}
+        """;
+        var log = new RecordingLog();
+        var storms = EonetReader.Read(new MemoryStream(Encoding.UTF8.GetBytes(json)), log);
+        Assert.Single(storms);
+        Assert.Null(storms[0].ClosedUtc);
+        Assert.Equal(3, log.Warnings.Count);
+    }
+
+    [Fact]
     public async Task FeedWritesToStore()
     {
         var handler = new SampleHttpHandler();

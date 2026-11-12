@@ -21,10 +21,12 @@ public sealed class UsgsFeed(FeedHttp http, EventStore store, IClock clock, IApp
         var now = clock.UtcNow;
         var week = _lastWeekUtc is null || now - _lastWeekUtc.Value >= WeekEvery;
         var bytes = await http.GetBytesAsync(week ? WeekUrl : HourUrl, ct).ConfigureAwait(false);
-        var quakes = UsgsReader.Read(new MemoryStream(bytes), log);
+        var (quakes, generated) = UsgsReader.Read(new MemoryStream(bytes), log);
         if (week)
         {
-            store.ReplaceEarthquakeWeek([.. quakes], now - TimeSpan.FromDays(7));
+            // Only quakes inside the feed's own time span may be removed: the CDN copy can be up to a minute old.
+            var end = generated ?? (quakes.Count > 0 ? quakes.Max(q => q.TimeUtc) : DateTime.MinValue);
+            store.ReplaceEarthquakeWeek([.. quakes], now - TimeSpan.FromDays(7), end);
             _lastWeekUtc = now;
         }
         else

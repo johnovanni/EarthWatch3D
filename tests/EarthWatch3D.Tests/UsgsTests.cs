@@ -17,7 +17,7 @@ public sealed class UsgsTests
     public void ReadsWeekSample()
     {
         using var s = File.OpenRead(Sample("usgs_all_week.geojson"));
-        var quakes = UsgsReader.Read(s, new RecordingLog());
+        var quakes = UsgsReader.Read(s, new RecordingLog()).Quakes;
         Assert.Equal(1806, quakes.Count);
         Assert.Equal(319, quakes.Count(q => q.Magnitude >= 2.5));
     }
@@ -26,7 +26,7 @@ public sealed class UsgsTests
     public void FirstFeatureFields()
     {
         using var s = File.OpenRead(Sample("usgs_all_week.geojson"));
-        var q = UsgsReader.Read(s, new RecordingLog())[0];
+        var q = UsgsReader.Read(s, new RecordingLog()).Quakes[0];
         Assert.Equal("aka2026wjnmsm", q.Id);
         Assert.Equal(0.7, q.Magnitude);
         Assert.Equal(DateTime.UnixEpoch.AddMilliseconds(1794428350078), q.TimeUtc);
@@ -50,10 +50,25 @@ public sealed class UsgsTests
         ]}
         """;
         var log = new RecordingLog();
-        var quakes = UsgsReader.Read(new MemoryStream(Encoding.UTF8.GetBytes(json)), log);
+        var quakes = UsgsReader.Read(new MemoryStream(Encoding.UTF8.GetBytes(json)), log).Quakes;
         Assert.Single(quakes);
         Assert.Equal("good", quakes[0].Id);
         Assert.Equal(2, log.Warnings.Count);
+    }
+
+    [Fact]
+    public void SkipsNonObjectFeaturesAndReadsGenerated()
+    {
+        const string json = """
+        {"metadata":{"generated":1794428504000},"features":[null,"x",
+         {"type":"Feature","id":"good","properties":{"mag":1.5,"place":"p","time":1794428350078,"updated":1794428385564,"type":"earthquake"},"geometry":{"type":"Point","coordinates":[10,20,3]}}]}
+        """;
+        var log = new RecordingLog();
+        var (quakes, generated) = UsgsReader.Read(new MemoryStream(Encoding.UTF8.GetBytes(json)), log);
+        Assert.Single(quakes);
+        Assert.Equal(2, log.Warnings.Count);
+        Assert.Equal(DateTime.UnixEpoch.AddMilliseconds(1794428504000), generated);
+        Assert.Equal("M 1.5 - p", quakes[0].Title);
     }
 
     [Fact]

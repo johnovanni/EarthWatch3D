@@ -31,8 +31,8 @@ public sealed class EventStore(IClock clock)
 
     public void UpsertEarthquakes(IEnumerable<Earthquake> quakes) => Write(s => WithQuakes(s, MergeQuakes(s.Earthquakes, quakes, null)));
 
-    public void ReplaceEarthquakeWeek(IReadOnlyCollection<Earthquake> week, DateTime weekStartUtc) =>
-        Write(s => WithQuakes(s, MergeQuakes(s.Earthquakes, week, weekStartUtc)));
+    public void ReplaceEarthquakeWeek(IReadOnlyCollection<Earthquake> week, DateTime weekStartUtc, DateTime weekEndUtc) =>
+        Write(s => WithQuakes(s, MergeQuakes(s.Earthquakes, week, (weekStartUtc, weekEndUtc))));
 
     public void AddCycloneAdvisories(IEnumerable<CycloneAdvisory> advisories) => Write(s =>
     {
@@ -86,11 +86,11 @@ public sealed class EventStore(IClock clock)
     private static DateTime LastFix(EonetStorm e) =>
         e.Fixes.Count > 0 ? e.Fixes.Max(f => f.TimeUtc) : e.TimeUtc;
 
-    private static IReadOnlyList<Earthquake> MergeQuakes(IReadOnlyList<Earthquake> current, IEnumerable<Earthquake> incoming, DateTime? weekStartUtc)
+    private static IReadOnlyList<Earthquake> MergeQuakes(IReadOnlyList<Earthquake> current, IEnumerable<Earthquake> incoming, (DateTime Start, DateTime End)? window)
     {
         var map = current.ToDictionary(q => q.Id);
         var changed = false;
-        HashSet<string>? keep = weekStartUtc is null ? null : [];
+        HashSet<string>? keep = window is null ? null : [];
         foreach (var q in incoming)
         {
             keep?.Add(q.Id);
@@ -98,9 +98,9 @@ public sealed class EventStore(IClock clock)
             map[q.Id] = q;
             changed = true;
         }
-        if (weekStartUtc is { } start)
+        if (window is var (start, end))
         {
-            foreach (var q in map.Values.Where(q => q.TimeUtc >= start && !keep!.Contains(q.Id)).ToList())
+            foreach (var q in map.Values.Where(q => q.TimeUtc >= start && q.TimeUtc <= end && !keep!.Contains(q.Id)).ToList())
             {
                 map.Remove(q.Id);
                 changed = true;

@@ -18,6 +18,7 @@ public static class EonetReader
 
         foreach (var e in events.EnumerateArray())
         {
+            if (e.ValueKind != JsonValueKind.Object) { log.Warn("EONET: event is not an object; skipped"); continue; }
             var id = Str(e, "id");
             try
             {
@@ -35,7 +36,9 @@ public static class EonetReader
                 if (fixes.Count == 0) { log.Warn($"EONET: {id} has no usable fixes; skipped"); continue; }
                 fixes.Sort((a, b) => a.TimeUtc.CompareTo(b.TimeUtc));
 
-                var closed = ParseTime(Str(e, "closed"));
+                var closedText = Str(e, "closed");
+                var closed = ParseTime(closedText);
+                if (closedText is not null && closed is null) log.Warn($"EONET: {id} has unparseable closed value '{closedText}'");
                 Uri? link = Uri.TryCreate(Str(e, "link"), UriKind.Absolute, out var uri) ? uri : null;
                 result.Add(new EonetStorm(id, fixes[0].TimeUtc, fixes[^1].Position, Str(e, "title") ?? id, link, fixes, closed));
             }

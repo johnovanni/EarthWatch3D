@@ -42,8 +42,19 @@ public class EventStoreTests
         var store = new EventStore(new FixedClock(T));
         var weekStart = T.AddDays(-7);
         store.UpsertEarthquakes([Quake("old", weekStart.AddHours(-1)), Quake("gone", weekStart.AddHours(5)), Quake("keep", weekStart.AddHours(6))]);
-        store.ReplaceEarthquakeWeek([Quake("keep", weekStart.AddHours(6)), Quake("new", weekStart.AddHours(7))], weekStart);
+        store.ReplaceEarthquakeWeek([Quake("keep", weekStart.AddHours(6)), Quake("new", weekStart.AddHours(7))], weekStart, T);
         Assert.Equal(["keep", "new", "old"], store.Snapshot.Earthquakes.Select(q => q.Id).Order().ToArray());
+    }
+
+    [Fact]
+    public void WeekRefreshKeepsQuakesNewerThanTheFeed()
+    {
+        var store = new EventStore(new FixedClock(T));
+        var weekStart = T.AddDays(-7);
+        var generated = T.AddSeconds(-45);
+        store.UpsertEarthquakes([Quake("fresh", T.AddSeconds(-10)), Quake("gone", T.AddMinutes(-5)), Quake("keep", T.AddMinutes(-6))]);
+        store.ReplaceEarthquakeWeek([Quake("keep", T.AddMinutes(-6))], weekStart, generated);
+        Assert.Equal(["fresh", "keep"], store.Snapshot.Earthquakes.Select(q => q.Id).Order().ToArray());
     }
 
     [Fact]
