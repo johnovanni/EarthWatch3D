@@ -247,12 +247,12 @@
             <!-- A command, not a toggle: Click unchecks it again. -->
             <ToggleButton Style="{StaticResource StripCommandButton}" Tag="⚙" Content="Settings"
                           ToolTip="Settings: EUMETSAT key, download limit, units"
-                          Command="{Binding OpenSettingsCommand}" Click="Settings_Click"/>
+                          Command="{Binding OpenSettingsCommand}" Click="CommandButton_Click"/>
 
             <!-- Also a command: Click unchecks it again. -->
             <ToggleButton Style="{StaticResource StripCommandButton}" Tag="ⓘ" Content="About"
                           ToolTip="About EarthWatch3D: version, credits and licences"
-                          Command="{Binding OpenAboutCommand}" Click="Settings_Click"/>
+                          Command="{Binding OpenAboutCommand}" Click="CommandButton_Click"/>
         </StackPanel>
     </Border>
 </UserControl>

@@ -73,6 +73,7 @@ package, so it has to work without developer tools and explain itself to non-tec
 | P4-6 | Release files carry no version in their names (`EarthWatch3D.msix`, `EarthWatch3D.appinstaller`), so the GitHub "latest release" URLs stay stable (Task 5) |
 | P4-7 | The first release is version 1.0.0 (package 1.0.0.0), set only in `Directory.Build.props` (Task 1) |
 | P4-8 | `build-release.ps1` leaves no release files behind on any failure after packing; a failed sign or self-check deletes the `.msix`, `.appinstaller` and test `.cer` (Task 6) |
+| P4-9 | The Welcome window's "Get a free key" link opens the EUMETSAT registration page even while MTG is not available yet: the key is stored now and used when MTG ships |
 
 ### Out of scope
 
@@ -597,8 +598,8 @@ interface ILightningSource
 
 - A feed failure affects only that feed: its status dot turns amber, then red, and retries back off (§5).
   Cached data stays on screen.
-- Malformed records are skipped and logged. Logs go to `%LOCALAPPDATA%\EarthWatch3D\logs`, a rolling daily file
-  kept for 7 days.
+- Malformed records are skipped and logged. Logs go to `%LOCALAPPDATA%\EarthWatch3D\logs` (installed: under the package's
+  LocalCache folder, P4-1), a rolling daily file kept for 7 days.
 - If the EUMETSAT key is missing or invalid, the MTG dot is grey ("not set up") or red ("key rejected"), with a
   link to Settings. GLM continues on its own.
 - If the globe image cannot be composed (low memory, for example), the app falls back to 4096×2048, and then to

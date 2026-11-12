@@ -93,6 +93,10 @@ $UntrustedRootPattern = 'terminated in a root\s+certificate which is not trusted
 $AzureTimestampUrl = 'http://timestamp.acs.microsoft.com'
 
 if (-not $BaseUri.EndsWith('/')) { $BaseUri += '/' }
+if (-not [Uri]::IsWellFormedUriString($BaseUri, [UriKind]::Absolute) -or
+    ([Uri]$BaseUri).Scheme -notin @('https', 'http', 'file')) {
+    throw "-BaseUri '$BaseUri' is not an absolute https, http or file URI (for example https://github.com/johnovanni/EarthWatch3D/releases/latest/download/)."
+}
 $AppInstallerUri = $BaseUri + $AppInstallerName
 $MsixUri = $BaseUri + $MsixName
 
@@ -177,11 +181,21 @@ switch ($Signing) {
         if ([string]$metadata.Endpoint -notmatch '^https://[a-z0-9-]+\.codesigning\.azure\.net/?$') {
             throw "${MetadataPath}: Endpoint must be your account's regional endpoint, like https://eus.codesigning.azure.net (list in docs/release.md)."
         }
+        foreach ($field in 'Endpoint', 'CodeSigningAccountName', 'CertificateProfileName') {
+            if ([string]$metadata.$field -match '<|\.\.\.|…') {
+                throw "${MetadataPath}: ""$field"" is still the example placeholder ('$($metadata.$field)'). Fill in your real value (docs/release.md)."
+            }
+        }
         $local = try { Get-Content -LiteralPath $SigningLocalPath -Raw | ConvertFrom-Json } catch { throw "$SigningLocalPath is not valid JSON: $($_.Exception.Message)" }
         $publisher = [string]$local.publisher
         $publisherDisplayName = [string]$local.publisherDisplayName
         if ([string]::IsNullOrWhiteSpace($publisher) -or [string]::IsNullOrWhiteSpace($publisherDisplayName)) {
             throw "$SigningLocalPath must set both ""publisher"" and ""publisherDisplayName""."
+        }
+        foreach ($pair in @(@('publisher', $publisher), @('publisherDisplayName', $publisherDisplayName))) {
+            if ($pair[1] -match '<|\.\.\.|…') {
+                throw "${SigningLocalPath}: ""$($pair[0])"" is still the example placeholder ('$($pair[1])'). Fill in your real value (docs/release.md)."
+            }
         }
         if (-not $publisher.StartsWith('CN=')) { throw "${SigningLocalPath}: publisher must start with ""CN="" (the certificate subject, exactly)." }
 
@@ -231,7 +245,7 @@ Write-Host "    dlib:     $dlib"
 Write-Step 'Publishing (Release, win-x64, self-contained)'
 Remove-Folder $PublishDir
 Invoke-Dotnet @('publish', (Join-Path $RepoRoot 'src\EarthWatch3D.App'), '-c', 'Release', '-r', 'win-x64',
-    '--self-contained', 'true', '-o', $PublishDir, '--nologo')
+    '--self-contained', 'true', '-p:DebugType=none', '-p:DebugSymbols=false', '-o', $PublishDir, '--nologo')
 if (-not (Test-Path -LiteralPath (Join-Path $PublishDir $ExeName))) { throw "$ExeName is not in $PublishDir." }
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -287,7 +301,7 @@ try {
             if ($null -eq $testCert) {
                 Write-Host "    creating ""$TestPublisher"" in Cert:\CurrentUser\My (untrusted; no .pfx, no password)"
                 $testCert = New-SelfSignedCertificate -Type Custom -Subject $TestPublisher -KeyUsage DigitalSignature `
-                    -FriendlyName 'EarthWatch3D test signing' -CertStoreLocation Cert:\CurrentUser\My `
+                    -FriendlyName 'EarthWatch3D test signing' -CertStoreLocation Cert:\CurrentUser\My -KeyExportPolicy NonExportable `
                     -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')
             }
             Write-Host "    certificate: $($testCert.Subject), thumbprint $($testCert.Thumbprint), valid to $($testCert.NotAfter.ToString('yyyy-MM-dd'))"

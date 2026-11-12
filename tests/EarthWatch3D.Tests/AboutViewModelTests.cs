@@ -49,7 +49,7 @@ public class AboutViewModelTests
     public void LicencesListTheShippedLibraries()
     {
         var l = Make().Licences;
-        foreach (var name in new[] { "HelixToolkit.Wpf", "CommunityToolkit.Mvvm", "PureHDF", ".NET" })
+        foreach (var name in new[] { "HelixToolkit.Wpf", "CommunityToolkit.Mvvm", "PureHDF", "WPF", ".NET" })
             Assert.Equal("MIT licence", Assert.Single(l, c => c.Name == name).Text);
     }
 

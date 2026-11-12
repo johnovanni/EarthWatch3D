@@ -69,6 +69,11 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
                 case "--bench":
                     bench = true;   // PerfRun (PERF_LOG builds) reads it from the raw arguments itself
                     break;
+                case "--bench-lightning" when i + 1 < args.Count
+                                              && int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out _):
+                    bench = true;   // PerfRun reads the count itself; a count alone is a benchmark run too
+                    i++;
+                    break;
                 case "--snapshot-recompose":
                     recompose = true;
                     break;

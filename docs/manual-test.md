@@ -143,6 +143,13 @@ If an unpackaged EarthWatch3D is running (`dotnet run`), close it first.
       `%LOCALAPPDATA%\Packages\johnovanni.EarthWatch3D_…\LocalCache\Local\EarthWatch3D` (with the real path, not
       `%LOCALAPPDATA%\EarthWatch3D`), and **Open** opens that folder in Explorer, holding `settings.json`, the cache
       and `logs`.
+- [ ] **About links and notices:** in About, clicking a credit link opens the page in the browser; **Licence texts**
+      opens `THIRD-PARTY-NOTICES.txt` from the package folder (it lists WPF and points to
+      `THIRD-PARTY-NOTICES-DOTNET-RUNTIME.txt` next to it).
+- [ ] **Data and logs - Open:** the **Open** button next to the data folder opens the `LocalCache` folder in Explorer.
+- [ ] **Welcome buttons:** **Open Settings** closes the Welcome window and opens Settings; **Get a free key** opens
+      the EUMETSAT registration page in the browser; **Esc** closes the Welcome window (as **Start** does) and it does
+      not show again at the next start.
 - [ ] **Update keeps settings:**
       1. In the installed app, open Settings: choose **miles**, set the daily limit to **50** MB, enter a test
          EUMETSAT key and secret (any text; there is no need to press **Test**), and **Save**. Let the app run for a

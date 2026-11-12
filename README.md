@@ -2,8 +2,8 @@
 
 A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is happening on it now.
 
-> **Work in progress.** This is the end of plan 2 of 4 (events and time). Lightning, clouds, the Settings dialog
-> and the installer come in plans 3–4 and are **not** in the app yet.
+> **Status:** plans 1–4 are done. Lightning over Europe and Africa (Meteosat MTG, which needs a free EUMETSAT key)
+> is still to come.
 
 ## What works today
 
@@ -31,6 +31,17 @@ A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is
   GDACS.
 - **Hover and click:** hovering over an event shows a one-line tooltip; clicking it opens a details panel with a link
   to the source's own page.
+- **Lightning** (NOAA GOES, live only): flashes over the Americas and the Pacific, coloured by age with the newest
+  brightest; the newest 30,000 are drawn. On by default; the Display options choose how long a flash stays on the
+  globe. It is hidden while you replay the past.
+- **Clouds** (NASA GIBS): a cloud image from the previous day's VIIRS satellite pass, fetched once a day. Off by
+  default.
+- **Data use:** the status bar shows how much has been downloaded today ("Today: 123 MB"). Settings can set a daily
+  limit; when it is reached, lightning pauses and the status bar says so, and the other layers carry on.
+- **Settings** (gear button): the daily limit, km or miles, and a place for your free EUMETSAT key and secret. The key
+  is stored now (encrypted for your Windows account) and will be used when Meteosat MTG lightning ships.
+- **About** (**i** button): version, credits, licences, the data folder and a button that opens the licence texts.
+  **Welcome** appears on the first start and explains the basics.
 - **Time bar** (bottom): the display time is live, or any time in the last 7 days. Step back or forward by 10 minutes
   or an hour, drag the slider, or play the replay at 1×, 60×, 600× or 3600×. The Sun, Moon, night side and events all
   follow the display time. **LIVE** jumps back to now.
@@ -44,15 +55,15 @@ A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is
   app keeps running. An error that repeats is logged in full once and then counted (one summary line a minute); if
   errors keep coming (more than 50 in 10 seconds) the app closes rather than hang. Each day's log file is capped at
   20 MB. If the globe image ever fails to compose, the plain Blue Marble is shown until the next try.
-  The log is in `%LOCALAPPDATA%\EarthWatch3D\logs`.
+  The log folder is shown in About (Data and logs). Installed: under
+  `%LOCALAPPDATA%\Packages\johnovanni.EarthWatch3D_…\LocalCache\Local\EarthWatch3D\logs`; run from source:
+  `%LOCALAPPDATA%\EarthWatch3D\logs`.
 
-### Coming in plan 3
-
-| Plan | Adds |
-|---|---|
-| 3. Lightning, clouds, data use | Live lightning (GOES GLM, and Meteosat MTG with your own EUMETSAT key), live clouds (NASA GIBS), a data-use meter and the Settings dialog |
+Still to come: lightning over Europe and Africa (Meteosat MTG, with your own free EUMETSAT key).
 
 ## Install
+
+No release has been published yet.
 
 You need Windows 10 (version 1809 or later) or Windows 11 on a 64-bit (x64) PC.
 
@@ -60,8 +71,8 @@ You need Windows 10 (version 1809 or later) or Windows 11 on a 64-bit (x64) PC.
 2. Open it (double-click). Windows' App Installer shows the app and its publisher; choose **Install**.
 
 EarthWatch3D then appears in the Start menu. Updates arrive by themselves: Windows looks for a new version in the
-background, and also when the app starts (at most once a day; then it asks before updating). Your settings and data
-are kept across updates. To remove the app, use Settings → Apps → Installed apps; that also removes its data folder.
+background, and also when the app starts (at most once a day; then it asks before updating). As with any MSIX app, Windows
+keeps the app's data folder across updates and removes it when you uninstall (Settings → Apps → Installed apps).
 
 How the package is built and signed is in [docs/release.md](docs/release.md).
 
@@ -92,7 +103,7 @@ with `dotnet test -c Release --filter Category=Perf`.
 | **Face Sun** / **Face Moon** (card) | Turn the globe so the point under the Sun or the Moon faces you |
 | Hover over an event | A one-line tooltip (quake, storm, alert area or EONET storm; also the Sun and Moon markers) |
 | Click an event | Open its details panel; click empty space, **×** or press Esc to close it |
-| Layer strip buttons | Show or hide earthquakes, cyclones, US alerts, EONET storms, coastlines and borders, plate boundaries; ☰ shows the labels |
+| Layer strip buttons | Show or hide earthquakes, cyclones, US alerts, EONET storms, lightning, clouds, coastlines and borders, plate boundaries; ☰ shows the labels |
 | **⋯** / **Display ▸** | Display options: minimum magnitude, 24 h or 7 days, alert types, night shade, day/night line |
 | ◀◀ ▾ / ▾ ▶▶ | Step the display time back or forward (10 min or 1 hour) |
 | Time slider | Pick any time in the last 7 days |
@@ -108,10 +119,10 @@ These command-line options are for checking the app without a screen capture too
 |---|---|
 | `--snapshot <png path>` | Once the globe image is shown, saves a picture of the window (rendered by the app itself, at the window's DPI) as a PNG and exits. Exit code 1 if saving failed. |
 | `--face-sun` | Once the globe image is shown, turns the camera to the Sun (as the Face Sun button does). With `--snapshot`, the picture is taken after the turn. |
-| `--layers <list>` | Switches the named layers on for this run only (nothing is saved): any of `quakes`, `cyclones`, `alerts`, `eonet`, `coastlines`, `plates`, separated by commas, for example `--layers plates`. |
+| `--layers <list>` | Switches the named layers on for this run only (nothing is saved): any of `quakes`, `cyclones`, `alerts`, `eonet`, `coastlines`, `plates`, `lightning`, `clouds`, separated by commas, for example `--layers plates`. |
 | `--look-at <lat,lon>` | Once the globe image is shown, turns the camera at once to look straight down on that point, in degrees (north and east positive), for example `--look-at 10,-165`. |
 | `--delay-ms <N>` | With `--snapshot`: wait N milliseconds before the picture (default 1500). |
-| `--dialog <about\|welcome>` | Once the globe is shown, opens that dialog over the main window. With `--snapshot`, the picture is of the dialog alone (the main window is not saved) and the app then exits. |
+| `--dialog <about\|welcome>` | Once the globe is shown, opens that dialog over the main window. With `--snapshot`, the picture is of the dialog alone (the main window is not saved) and the app then exits. Without `--offline-samples`, closing the Welcome marks it as seen in your real settings. |
 | `--snapshot-recompose` | With `--snapshot <png path>`: saves two pictures instead of one, `<name>-a.png` and `<name>-b.png`. The second is taken after the app's clock is moved 6 hours ahead and the globe image recomposed and shown, so the night side should have moved about 90° west. This checks that a later recompose reaches the screen, not only the first. |
 | `--display-time <UTC time>` | Starts in replay at that time, written in ISO form with a `Z` or an offset, for example `2026-11-11T20:00:00Z`. A time more than 7 days ago is moved to the start of the 7 days. With `--offline-samples`, the app's clock starts at that time instead (see below). |
 | `--offline-samples <folder>` | Answers every data request from the sample files in the folder (`tests\Samples`) instead of the network. The event cache, zone outlines and settings go to a temporary folder (`%TEMP%\EarthWatch3D-offline-…`, deleted on exit), so your own cache and saved choices are not touched; the log still goes to the usual folder. With `--display-time`, the app's clock starts at that time, so the samples aren't treated as days old, and runs on from there. Sample data never looks live: the window title ends with "— SAMPLE DATA (offline)", and the time readout says **SAMPLE** (for example "SAMPLE 11 Nov 20:00 UTC") where it would say LIVE; the LIVE button reads NOW and is not lit. Folders left by offline runs that were killed are deleted at the next start once they are a day old. With `--snapshot`, the picture waits (at most 20 s) until every source has reported once, the zone outlines have loaded and any alert and cyclone areas are on the globe. |

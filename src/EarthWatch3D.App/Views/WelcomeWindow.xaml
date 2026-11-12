@@ -47,7 +47,7 @@
         <TextBlock Text="The strip at the left turns layers on and off. Hover a button to see its key."/>
 
         <TextBlock Style="{StaticResource Heading}" Text="Time"/>
-        <TextBlock Text="The time bar replays the last 7 days. Lightning is live only."/>
+        <TextBlock Text="The time bar replays the last 7 days of earthquakes and storm reports, and the last 24 hours of cyclones and US alerts. Lightning is live only."/>
 
         <TextBlock Style="{StaticResource Heading}" Text="Data use"/>
         <TextBlock Text="About 80 MB an hour with lightning on, and a few MB a day without it. Settings can set a daily limit."/>
@@ -75,7 +75,7 @@
             </TextBlock.Style>
         </TextBlock>
         <DockPanel Margin="0,16,0,0" LastChildFill="False">
-            <Button DockPanel.Dock="Right" Style="{StaticResource CardButton}" Content="Start" Padding="18,4" IsDefault="True"
+            <Button DockPanel.Dock="Right" Style="{StaticResource CardButton}" Content="Start" Padding="18,4" IsDefault="True" IsCancel="True"
                     Command="{Binding StartCommand}"/>
             <Button DockPanel.Dock="Right" Style="{StaticResource CardButton}" Content="Open Settings" Padding="14,4" Margin="0,0,10,0"
                     Command="{Binding OpenSettingsCommand}"/>

@@ -20,7 +20,7 @@
     <DisplayName>EarthWatch3D</DisplayName>
     <PublisherDisplayName>{PublisherDisplayName}</PublisherDisplayName>
     <Logo>Images\StoreLogo.png</Logo>
-    <Description>Live Earth events (earthquakes, storms, wildfires, volcanoes, lightning, clouds) on a 3D globe.</Description>
+    <Description>Live earthquakes, tropical cyclones, US weather alerts, severe storms, lightning and clouds on a 3D globe.</Description>
   </Properties>
 
   <Dependencies>

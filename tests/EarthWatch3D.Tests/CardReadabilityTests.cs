@@ -151,6 +151,36 @@ public class CardReadabilityTests
         });
     }
 
+    [Fact]
+    public void WelcomeStartButtonIsDefaultAndCancelSoEscClosesIt()
+    {
+        Sta.Run(() =>
+        {
+            var window = new WelcomeWindow(new WelcomeViewModel(new FakeSettingsStore(), new RecordingDialogService(), new RecordingLinkOpener(), true));
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+            var start = LogicalDescendants(content).OfType<Button>().Single(b => Equals(b.Content, "Start"));
+            Assert.True(start.IsDefault);
+            Assert.True(start.IsCancel);
+            var others = LogicalDescendants(content).OfType<Button>().Where(b => b != start);
+            Assert.DoesNotContain(others, b => b.IsCancel);
+        });
+    }
+
+    [Fact]
+    public void WelcomeTimeTextSaysWhichLayersReplayHowFar()
+    {
+        Sta.Run(() =>
+        {
+            var window = new WelcomeWindow(new WelcomeViewModel(new FakeSettingsStore(), new RecordingDialogService(), new RecordingLinkOpener(), false));
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+            content.Measure(new Size(520, 3000));
+            content.Arrange(new Rect(0, 0, 520, 3000));
+            content.UpdateLayout();
+            var texts = string.Join(" ", Descendants(content).OfType<TextBlock>().Select(TextOf));
+            Assert.Contains("The time bar replays the last 7 days of earthquakes and storm reports, and the last 24 hours of cyclones and US alerts. Lightning is live only.", texts);
+        });
+    }
+
     private static object? LogicalFind(DependencyObject root, string name) =>
         LogicalDescendants(root).OfType<FrameworkElement>().FirstOrDefault(e => e.Name == name);
 

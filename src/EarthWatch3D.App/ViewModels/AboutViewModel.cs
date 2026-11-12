@@ -33,6 +33,7 @@ public sealed partial class AboutViewModel : ObservableObject
         new("HelixToolkit.Wpf", "MIT licence", "http://www.helix-toolkit.org/"),
         new("CommunityToolkit.Mvvm", "MIT licence", "https://github.com/CommunityToolkit/dotnet"),
         new("PureHDF", "MIT licence", "https://apollo3zehn.github.io/PureHDF/"),
+        new("WPF", "MIT licence", "https://github.com/dotnet/wpf"),
         new(".NET", "MIT licence", "https://github.com/dotnet/runtime"),
     ];
 

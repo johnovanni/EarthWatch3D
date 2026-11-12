@@ -11,7 +11,7 @@ public partial class LayerStrip : UserControl
 {
     public LayerStrip() => InitializeComponent();
 
-    private void Settings_Click(object sender, RoutedEventArgs e) => ((ToggleButton)sender).IsChecked = false;
+    private void CommandButton_Click(object sender, RoutedEventArgs e) => ((ToggleButton)sender).IsChecked = false;
 }
 
 public sealed class InverseBoolConverter : IValueConverter

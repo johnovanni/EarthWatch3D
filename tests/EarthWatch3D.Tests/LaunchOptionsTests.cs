@@ -28,6 +28,16 @@ public class LaunchOptionsTests
     }
 
     [Fact]
+    public void BenchLightningWithACountIsABenchmarkRunToo()
+    {
+        var o = LaunchOptions.Parse(["--bench-lightning", "30000"]);
+        Assert.True(o.Bench);
+        Assert.True(o.IsDiagnosticRun);
+        Assert.False(LaunchOptions.Parse(["--bench-lightning"]).IsDiagnosticRun);
+        Assert.False(LaunchOptions.Parse(["--bench-lightning", "many"]).IsDiagnosticRun);
+    }
+
+    [Fact]
     public void BenchIsAFlagAndADiagnosticRun()
     {
         var o = LaunchOptions.Parse(["--bench"]);

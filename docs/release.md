@@ -83,10 +83,17 @@ have to trust it once on each PC you test on. In an **elevated** PowerShell (Run
 repository folder:
 
 ```
-Import-Certificate -FilePath artifacts\release\EarthWatch3D-test.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
+Import-Certificate -FilePath C:\repos\EarthWatch3D\artifacts\release\EarthWatch3D-test.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
 ```
 
-This changes a machine setting, so the build script never does it. To remove the trust again (also elevated):
+Use the absolute path to the `.cer` (here for the repository at `C:\repos\EarthWatch3D`; or wrap a relative path in
+`(Resolve-Path ...)`): an elevated prompt starts in `C:\Windows\System32`, not in the repository folder.
+
+This changes a machine setting, so the build script never does it. When the script makes a **new** test certificate
+(the old one has under 7 days left), the new one must be trusted again with the same command. **Remove the
+machine-wide trust when testing is over**, because anyone who gets hold of this user's signing key could sign
+packages that this PC then trusts. (The script creates the key as non-exportable, which makes that harder, but the
+trust itself stays until you remove it.) To remove the trust (also elevated):
 
 ```
 Get-ChildItem Cert:\LocalMachine\TrustedPeople | Where-Object Subject -eq 'CN=EarthWatch3D Test Signing' | Remove-Item
