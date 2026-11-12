@@ -142,6 +142,12 @@ public class LayersAndDisplayViewModelTests
             Layout(strip);
             var quakes = (ToggleButton)strip.FindName("QuakesButton");
             Assert.True(quakes.IsChecked);
+            // Labels beside the icons only when the strip is expanded.
+            var label = (FrameworkElement)quakes.Template.FindName("Label", quakes);
+            Assert.Equal(Visibility.Collapsed, label.Visibility);
+            vm.Layers.IsExpanded = true;
+            Assert.Equal(Visibility.Visible, label.Visibility);
+            vm.Layers.IsExpanded = false;
             quakes.IsChecked = false;
             Assert.False(vm.Layers.ShowQuakes);
 

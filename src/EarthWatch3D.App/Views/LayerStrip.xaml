@@ -33,7 +33,7 @@
                                                TextAlignment="Center"/>
                                     <ContentPresenter x:Name="Label" Margin="6,0,6,0" VerticalAlignment="Center"
                                                       TextElement.Foreground="White"
-                                                      Visibility="{Binding Layers.IsExpanded, Converter={StaticResource B2V}}"/>
+                                                      Visibility="{Binding DataContext.Layers.IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource B2V}}"/>
                                 </StackPanel>
                             </Border>
                             <ControlTemplate.Triggers>
@@ -61,7 +61,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="{TemplateBinding Tag}" Width="26" FontSize="17" TextAlignment="Center"/>
                                     <ContentPresenter Margin="6,0,6,0" VerticalAlignment="Center" TextElement.Foreground="White"
-                                                      Visibility="{Binding Layers.IsExpanded, Converter={StaticResource B2V}}"/>
+                                                      Visibility="{Binding DataContext.Layers.IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource B2V}}"/>
                                 </StackPanel>
                             </Border>
                             <ControlTemplate.Triggers>
