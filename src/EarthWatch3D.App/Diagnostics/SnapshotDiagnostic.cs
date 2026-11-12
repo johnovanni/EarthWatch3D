@@ -38,7 +38,7 @@ public static class SnapshotDiagnostic
                 Save(window, LaunchOptions.WithSuffix(options.SnapshotPath, "a"));
                 offsetClock.Offset += RecomposeOffset;
                 vm.Tick();   // the card and markers follow the new time too
-                await RecomposeDisplayedAsync(scene, offsetClock.UtcNow);
+                await RecomposeDisplayedAsync(scene, vm.DisplayTimeUtc);   // live display time, now 6 h ahead
                 await Task.Delay(options.DelayMs);
                 Save(window, LaunchOptions.WithSuffix(options.SnapshotPath, "b"));
             }

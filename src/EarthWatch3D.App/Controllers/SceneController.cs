@@ -45,7 +45,6 @@ public sealed class SceneController
     private readonly Canvas _overlayCanvas;
     private readonly FrameworkElement _card;
     private readonly MainViewModel _vm;
-    private readonly IClock _clock;
     private readonly Window _window;
     private readonly CameraAnimator _animator;
     private readonly SunMoonOverlay _overlay;
@@ -54,6 +53,8 @@ public sealed class SceneController
     // Tooltip for the Sun/Moon surface markers (billboards can't carry WPF tooltips, so it is driven by hover tests).
     private readonly ToolTip _markerTip = new() { Placement = PlacementMode.Relative, StaysOpen = true };
     private readonly RecomposeSchedule _schedule = new(RecomposeInterval);
+    private readonly Throttle _throttle = new(TimeSpan.FromMilliseconds(250));
+    private readonly System.Windows.Threading.DispatcherTimer _trailing = new();
     private readonly TaskCompletionSource _firstCompose = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     // Kept between composes: the composer holds the base image; the target and bitmap are reused.
@@ -74,13 +75,12 @@ public sealed class SceneController
     /// <param name="overlay">The canvas over the viewport for the Sun/Moon icons and edge arrows.</param>
     /// <param name="card">The Sun &amp; Moon card, which the edge arrows keep clear of. It and <paramref name="overlay"/> must share a parent.</param>
     /// <param name="window">The window hosting the viewport: its Loaded, Closed, StateChanged and PreviewKeyDown events drive the scene.</param>
-    public SceneController(HelixViewport3D viewport, Canvas overlay, FrameworkElement card, MainViewModel vm, IClock clock, Window window)
+    public SceneController(HelixViewport3D viewport, Canvas overlay, FrameworkElement card, MainViewModel vm, Window window)
     {
         _viewport = viewport ?? throw new ArgumentNullException(nameof(viewport));
         _overlayCanvas = overlay ?? throw new ArgumentNullException(nameof(overlay));
         _card = card ?? throw new ArgumentNullException(nameof(card));
         _vm = vm ?? throw new ArgumentNullException(nameof(vm));
-        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _window = window ?? throw new ArgumentNullException(nameof(window));
 
         _animator = new CameraAnimator(() => Camera);
@@ -101,9 +101,10 @@ public sealed class SceneController
         _markerTip.PlacementTarget = _viewport;
         _viewport.SizeChanged += OnViewportSizeChanged;
         _card.SizeChanged += OnViewportSizeChanged;   // collapsing the card changes the area the arrows avoid
-        _vm.Ticked += OnTicked;
+        _vm.DisplayTimeChanged += OnDisplayTimeChanged;
         _vm.SunMoon.PropertyChanged += OnSunMoonChanged;
         _vm.SunMoon.FaceRequested += OnFaceRequested;
+        _trailing.Tick += OnTrailingTick;
         CompositionTarget.Rendering += OnRendering;
         SystemEvents.PowerModeChanged += OnPowerModeChanged;   // static event: unsubscribed in OnClosed
     }
@@ -122,7 +123,7 @@ public sealed class SceneController
     // ---------------------------------------------------------------- globe image
 
     /// <summary>
-    /// Composes the globe image for the clock's current time on a background task and shows it.
+    /// Composes the globe image for the display time on a background task and shows it.
     /// Only one compose runs at a time; requests made meanwhile collapse into one follow-up compose.
     /// </summary>
     public void Recompose()
@@ -140,7 +141,7 @@ public sealed class SceneController
             do
             {
                 _recomposePending = false;
-                var now = _clock.UtcNow;
+                var now = _vm.DisplayTimeUtc;
                 _schedule.MarkComposed(now);
                 var subSolar = SubPoints.SubSolarPoint(now);
                 var layers = new GlobeLayers(subSolar, NightStrength, SparseLines: _lines);
@@ -172,10 +173,34 @@ public sealed class SceneController
         finally { _composing = false; }
     }
 
-    private void OnTicked(object? sender, EventArgs e)
+    private void OnDisplayTimeChanged(object? sender, EventArgs e)
     {
         if (_window.WindowState == WindowState.Minimized) return;   // composed on restore instead
-        if (_schedule.IsDue(_clock.UtcNow)) Recompose();
+        if (_schedule.IsDue(_vm.DisplayTimeUtc)) RequestRecompose();
+    }
+
+    // Scrubbing changes the display time many times a second: compose at most every 250 ms, and let a one-shot
+    // timer make the last request after the gap so the globe ends on the final position.
+    private void RequestRecompose()
+    {
+        if (_closed) return;
+        if (_throttle.TryAcquire(DateTime.UtcNow))
+        {
+            _trailing.Stop();
+            Recompose();
+            return;
+        }
+        var wait = _throttle.NextAllowedUtc - DateTime.UtcNow;
+        _trailing.Interval = wait > TimeSpan.FromMilliseconds(1) ? wait : TimeSpan.FromMilliseconds(1);
+        _trailing.Stop();
+        _trailing.Start();
+    }
+
+    private void OnTrailingTick(object? sender, EventArgs e)
+    {
+        _trailing.Stop();
+        if (_closed || _window.WindowState == WindowState.Minimized) return;
+        if (_schedule.IsDue(_vm.DisplayTimeUtc)) RequestRecompose();
     }
 
     // SystemEvents calls each handler through the SynchronizationContext that was current when it subscribed (here the
@@ -271,7 +296,7 @@ public sealed class SceneController
     {
         if (_window.WindowState == WindowState.Minimized) { _overlay.HideAll(); return; }
         _overlayDirty = true;
-        if (_schedule.IsDue(_clock.UtcNow)) Recompose();
+        if (_schedule.IsDue(_vm.DisplayTimeUtc)) Recompose();
     }
 
     private void OnRendering(object? sender, EventArgs e)
@@ -443,7 +468,9 @@ public sealed class SceneController
         HideMarkerTip();
         _viewport.SizeChanged -= OnViewportSizeChanged;
         _card.SizeChanged -= OnViewportSizeChanged;
-        _vm.Ticked -= OnTicked;
+        _vm.DisplayTimeChanged -= OnDisplayTimeChanged;
+        _trailing.Stop();
+        _trailing.Tick -= OnTrailingTick;
         _vm.SunMoon.PropertyChanged -= OnSunMoonChanged;
         _vm.SunMoon.FaceRequested -= OnFaceRequested;
         _firstCompose.TrySetCanceled();

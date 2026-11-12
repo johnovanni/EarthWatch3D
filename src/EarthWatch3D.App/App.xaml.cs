@@ -17,7 +17,7 @@ public partial class App : Application
         IClock clock = offsetClock is null ? new SystemClock() : offsetClock;
         var vm = new MainViewModel(clock);
         vm.Tick();   // show real values immediately
-        var window = new MainWindow(vm, clock);
+        var window = new MainWindow(vm);
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         timer.Tick += (_, _) => vm.Tick();   // also drives the globe's per-minute recompose
         window.Closed += (_, _) => timer.Stop();

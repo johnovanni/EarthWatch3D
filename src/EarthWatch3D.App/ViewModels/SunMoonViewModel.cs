@@ -3,16 +3,11 @@ using AstroCore.Earth;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EarthWatch3D.Core.Geo;
-using EarthWatch3D.Core.Time;
 
 namespace EarthWatch3D.App.ViewModels;
 
 public partial class SunMoonViewModel : ObservableObject
 {
-    private readonly IClock _clock;
-
-    public SunMoonViewModel(IClock clock) => _clock = clock;
-
     public event EventHandler<GeoPosition>? FaceRequested;
 
     [ObservableProperty] private GeoPosition _subSolar;
@@ -25,9 +20,9 @@ public partial class SunMoonViewModel : ObservableObject
     [ObservableProperty] private bool _moonWaxing;
     [ObservableProperty] private bool _isCollapsed;
 
-    public void Refresh()
+    /// <summary>Recomputes the card and markers for the given (display) time.</summary>
+    public void Refresh(DateTime t)
     {
-        var t = _clock.UtcNow;
         SubSolar = SubPoints.SubSolarPoint(t);
         SubLunar = SubPoints.SubLunarPoint(t);
         SubSolarText = GeoFormat.LatLon(SubSolar);
