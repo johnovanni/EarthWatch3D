@@ -1,37 +1,26 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Shapes;
 
 namespace EarthWatch3D.App.Rendering;
 
 /// <summary>
-/// 2D overlay drawn on top of the 3D viewport: object name labels (with simple collision avoidance)
-/// and the selection ring. TextBlocks are pooled so per-frame updates do not allocate.
-/// Copied from SolarSystem3D's LabelOverlay, with its palette colour replaced by <see cref="SelectionColor"/>.
+/// 2D overlay drawn on top of the 3D viewport: event labels with simple collision avoidance.
+/// TextBlocks are pooled so per-frame updates do not allocate.
+/// Copied from SolarSystem3D's LabelOverlay, without its selection ring (and so without its palette colour).
 /// </summary>
 public sealed class LabelOverlay
 {
-    /// <summary>The selection ring's colour (SolarSystem3D's Palette.Selection).</summary>
-    public static readonly Color SelectionColor = Color.FromRgb(255, 230, 60);
-
     private readonly Canvas _canvas;
     private readonly List<TextBlock> _pool = new();
     private readonly List<Rect> _occupied = new();
     private readonly Dictionary<Color, SolidColorBrush> _brushes = new();
-    private readonly Ellipse _selectionRing;
     private int _used;
 
     public LabelOverlay(Canvas canvas)
     {
         _canvas = canvas;
         _canvas.IsHitTestVisible = false;
-        _selectionRing = new Ellipse
-        {
-            Width = 22, Height = 22, Stroke = new SolidColorBrush(SelectionColor), StrokeThickness = 1.5,
-            Visibility = Visibility.Collapsed,
-        };
-        _canvas.Children.Add(_selectionRing);
     }
 
     public void Begin()
@@ -74,17 +63,6 @@ public sealed class LabelOverlay
     {
         for (int k = _used; k < _pool.Count; k++)
             if (_pool[k].Visibility != Visibility.Collapsed) _pool[k].Visibility = Visibility.Collapsed;
-    }
-
-    public void ShowSelection(Point? at)
-    {
-        if (at is Point p)
-        {
-            Canvas.SetLeft(_selectionRing, p.X - _selectionRing.Width / 2);
-            Canvas.SetTop(_selectionRing, p.Y - _selectionRing.Height / 2);
-            _selectionRing.Visibility = Visibility.Visible;
-        }
-        else _selectionRing.Visibility = Visibility.Collapsed;
     }
 
     private SolidColorBrush BrushFor(Color c)

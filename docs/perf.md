@@ -53,11 +53,19 @@ runs loaded the same event cache (1,850 quakes, 3 cyclone advisories, 3 EONET st
 |---|---|---|
 | Before Task 14 (HEAD 2caa38d, no events drawn) | **52.4 fps** (262 frames in 5.00 s) | 538 MB |
 | Task 14 (quake discs, rings, storm glyphs and tracks, labels) | **44.8 fps** (225 frames in 5.02 s) | 542 MB |
+| Task 14 review fix: rings redrawn at most at 20 Hz into two reused buffers (06:29 UTC) | **46.3 fps** (232 frames in 5.01 s) | 545 MB |
 
 Both are above the 30 fps target. While the camera moves, each frame re-places the labels and Helix recomputes its
 screen-space lines (past, forecast and EONET tracks, quake rings) and billboards; the merged disc meshes are rebuilt only
-when the visible quakes or their colour buckets change, or the minimum disc size changes by more than 20%. One run each,
-so the difference includes run-to-run variation (Task 12's runs of the same build gave 46.4 and 48.6 fps).
+when the visible quakes or their colour buckets change, or the minimum disc size changes by more than 20% and that changes
+some disc's size. One run each, so the differences include run-to-run variation (Task 12's runs of one build gave 46.4
+and 48.6 fps).
+
+In all three Task 14 runs 4 quakes were under an hour old, so rings were animating. At first they were redrawn every
+frame into a new point collection. Limiting them to 20 Hz, with two reused buffers, gave back about 1.5 fps. Most of
+the remaining gap to the baseline is therefore not the rings. The likely causes are Helix's per-frame screen-space
+updates of the other line visuals and billboards while the camera moves, and the label placement. Neither has been
+measured separately.
 
 ## What the memory is
 

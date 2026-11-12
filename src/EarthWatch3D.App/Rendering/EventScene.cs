@@ -24,6 +24,8 @@ public sealed class EventScene
     public const int MaxRings = 50;
     public static readonly TimeSpan RingMaxAge = TimeSpan.FromHours(1);
     public static readonly TimeSpan RingPeriod = TimeSpan.FromSeconds(1.5);
+    /// <summary>The rings are redrawn at most this often (20 Hz): each redraw makes Helix rebuild the line mesh.</summary>
+    public static readonly TimeSpan RingFrameInterval = TimeSpan.FromMilliseconds(50);
 
     private const int DiscSegments = 24, RingSegments = 32, EonetTrackFixes = 8;
     private const double GlyphPx = 22, DotPx = 14;
@@ -47,6 +49,14 @@ public sealed class EventScene
     private readonly List<BillboardVisual3D> _billboards = [];
     private readonly List<Label> _labels = [];
     private readonly List<Ring> _ringSpecs = [];
+    private readonly List<Ring> _newRings = [];
+    // Per ring and segment, the offset from the ring's centre at scale 1 (disc radius); built once per ring set.
+    private Vector3D[] _ringOffsets = [];
+    // Two point buffers, filled in turn: the one not attached to the visual is refilled and then swapped in, so a
+    // redraw allocates nothing (changing the attached collection in place would rebuild the lines once per point).
+    private readonly Point3DCollection?[] _ringBuffers = new Point3DCollection?[2];
+    private int _nextRingBuffer;
+    private TimeSpan? _lastRingFrame;
 
     private VisibleEvents? _visible;
     private double _discMinRadius = double.NaN;
@@ -82,6 +92,12 @@ public sealed class EventScene
     /// <summary>Number of quake discs in the meshes (for diagnostics).</summary>
     public int DiscCount => _discKeys.Sum(k => k.Count);
 
+    /// <summary>How many bucket meshes have been built (for tests and diagnostics).</summary>
+    public int DiscMeshBuilds { get; private set; }
+
+    /// <summary>The pulsing rings' line visual (for tests).</summary>
+    public LinesVisual3D RingVisual => _rings;
+
     /// <summary>
     /// Shows <paramref name="v"/>. Cheap when nothing changed: the disc meshes are rebuilt only when a colour bucket's
     /// quakes change or the minimum on-screen disc size moves by more than 20%; tracks and glyphs only when the storms change.
@@ -99,8 +115,16 @@ public sealed class EventScene
         bool setChanged = !ReferenceEquals(v, _visible);
         if (!setChanged && !sizeChanged) return;
 
+        // A new minimum changes a disc only if that disc is (or becomes) the minimum size.
+        bool radiiChanged = double.IsNaN(_discMinRadius);
+        if (sizeChanged && !radiiChanged)
+        {
+            double smallest = double.PositiveInfinity;
+            foreach (var q in v.Quakes) smallest = Math.Min(smallest, QuakeStyle.RadiusEarthRadii(q.Quake.Magnitude));
+            radiiChanged = smallest < Math.Max(_discMinRadius, minRadius);
+        }
         if (sizeChanged) _discMinRadius = minRadius;
-        UpdateDiscs(v, rebuildAll: sizeChanged);
+        UpdateDiscs(v, rebuildAll: radiiChanged);
         UpdateRings(v, displayTimeUtc, live);
         if (setChanged)
         {
@@ -125,6 +149,7 @@ public sealed class EventScene
             if (!rebuildAll && key.Count == quakes.Count && quakes.Select(q => q.Quake).SequenceEqual(key)) continue;
             key.Clear();
             key.AddRange(quakes.Select(q => q.Quake));
+            DiscMeshBuilds++;
             _discModels[b].Geometry = quakes.Count == 0 ? null : DiscMesh(quakes, DiscRadius + (QuakeStyle.BucketCount - 1 - b) * BucketLift);
         }
     }
@@ -154,13 +179,13 @@ public sealed class EventScene
     }
 
     /// <summary>The point at <paramref name="radius"/> over <paramref name="g"/>, and two tangent unit vectors with e1 × e2 pointing outward.</summary>
-    private static (Point3D Centre, Vector3D E1, Vector3D E2) TangentFrame(GeoPosition g, double radius)
+    public static (Point3D Centre, Vector3D E1, Vector3D E2) TangentFrame(GeoPosition g, double radius)
     {
         var u = g.ToUnitVector();
         var n = new Vector3D(u.X, u.Y, u.Z);
         // East is undefined at the poles; any perpendicular will do there.
         var e1 = Vector3D.CrossProduct(new Vector3D(0, 0, 1), n);
-        if (e1.LengthSquared < 1e-12) e1 = new Vector3D(1, 0, 0);
+        if (e1.LengthSquared < 1e-12) e1 = Vector3D.CrossProduct(new Vector3D(0, 1, 0), n);
         e1.Normalize();
         var e2 = Vector3D.CrossProduct(n, e1);
         return ((Point3D)(n * radius), e1, e2);
@@ -172,7 +197,7 @@ public sealed class EventScene
 
     private void UpdateRings(VisibleEvents v, DateTime displayTimeUtc, bool live)
     {
-        _ringSpecs.Clear();
+        _newRings.Clear();
         if (live)
             foreach (var q in v.Quakes
                          .Where(q => displayTimeUtc - q.Quake.TimeUtc < RingMaxAge && q.Quake.TimeUtc <= displayTimeUtc)
@@ -180,34 +205,63 @@ public sealed class EventScene
                          .Take(MaxRings))
             {
                 var (centre, e1, e2) = TangentFrame(q.Quake.Location, TrackRadius);
-                _ringSpecs.Add(new Ring(centre, e1, e2, DiscSize(q.Quake.Magnitude)));
+                _newRings.Add(new Ring(centre, e1, e2, DiscSize(q.Quake.Magnitude)));
             }
-        if (_ringSpecs.Count == 0 && _rings.Points is { Count: > 0 }) _rings.Points = new Point3DCollection();
-    }
+        if (_newRings.SequenceEqual(_ringSpecs)) return;   // same rings: keep the offsets and buffers
 
-    /// <summary>Advances the rings: each grows from 1.0× to 1.8× its disc's radius and fades out over 1.5 s.</summary>
-    public void AnimateRings(TimeSpan time)
-    {
-        if (_ringSpecs.Count == 0) return;
-        double phase = time.TotalSeconds % RingPeriod.TotalSeconds / RingPeriod.TotalSeconds;
-        double scale = 1.0 + 0.8 * phase;
-        var pts = new Point3DCollection(_ringSpecs.Count * RingSegments * 2);
-        foreach (var ring in _ringSpecs)
+        _ringSpecs.Clear();
+        _ringSpecs.AddRange(_newRings);
+        _lastRingFrame = null;   // draw the new set on the next frame
+        if (_ringSpecs.Count == 0)
         {
-            double r = ring.Radius * scale;
-            var prev = ring.Centre + r * ring.E1;
-            for (int i = 1; i <= RingSegments; i++)
+            _ringOffsets = [];
+            _ringBuffers[0] = _ringBuffers[1] = null;
+            if (_rings.Points is { Count: > 0 }) _rings.Points = new Point3DCollection();
+            return;
+        }
+        _ringOffsets = new Vector3D[_ringSpecs.Count * RingSegments];
+        int k = 0;
+        foreach (var ring in _ringSpecs)
+            for (int i = 0; i < RingSegments; i++)
             {
                 double t = 2 * Math.PI * i / RingSegments;
-                var p = ring.Centre + r * (Math.Cos(t) * ring.E1 + Math.Sin(t) * ring.E2);
-                pts.Add(prev); pts.Add(p);
+                _ringOffsets[k++] = ring.Radius * (Math.Cos(t) * ring.E1 + Math.Sin(t) * ring.E2);
+            }
+        int count = _ringSpecs.Count * RingSegments * 2;
+        for (int b = 0; b < 2; b++) _ringBuffers[b] = new Point3DCollection(Enumerable.Repeat(default(Point3D), count));
+    }
+
+    /// <summary>
+    /// Advances the rings: each grows from 1.0x to 1.8x its disc's radius and fades out over 1.5 s. Redraws at most every
+    /// <see cref="RingFrameInterval"/>; returns true if it redrew.
+    /// </summary>
+    public bool AnimateRings(TimeSpan time)
+    {
+        if (_ringSpecs.Count == 0) return false;
+        if (_lastRingFrame is { } last && time >= last && time - last < RingFrameInterval) return false;
+        _lastRingFrame = time;
+
+        double phase = time.TotalSeconds % RingPeriod.TotalSeconds / RingPeriod.TotalSeconds;
+        double scale = 1.0 + 0.8 * phase;
+        var pts = _ringBuffers[_nextRingBuffer]!;   // not attached to the visual, so filling it notifies no one
+        _nextRingBuffer ^= 1;
+        int k = 0, o = 0;
+        foreach (var ring in _ringSpecs)
+        {
+            var first = ring.Centre + _ringOffsets[o] * scale;
+            var prev = first;
+            for (int i = 1; i <= RingSegments; i++)
+            {
+                var p = i == RingSegments ? first : ring.Centre + _ringOffsets[o + i] * scale;
+                pts[k++] = prev; pts[k++] = p;
                 prev = p;
             }
+            o += RingSegments;
         }
-        pts.Freeze();
         var c = QuakeStyle.BucketColor(0);
         _rings.Color = Color.FromArgb((byte)Math.Round(255 * (1 - phase)), c.R, c.G, c.B);
         _rings.Points = pts;
+        return true;
     }
 
     // ---------------------------------------------------------------- storms

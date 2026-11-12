@@ -93,16 +93,19 @@ public static class SphereLines
     private static double Angle(Vector3D a, Vector3D b) =>
         Math.Atan2(Vector3D.CrossProduct(a, b).Length, Vector3D.DotProduct(a, b));
 
-    // Unit vectors a, b at angle theta; t in [0, 1].
+    // Unit vectors a, b at angle theta; t in [0, 1]. Rotates a toward b in their plane, so it stays on the sphere for
+    // every angle. Antipodal points have no single great circle between them: any perpendicular will do (as in
+    // CameraRules.OrbitStep).
     private static Vector3D Slerp(Vector3D a, Vector3D b, double theta, double t)
     {
-        double s = Math.Sin(theta);
-        if (s < 1e-12)
+        var w = b - Vector3D.DotProduct(a, b) * a;   // the part of b perpendicular to a
+        if (w.Length < 1e-9)
         {
-            var v = a + (b - a) * t;
-            v.Normalize();
-            return v;
+            if (theta < Math.PI / 2) return a;   // the same point
+            w = Vector3D.CrossProduct(a, new Vector3D(0, 0, 1));
+            if (w.Length < 1e-6) w = Vector3D.CrossProduct(a, new Vector3D(1, 0, 0));
         }
-        return (a * Math.Sin((1 - t) * theta) + b * Math.Sin(t * theta)) / s;
+        w.Normalize();
+        return a * Math.Cos(t * theta) + w * Math.Sin(t * theta);
     }
 }

@@ -31,6 +31,24 @@ public class SphereLinesTests
         Assert.True((pts[^1] - new Point3D(last.X * 1.003, last.Y * 1.003, last.Z * 1.003)).Length < 1e-12);
     }
 
+    [Theory]
+    [InlineData(0, 0, 0, 180)]     // antipodal on the equator
+    [InlineData(90, 0, -90, 0)]    // pole to pole
+    [InlineData(30, 40, -30, -140)]
+    public void DensifyOfAntipodalPointsHasNoNaN(double lat1, double lon1, double lat2, double lon2)
+    {
+        var pts = SphereLines.Densify(new GeoLine([new GeoPosition(lat1, lon1), new GeoPosition(lat2, lon2)]), 1.003);
+
+        Assert.Equal(181, pts.Count);   // 180° in 1° steps
+        foreach (var p in pts)
+        {
+            Assert.False(double.IsNaN(p.X) || double.IsNaN(p.Y) || double.IsNaN(p.Z));
+            Assert.Equal(1.003, ((Vector3D)p).Length, 9);
+        }
+        for (int i = 1; i < pts.Count; i++) Assert.True(AngleDeg(pts[i - 1], pts[i]) <= 1.0 + 1e-9);
+        Assert.All(SphereLines.Dashes(pts), d => Assert.All(d, p => Assert.False(double.IsNaN(p.X))));
+    }
+
     [Fact]
     public void DensifyOfOnePointIsThatPoint()
     {
