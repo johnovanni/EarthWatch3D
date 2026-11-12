@@ -6,7 +6,10 @@ public static class AppInfo
 {
     public const string ProjectPage = "https://github.com/johnovanni/EarthWatch3D";
 
-    public static string UserAgent { get; } = $"EarthWatch3D/{GetVersion()} (+{ProjectPage})";
+    /// <summary>The informational version without the "+commit" build metadata, e.g. "0.2.0".</summary>
+    public static string Version { get; } = GetVersion();
+
+    public static string UserAgent { get; } = $"EarthWatch3D/{Version} (+{ProjectPage})";
 
     private static string GetVersion()
     {

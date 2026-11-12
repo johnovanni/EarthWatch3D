@@ -4,7 +4,13 @@ using EarthWatch3D.Core.Logging;
 
 namespace EarthWatch3D.Core.Storage;
 
-public sealed class SettingsStore(AppPaths paths, IAppLog log)
+public interface ISettingsStore
+{
+    AppSettings Load();
+    void Save(AppSettings s);
+}
+
+public sealed class SettingsStore(AppPaths paths, IAppLog log) : ISettingsStore
 {
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -35,4 +41,6 @@ public sealed class SettingsStore(AppPaths paths, IAppLog log)
         log.Warn("Could not save settings", error);
         return false;
     }
+
+    void ISettingsStore.Save(AppSettings s) => Save(s);
 }

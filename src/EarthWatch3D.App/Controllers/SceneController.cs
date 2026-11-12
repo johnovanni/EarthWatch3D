@@ -34,7 +34,6 @@ public sealed class SceneController
     /// about 1.2 GB, mostly WPF's copies of the texture (see docs/perf.md). The 8192 asset is scaled down while decoding.
     /// </summary>
     public const int GlobeImageWidth = 4096;
-    public const double NightStrength = 0.85;
     public static readonly TimeSpan RecomposeInterval = TimeSpan.FromMinutes(1);
 
     private const string AssetPrefix = "EarthWatch3D.App.Assets.";
@@ -63,6 +62,8 @@ public sealed class SceneController
     private Bgra32Image? _composed;
     private WriteableBitmap? _bitmap;
     private bool _composing, _recomposePending, _closed;
+    // A display setting (night strength, day/night line, coastlines) changed since the last compose started.
+    private bool _settingsDirty;
 
     private bool _overlayDirty = true, _adjustingCamera;
     // Programmatic camera moves (CameraAnimator) do not always raise CameraChanged, so compare the pose too.
@@ -104,6 +105,8 @@ public sealed class SceneController
         _vm.DisplayTimeChanged += OnDisplayTimeChanged;
         _vm.SunMoon.PropertyChanged += OnSunMoonChanged;
         _vm.SunMoon.FaceRequested += OnFaceRequested;
+        _vm.Layers.PropertyChanged += OnDisplaySettingChanged;
+        _vm.Display.PropertyChanged += OnDisplaySettingChanged;
         _trailing.Tick += OnTrailingTick;
         CompositionTarget.Rendering += OnRendering;
         SystemEvents.PowerModeChanged += OnPowerModeChanged;   // static event: unsubscribed in OnClosed
@@ -141,10 +144,14 @@ public sealed class SceneController
             do
             {
                 _recomposePending = false;
+                _settingsDirty = false;
                 var now = _vm.DisplayTimeUtc;
                 _schedule.MarkComposed(now);
                 var subSolar = SubPoints.SubSolarPoint(now);
-                var layers = new GlobeLayers(subSolar, NightStrength, SparseLines: _lines);
+                // The lines are rasterized once at load; switching coastlines off just leaves them out.
+                var display = _vm.Display;
+                var layers = new GlobeLayers(subSolar, display.NightStrength,
+                    SparseLines: _vm.Layers.ShowCoastlines ? _lines : null, DrawTerminator: display.ShowTerminator);
                 var composer = _composer!;
                 var target = _composed!;
 #if PERF_LOG
@@ -179,6 +186,15 @@ public sealed class SceneController
         if (_schedule.IsDue(_vm.DisplayTimeUtc)) RequestRecompose();
     }
 
+    private void OnDisplaySettingChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is not (nameof(LayersViewModel.ShowCoastlines) or nameof(DisplayOptionsViewModel.NightStrength)
+                                   or nameof(DisplayOptionsViewModel.ShowTerminator))) return;
+        _settingsDirty = true;
+        if (_window.WindowState == WindowState.Minimized) return;   // composed on restore instead
+        RequestRecompose();   // throttled: the night-shade slider changes it many times a second
+    }
+
     // Scrubbing changes the display time many times a second: compose at most every 250 ms, and let a one-shot
     // timer make the last request after the gap so the globe ends on the final position.
     private void RequestRecompose()
@@ -200,7 +216,7 @@ public sealed class SceneController
     {
         _trailing.Stop();
         if (_closed || _window.WindowState == WindowState.Minimized) return;
-        if (_schedule.IsDue(_vm.DisplayTimeUtc)) RequestRecompose();
+        if (_settingsDirty || _schedule.IsDue(_vm.DisplayTimeUtc)) RequestRecompose();
     }
 
     // SystemEvents calls each handler through the SynchronizationContext that was current when it subscribed (here the
@@ -296,7 +312,7 @@ public sealed class SceneController
     {
         if (_window.WindowState == WindowState.Minimized) { _overlay.HideAll(); return; }
         _overlayDirty = true;
-        if (_schedule.IsDue(_vm.DisplayTimeUtc)) Recompose();
+        if (_settingsDirty || _schedule.IsDue(_vm.DisplayTimeUtc)) Recompose();
     }
 
     private void OnRendering(object? sender, EventArgs e)
@@ -473,6 +489,8 @@ public sealed class SceneController
         _trailing.Tick -= OnTrailingTick;
         _vm.SunMoon.PropertyChanged -= OnSunMoonChanged;
         _vm.SunMoon.FaceRequested -= OnFaceRequested;
+        _vm.Layers.PropertyChanged -= OnDisplaySettingChanged;
+        _vm.Display.PropertyChanged -= OnDisplaySettingChanged;
         _firstCompose.TrySetCanceled();
     }
 }
