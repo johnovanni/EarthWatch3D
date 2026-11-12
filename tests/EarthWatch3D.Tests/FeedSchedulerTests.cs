@@ -93,4 +93,36 @@ public sealed class FeedSchedulerTests
         var secs = Enumerable.Range(1, 6).Select(n => (int)Backoff.Delay(n).TotalSeconds).ToArray();
         Assert.Equal(new[] { 30, 60, 120, 300, 600, 600 }, secs);
     }
+
+    private sealed class CountingLog : IAppLog
+    {
+        public int Warnings;
+        public void Info(string m) { }
+        public void Warn(string m, Exception? e = null) => Interlocked.Increment(ref Warnings);
+        public void Error(string m, Exception? e = null) { }
+    }
+
+    private sealed class HangingFeed : IEventFeed
+    {
+        public string Name => "hang";
+        public TimeSpan Interval => TimeSpan.FromMinutes(1);
+        public Task RunOnceAsync(CancellationToken ct) => Task.Delay(Timeout.Infinite, ct);
+    }
+
+    [Fact]
+    public async Task StopDuringRunIsNotAFailure()
+    {
+        var log = new CountingLog();
+        using var s = new FeedScheduler([new HangingFeed()], new FakeClock(T0), log);
+        int raised = 0;
+        s.StatusChanged += (_, _) => raised++;
+        using var cts = new CancellationTokenSource();
+        var tick = s.TickAsync(cts.Token);
+        cts.Cancel();
+        await tick;
+        Assert.Equal(0, s.Statuses[0].ConsecutiveFailures);
+        Assert.Equal(FeedState.NotStarted, s.Statuses[0].State);
+        Assert.Equal(0, log.Warnings);
+        Assert.Equal(0, raised);
+    }
 }

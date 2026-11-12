@@ -1,3 +1,5 @@
+using System.IO;
+using System.Threading;
 using System.Net.Http;
 using System.Net;
 using System.Text;
@@ -50,5 +52,37 @@ public sealed class FeedHttpTests
         await Assert.ThrowsAsync<HttpRequestException>(() => http.GetStringAsync(new Uri("http://other/"), CancellationToken.None));
         Assert.Equal(3, h.Requests.Count);
         Assert.Equal("http://a/b/c", h.Requests[0]);
+    }
+
+    private sealed class StallStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            return 0;
+        }
+    }
+
+    private sealed class StallHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StallStream()) });
+    }
+
+    [Fact]
+    public async Task StalledBodyTimesOut()
+    {
+        using var http = new FeedHttp(new StallHandler(), TimeSpan.FromMilliseconds(100));
+        await Assert.ThrowsAsync<TimeoutException>(() => http.GetBytesAsync(new Uri("http://host.example/x"), CancellationToken.None));
     }
 }

@@ -20,6 +20,10 @@ public sealed class FeedScheduler : IDisposable
     private CancellationTokenSource? _cts;
     private Task? _loop;
 
+    /// <summary>
+    /// Raised after every feed run, on a background thread. UI subscribers must marshal with
+    /// Dispatcher.BeginInvoke (never Invoke, which can deadlock against Stop()).
+    /// </summary>
     public event EventHandler<FeedStatus>? StatusChanged;
 
     public FeedScheduler(IEnumerable<IEventFeed> feeds, IClock clock, IAppLog log)
@@ -55,6 +59,12 @@ public sealed class FeedScheduler : IDisposable
             await Task.Run(() => slot.Feed.RunOnceAsync(ct), CancellationToken.None).ConfigureAwait(false);
             var now = _clock.UtcNow;
             status = new FeedStatus(slot.Feed.Name, FeedState.Ok, now, null, 0, now + slot.Feed.Interval);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Shutdown, not a feed failure: leave the status alone.
+            lock (_gate) slot.Running = false;
+            return;
         }
         catch (Exception ex)
         {
@@ -104,7 +114,12 @@ public sealed class FeedScheduler : IDisposable
         lock (_gate) { cts = _cts; loop = _loop; _cts = null; _loop = null; }
         if (cts is null) return;
         cts.Cancel();
-        try { loop?.Wait(); } catch (AggregateException) { }
+        try
+        {
+            if (loop is not null && !loop.Wait(TimeSpan.FromSeconds(5)))
+                _log.Warn("Feed scheduler loop did not stop within 5 s");
+        }
+        catch (AggregateException) { }
         cts.Dispose();
     }
 
