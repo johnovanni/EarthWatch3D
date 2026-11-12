@@ -63,7 +63,7 @@ public sealed class NhcFeed(FeedHttp http, EventStore store, IAppLog log) : IEve
             var (lines, _, polys) = KmlReader.ReadKmz(new MemoryStream(data), log);
             return (lines, polys);
         }
-        catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException or FormatException)
+        catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException or FormatException or ArgumentException)
         {
             log.Warn($"NHC: KMZ for {s.Id} unreadable; will retry", ex);
             return null;

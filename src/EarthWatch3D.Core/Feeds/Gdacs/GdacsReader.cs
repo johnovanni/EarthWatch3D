@@ -107,7 +107,7 @@ public static class GdacsReader
                     else if (cls.StartsWith("Point_Polygon_Point_", StringComparison.Ordinal)) { }
                     else if (unknown.Add(cls)) log.Info($"GDACS: ignoring geometry class '{cls}'");
                 }
-                catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentOutOfRangeException or KeyNotFoundException)
+                catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentException or KeyNotFoundException)
                 {
                     log.Warn($"GDACS: geometry feature of event {e.EventId} malformed; skipped", ex);
                 }

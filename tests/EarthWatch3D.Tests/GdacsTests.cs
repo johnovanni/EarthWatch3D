@@ -65,6 +65,22 @@ public sealed class GdacsTests
     }
 
     [Fact]
+    public void OutOfRangeGeometryFeatureIsSkippedAndOthersLoad()
+    {
+        const string geo = """
+        {"features":[
+         {"type":"Feature","geometry":{"type":"LineString","coordinates":[[10,95],[11,96]]},"properties":{"Class":"Line_Line_1","forecast":true}},
+         {"type":"Feature","geometry":{"type":"LineString","coordinates":[[10,20],[11,21]]},"properties":{"Class":"Line_Line_2","forecast":true}}
+        ]}
+        """;
+        var ev = ReadList().Single(e => e.EventId == 1001348);
+        var log = new RecordingLog();
+        var a = GdacsReader.ReadGeometry(new MemoryStream(Encoding.UTF8.GetBytes(geo)), ev, log);
+        Assert.Single(a.ForecastTrack);
+        Assert.Single(log.Warnings);
+    }
+
+    [Fact]
     public void SkipsMalformedRecords()
     {
         const string json = """

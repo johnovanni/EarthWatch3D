@@ -71,7 +71,7 @@ public static class KmlReader
                         break;
                 }
             }
-            catch (FormatException ex)
+            catch (Exception ex) when (ex is FormatException or ArgumentException)
             {
                 log?.Warn($"KML: {e.Name.LocalName} malformed; skipped", ex);
             }

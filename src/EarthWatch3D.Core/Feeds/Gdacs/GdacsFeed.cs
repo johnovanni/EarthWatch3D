@@ -37,7 +37,7 @@ public sealed class GdacsFeed(FeedHttp http, EventStore store, IClock clock, IAp
                 continue;
             }
             try { advisories.Add(GdacsReader.ReadGeometry(new MemoryStream(geo), e, log)); }
-            catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException or FormatException)
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException or FormatException or ArgumentException)
             {
                 log.Warn($"GDACS: geometry of event {e.EventId} episode {e.EpisodeId} unreadable; will retry", ex);
                 continue;
