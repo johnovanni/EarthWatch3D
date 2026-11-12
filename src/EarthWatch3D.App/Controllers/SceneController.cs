@@ -70,6 +70,8 @@ public sealed class SceneController
     private readonly Throttle _throttle = new(TimeSpan.FromMilliseconds(250));
     private readonly System.Windows.Threading.DispatcherTimer _trailing = new();
     private readonly TaskCompletionSource _firstCompose = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    // All WPF drawing off the UI thread (coastlines, plates, alert areas) runs here, one item at a time. Shut down on Closed.
+    private readonly StaWorker _sta = new("EarthWatch3D rasterizer");
 
     // Kept between composes: the composer holds the base image; the target and bitmap are reused. The base image is
     // also kept here (no extra copy) as the fallback shown when a compose fails.
@@ -81,8 +83,8 @@ public sealed class SceneController
     private Bgra32Image? _composed;
     private WriteableBitmap? _bitmap;
     private bool _composing, _recomposePending, _closed;
-    // The Areas layer (alert zones, cones, wind bands): a new immutable image per change, rasterized off the UI thread
-    // one at a time. The previous image stays alive only while a compose still reads it.
+    // The Areas layer (alert zones, cones, wind bands): planned on the UI thread; a new immutable image is rasterized
+    // on the STA worker only when the plan's key changes. The previous image stays alive only while a compose reads it.
     private Bgra32Image? _areas;
     private int _areasKey;
     private bool _areasRunning, _areasPending;
@@ -253,6 +255,7 @@ public sealed class SceneController
                 ComposeDisplayed?.Invoke(this, now);
             } while (_recomposePending && !_closed);
         }
+        catch (OperationCanceledException) when (_closed) { }   // the rasterizer was shut down by the window closing
         catch (Exception ex)
         {
             // ComposeOrPlain already handles a failed compose; this is anything else (copying to the bitmap, say).
@@ -364,8 +367,8 @@ public sealed class SceneController
             PerfLog.Write($"load: decode + GeoJSON {load.ElapsedMilliseconds} ms ({w}x{h}) {PerfLog.Memory()}");
             load.Restart();
 #endif
-            // Rasterize on an STA thread, and keep only the line pixels: the dense layer would cost 4·w·h bytes.
-            var lines = await RunOnStaThread(() => SparseOverlay.FromImage(LineRasterizer.Rasterize(
+            // Rasterize on the STA worker, and keep only the line pixels: the dense layer would cost 4·w·h bytes.
+            var lines = await _sta.InvokeAsync(() => SparseOverlay.FromImage(LineRasterizer.Rasterize(
                 [(borders, Color.FromArgb(102, 211, 211, 211)), (coast, Color.FromArgb(153, 255, 255, 255))], w, h, 1.0)));
 #if PERF_LOG
             PerfLog.Write(string.Create(System.Globalization.CultureInfo.InvariantCulture,
@@ -380,6 +383,7 @@ public sealed class SceneController
             Recompose();
             RequestAreas();   // composes again once the Areas layer exists
         }
+        catch (OperationCanceledException) when (_closed) { }   // closed while loading
         catch (Exception ex)
         {
             _log.Error("Globe load failed", ex);
@@ -390,7 +394,7 @@ public sealed class SceneController
 
     /// <summary>
     /// The lines layer for the toggles: coastlines and/or plate boundaries (plates on top), or null for neither.
-    /// The plates are read and rasterized on an STA thread the first time they are wanted, then kept.
+    /// The plates are read and rasterized on the STA worker the first time they are wanted, then kept.
     /// </summary>
     private async Task<SparseOverlay?> GetLinesLayerAsync(bool coastlines, bool plates)
     {
@@ -399,7 +403,7 @@ public sealed class SceneController
             int w = like.Width, h = like.Height;
             try
             {
-            _plates = await RunOnStaThread(() =>
+            _plates = await _sta.InvokeAsync(() =>
             {
                 using var s = Asset("plate_boundaries.geojson");
                 var all = PlateBoundaries.Read(s);
@@ -413,6 +417,7 @@ public sealed class SceneController
                 ], w, h, 3.0));
             });
             }
+            catch (OperationCanceledException) when (_closed) { return null; }
             catch (Exception ex)
             {
                 _log.Error("Plate boundaries could not be drawn; showing coastlines only", ex);
@@ -435,18 +440,6 @@ public sealed class SceneController
     {
         using var s = Asset(name);
         return GeoJsonLines.Read(s).ToList();
-    }
-
-    private static Task<T> RunOnStaThread<T>(Func<T> work)
-    {
-        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var t = new Thread(() =>
-        {
-            try { tcs.SetResult(work()); } catch (Exception ex) { tcs.SetException(ex); }
-        }) { IsBackground = true };
-        t.SetApartmentState(ApartmentState.STA);
-        t.Start();
-        return tcs.Task;
     }
 
     // ---------------------------------------------------------------- Sun/Moon markers and overlay
@@ -528,18 +521,21 @@ public sealed class SceneController
                 _areasPending = false;
                 try
                 {
-                    var visible = _visible;
-                    var filter = _vm.CurrentFilter;
+                    // Planned here on the UI thread from memory only; zones not in memory yet are read from disk in the
+                    // background, and ZonesLoaded brings us back with a new key.
+                    var unresolved = new List<string>();
+                    var plan = AreasLayer.Plan(_visible, _vm.CurrentFilter,
+                        id => Zones.TryGetCached(id, out var polys) ? polys : null, unresolved);
+                    if (unresolved.Count > 0) Zones.LoadInBackground(unresolved);
+                    if (plan.Key == _areasKey) continue;   // nothing that shows has changed
                     int w = _composed!.Width, h = _composed.Height;
-                    int lastKey = _areasKey;
-                    var zones = Zones;
-                    var result = await RunOnStaThread(() => BuildAreasLayer(visible, filter, zones, w, h, lastKey));
+                    var image = plan.Shapes.Count == 0 ? null : await _sta.InvokeAsync(() => AreasLayer.Rasterize(plan, w, h));
                     if (_closed) return;
-                    if (result is not { } r) continue;   // nothing that shows has changed
-                    _areasKey = r.Key;
-                    _areas = r.Image;   // null when nothing is to be drawn
+                    _areasKey = plan.Key;
+                    _areas = image;   // null when nothing is to be drawn
                     Recompose();
                 }
+                catch (OperationCanceledException) when (_closed) { return; }
                 catch (Exception ex)
                 {
                     // One bad pass must not stop later ones: forget the key so the next trigger rebuilds.
@@ -549,40 +545,6 @@ public sealed class SceneController
             } while (_areasPending && !_closed);
         }
         finally { _areasRunning = false; }
-    }
-
-    /// <summary>Null if the content key equals <paramref name="lastKey"/>; otherwise the new key and image (image null if empty). Runs on an STA thread.</summary>
-    public static (int Key, Bgra32Image? Image)? BuildAreasLayer(VisibleEvents visible, DisplayFilter filter, ZoneCache zones,
-                                                                     int w, int h, int lastKey)
-    {
-        var key = new HashCode();
-        key.Add(filter.ShowAlerts); key.Add(filter.ShowCyclones);
-        var alertAreas = new List<(GeoPolygon, Color)>();
-        foreach (var a in visible.Alerts)
-        {
-            key.Add(a.Id); key.Add(a.CancelledUtc);
-            var color = AlertColors.For(a.EventType);
-            if (a.Areas.Count > 0) { foreach (var p in a.Areas) alertAreas.Add((p, color)); continue; }
-            int resolved = 0;
-            foreach (var z in a.ZoneIds)
-            {
-                if (!zones.TryGet(z, out var polys)) continue;   // still loading: drawn once ZonesLoaded fires
-                resolved++;
-                foreach (var p in polys) alertAreas.Add((p, color));
-            }
-            key.Add(resolved);
-        }
-        var under = new List<(GeoPolygon, Color)>();
-        foreach (var c in visible.Cyclones)
-        {
-            key.Add(c.Id); key.Add(c.TimeUtc);
-            foreach (var wa in c.WindAreas) under.Add((wa.Area, AlertColors.ForWind(wa.ThresholdKmh)));
-            foreach (var p in c.Cone) under.Add((p, AlertColors.Cone));
-        }
-        int k = key.ToHashCode();
-        if (k == lastKey) return null;
-        under.AddRange(alertAreas);   // alerts on top
-        return (k, under.Count == 0 ? null : AreaRasterizer.Rasterize(under, w, h));
     }
 
     private void OnFilterChanged(object? sender, EventArgs e) => _eventsDirty = true;
@@ -849,6 +811,7 @@ public sealed class SceneController
         _vm.SunMoon.FaceRequested -= OnFaceRequested;
         _vm.Layers.PropertyChanged -= OnDisplaySettingChanged;
         _vm.Display.PropertyChanged -= OnDisplaySettingChanged;
+        _sta.Dispose();   // queued rasterizing is cancelled; the awaiting loops see _closed and stop
         _firstCompose.TrySetCanceled();
     }
 }

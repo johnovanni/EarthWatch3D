@@ -160,7 +160,7 @@ public sealed class FeedSchedulerTests
         {
             clock.UtcNow = T0.AddSeconds(60 * minute);
             var next = s.StartDueRuns(CancellationToken.None);
-            Assert.Single(next);
+            _ = Assert.Single(next);
             await next[0].WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Equal(minute + 1, fast.Runs);
             Assert.Equal(clock.UtcNow.AddSeconds(60), s.Statuses[1].NextRunUtc);

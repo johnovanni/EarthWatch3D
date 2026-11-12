@@ -20,6 +20,7 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
 
     private readonly ConcurrentDictionary<string, IReadOnlyList<GeoPolygon>> _mem = new(StringComparer.Ordinal);
     private readonly HashSet<string> _queued = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _diskQueued = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _slots = new(maxConcurrent);
     private readonly object _gate = new();
     private int _pending;
@@ -39,7 +40,7 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
         return t;
     }
 
-    /// <summary>Completes when no downloads are queued or in flight.</summary>
+    /// <summary>Completes when no downloads or background disk reads are queued or in flight.</summary>
     public Task WhenIdleAsync() { lock (_gate) return _idle.Task; }
 
     /// <summary>Memory only: never touches the disk, so it is safe on a hot UI path such as hover.</summary>
@@ -60,6 +61,59 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
         _missUntil[zoneUrl] = clock.UtcNow + MissMemory;
         areas = [];
         return false;
+    }
+
+    /// <summary>
+    /// Reads from disk, on a background thread, the zones that are not in memory, and raises <see cref="ZonesLoaded"/>
+    /// if any were found (or had reached memory meanwhile). Never downloads: the NWS feed downloads the zones of the
+    /// alerts it wants. Never blocks and never touches the disk on the calling thread, so it is safe on the UI thread.
+    /// A zone missing from disk is not probed again for 30 s.
+    /// </summary>
+    public void LoadInBackground(IEnumerable<string> zoneUrls)
+    {
+        var now = clock.UtcNow;
+        var probe = new List<string>();
+        lock (_gate)
+        {
+            foreach (var url in zoneUrls)
+            {
+                if (_missUntil.TryGetValue(url, out var until) && now < until) continue;
+                if (!_diskQueued.Add(url)) continue;
+                probe.Add(url);
+            }
+            if (probe.Count == 0) return;
+            if (_pending++ == 0) _idle = NewIdle(done: false);
+        }
+        _ = Task.Run(() => ReadFromDisk(probe));
+    }
+
+    private void ReadFromDisk(List<string> urls)
+    {
+        var found = false;
+        try
+        {
+            foreach (var url in urls) if (TryGet(url, out _)) found = true;   // TryGet logs and survives unreadable files
+        }
+        catch (Exception ex) { log.Warn("NWS: reading cached zones failed", ex); }
+        finally
+        {
+            lock (_gate) foreach (var url in urls) _diskQueued.Remove(url);
+            if (found) RaiseZonesLoaded();
+            WorkDone();
+        }
+    }
+
+    private void RaiseZonesLoaded()
+    {
+        try { ZonesLoaded?.Invoke(this, EventArgs.Empty); }
+        catch (Exception ex) { log.Warn("NWS: a ZonesLoaded subscriber threw", ex); }
+    }
+
+    private void WorkDone()
+    {
+        TaskCompletionSource? done = null;
+        lock (_gate) if (--_pending == 0) done = _idle;
+        done?.TrySetResult();
     }
 
     /// <summary>Queues the distinct URLs that are neither cached nor already queued. Never blocks.</summary>
@@ -111,18 +165,9 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
         finally
         {
             // Raised before the idle signal, and outside the download's try so a throwing subscriber is not a download failure.
-            if (loaded)
-            {
-                try { ZonesLoaded?.Invoke(this, EventArgs.Empty); }
-                catch (Exception ex) { log.Warn("NWS: a ZonesLoaded subscriber threw", ex); }
-            }
-            TaskCompletionSource? done = null;
-            lock (_gate)
-            {
-                _queued.Remove(url);
-                if (--_pending == 0) done = _idle;
-            }
-            done?.TrySetResult();
+            if (loaded) RaiseZonesLoaded();
+            lock (_gate) _queued.Remove(url);
+            WorkDone();
         }
     }
 

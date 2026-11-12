@@ -77,25 +77,49 @@ public class AreaRasterizerTests
         Assert.Equal((255, 255, 255, 255), (Px(target, 230, 65).B, Px(target, 230, 65).G, Px(target, 230, 65).R, Px(target, 230, 65).A));
     }
 
+    private static readonly Func<string, IReadOnlyList<GeoPolygon>?> NoZones = static _ => null;
+
+    private static EarthWatch3D.Core.Events.CycloneAdvisory Storm(DateTime t, IReadOnlyList<GeoPolygon> cone) =>
+        new(EarthWatch3D.Core.Events.EventSource.Nhc, "nhc:x", t, new GeoPosition(5, 5), "x", null,
+            "x", 80, null, [], [], cone, [new(95, Box(20, 40, 30, 60))]);
+
     [Fact]
     public void SceneBuildsConeAndSkipsWhenUnchanged()
     {
         var t = new DateTime(2026, 11, 12, 6, 0, 0, DateTimeKind.Utc);
-        var cone = Box(0, 0, 10, 10);
-        var storm = new EarthWatch3D.Core.Events.CycloneAdvisory(EarthWatch3D.Core.Events.EventSource.Nhc, "nhc:x", t, new GeoPosition(5, 5), "x", null,
-            "x", 80, null, [], [], [cone], [new(95, Box(20, 40, 30, 60))]);
-        var vis = new EarthWatch3D.Core.Events.VisibleEvents([], [storm], [], []);
-        (int Key, Bgra32Image? Image)? first = null, second = null;
-        Sta.Run(() =>
-        {
-            first = EarthWatch3D.App.Controllers.SceneController.BuildAreasLayer(vis, EarthWatch3D.Core.Events.DisplayFilter.Default, null!, 360, 180, 0);
-            second = EarthWatch3D.App.Controllers.SceneController.BuildAreasLayer(vis, EarthWatch3D.Core.Events.DisplayFilter.Default, null!, 360, 180, first!.Value.Key);
-        });
-        var img = first!.Value.Image!;
-        Assert.Equal((255, 255, 255), (Px(img, 185, 85).R, Px(img, 185, 85).G, Px(img, 185, 85).B));   // white cone
-        var wind = Px(img, 230, 65);                                                                      // 95 km/h -> orange #FF9500
+        var vis = new EarthWatch3D.Core.Events.VisibleEvents([], [Storm(t, [Box(0, 0, 10, 10)])], [], []);
+        var f = EarthWatch3D.Core.Events.DisplayFilter.Default;
+        var first = AreasLayer.Plan(vis, f, NoZones);
+        var second = AreasLayer.Plan(vis, f, NoZones);
+        Bgra32Image? img = null;
+        Sta.Run(() => img = AreasLayer.Rasterize(first, 360, 180));
+        Assert.Equal((255, 255, 255), (Px(img!, 185, 85).R, Px(img!, 185, 85).G, Px(img!, 185, 85).B));   // white cone
+        var wind = Px(img!, 230, 65);                                                                       // 95 km/h -> orange #FF9500
         Assert.Equal((0xFF, 0x95, 0x00), ((int)wind.R, (int)wind.G, (int)wind.B));
-        Assert.Null(second);
+        Assert.Equal(first.Key, second.Key);   // unchanged: no rebuild
+    }
+
+    [Fact]
+    public void NewConeListWithSameIdAndTimeChangesTheKey()
+    {
+        // A merge or a re-read can give the same advisory (Id, TimeUtc) a new cone: the layer must be rebuilt.
+        var t = new DateTime(2026, 11, 12, 6, 0, 0, DateTimeKind.Utc);
+        var f = EarthWatch3D.Core.Events.DisplayFilter.Default;
+        var before = AreasLayer.Plan(new([], [Storm(t, [Box(0, 0, 10, 10)])], [], []), f, NoZones);
+        var after = AreasLayer.Plan(new([], [Storm(t, [Box(0, 0, 10, 10), Box(-20, 0, -10, 10)])], [], []), f, NoZones);
+        Assert.NotEqual(before.Key, after.Key);
+        Assert.Equal(before.Shapes.Count + 1, after.Shapes.Count);
+        Bgra32Image? img = null;
+        Sta.Run(() => img = AreasLayer.Rasterize(after, 360, 180));
+        Assert.NotEqual(0, Px(img!, 185, 105).A);   // the new cone part (lat -15) is drawn
+    }
+
+    [Fact]
+    public void NothingToDrawGivesNoImage()
+    {
+        var plan = AreasLayer.Plan(EarthWatch3D.Core.Events.VisibleEvents.None, EarthWatch3D.Core.Events.DisplayFilter.Default, NoZones);
+        Assert.Empty(plan.Shapes);
+        Assert.Null(AreasLayer.Rasterize(plan, 360, 180));   // no WPF work, so no STA needed
     }
 
     [Fact]
@@ -135,20 +159,22 @@ public class AreaRasterizerTests
             t, t.AddHours(2), null, [], [url], "");
         var vis = new EarthWatch3D.Core.Events.VisibleEvents([], [], [alert], []);
         var f = EarthWatch3D.Core.Events.DisplayFilter.Default;
-        (int Key, Bgra32Image? Image)? before = null, after = null, again = null;
-        Sta.Run(() => before = EarthWatch3D.App.Controllers.SceneController.BuildAreasLayer(vis, f, zc, 360, 180, 0));
-        Assert.Null(before!.Value.Image);   // zone not loaded: nothing drawn
+        Func<string, IReadOnlyList<GeoPolygon>?> memory = id => zc.TryGetCached(id, out var p) ? p : null;
+        var unresolved = new List<string>();
+        var before = AreasLayer.Plan(vis, f, memory, unresolved);
+        Assert.Empty(before.Shapes);              // zone not loaded: nothing drawn
+        Assert.Equal([url], unresolved);          // and the caller is told which zones to load
 
         zc.Request([url]);
         await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
-        Sta.Run(() =>
-        {
-            after = EarthWatch3D.App.Controllers.SceneController.BuildAreasLayer(vis, f, zc, 360, 180, before!.Value.Key);
-            again = EarthWatch3D.App.Controllers.SceneController.BuildAreasLayer(vis, f, zc, 360, 180, after!.Value.Key);
-        });
-        Assert.NotNull(after);                       // the key changed
-        Assert.NotEqual(before!.Value.Key, after!.Value.Key);
-        Assert.Contains(after.Value.Image!.Pixels.Where((_, i) => i % 4 == 3), a => a != 0);
-        Assert.Null(again);
+        unresolved.Clear();
+        var after = AreasLayer.Plan(vis, f, memory, unresolved);
+        var again = AreasLayer.Plan(vis, f, memory, unresolved);
+        Assert.NotEqual(before.Key, after.Key);   // the key changed
+        Assert.Equal(after.Key, again.Key);
+        Assert.Empty(unresolved);
+        Bgra32Image? img = null;
+        Sta.Run(() => img = AreasLayer.Rasterize(after, 360, 180));
+        Assert.Contains(img!.Pixels.Where((_, i) => i % 4 == 3), a => a != 0);
     }
 }

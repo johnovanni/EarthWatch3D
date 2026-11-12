@@ -165,4 +165,43 @@ public sealed class ZoneCacheTests
         Assert.InRange(zc.InFlightPeak, 1, 4);
         Assert.InRange(delay.Peak, 1, 4);
     }
+
+    [Fact]
+    public async Task LoadInBackgroundReadsTheDiskAndRaisesZonesLoaded()
+    {
+        var handler = new SampleHttpHandler();
+        handler.Map(Pzz, Sample("nws_zone.json"));
+        var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
+        var paths = TempPaths();
+        using var http = new FeedHttp(handler);
+        var writer = new ZoneCache(http, paths, clock, new RecordingLog());
+        writer.Request([Pzz]);
+        await writer.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+
+        var zc = new ZoneCache(http, paths, clock, new RecordingLog());   // on disk, not in memory
+        var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        zc.ZonesLoaded += (_, _) => loaded.TrySetResult();
+        zc.LoadInBackground([Pzz]);
+        await loaded.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(zc.TryGetCached(Pzz, out var areas));
+        Assert.Single(areas);
+        Assert.Single(handler.Requests);   // only the writer's download
+    }
+
+    [Fact]
+    public async Task LoadInBackgroundNeverDownloads()
+    {
+        var handler = new SampleHttpHandler();
+        handler.Map(Pzz, Sample("nws_zone.json"));
+        var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
+        using var http = new FeedHttp(handler);
+        var zc = new ZoneCache(http, TempPaths(), clock, new RecordingLog());
+        int raised = 0;
+        zc.ZonesLoaded += (_, _) => Interlocked.Increment(ref raised);
+        zc.LoadInBackground([Pzz]);
+        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Empty(handler.Requests);
+        Assert.False(zc.TryGetCached(Pzz, out _));
+        Assert.Equal(0, raised);
+    }
 }
