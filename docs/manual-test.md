@@ -106,7 +106,9 @@ last update time or its error.
       **Save** the key is stored encrypted (not readable in `%LOCALAPPDATA%\EarthWatch3D\settings.json`). The **MTG**
       dot turns green and Europe/Africa flashes appear. (When MTG is available.)
 - [ ] **Daily limit:** in Settings set the daily limit to **10** MB and Save. As soon as **Today:** reaches 10 MB the
-      GLM dots turn **blue** (paused), no new flashes arrive, and the other layers keep updating. Setting the limit to
+      GLM dots turn **blue** (paused), the status bar reads **Today: … MB (limit reached)**, no new flashes arrive, and
+      the other layers keep updating. Turning lightning off then turns the GLM dots grey (idle, "Not polled right
+      now"). Setting the limit to
       empty (no limit) resumes lightning at the next update (within 20 s). The count is kept when you restart the app
       on the same day.
 - [ ] **Units:** in Settings switch between **km** and **miles**: the details panel, the Sun and Moon card and the

@@ -191,8 +191,7 @@ and the bytes downloaded that minute.
 
 ```
 dotnet build src/EarthWatch3D.App -c Release "-p:DefineConstants=TRACE%3BRELEASE%3BPERF_LOG"
-src\EarthWatch3D.Appin\Release
-et10.0-windows\EarthWatch3D.App.exe --layers lightning --bench
+src\EarthWatch3D.App\bin\Release\net10.0-windows\EarthWatch3D.App.exe --layers lightning --bench
 ```
 
 | Measurement | Value |
@@ -207,3 +206,24 @@ et10.0-windows\EarthWatch3D.App.exe --layers lightning --bench
 
 The frame rate with lightning on stayed well above 30 fps. The 25,000-flash rotation figure (38.6 fps) is in Task 8
 above. The first-minute figure of 20.5 MB shows what the daily limit sees when lightning is switched on.
+
+## Plan 3, final fixes: 100,000 lightning flashes (the buffer cap)
+
+Measured **2026-11-12** (16:52 UTC), same machine and window size, .NET 10.0.15, `PERF_LOG` Release build, live, one
+run. Same bench as Task 8, with the buffer's full 100,000 flashes.
+
+```
+dotnet build src/EarthWatch3D.App -c Release "-p:DefineConstants=TRACE%3BRELEASE%3BPERF_LOG"
+src\EarthWatch3D.App\bin\Release\net10.0-windows\EarthWatch3D.App.exe --bench --bench-lightning 100000
+```
+
+| Measurement | Value |
+|---|---|
+| Layer built (100,000 points) | 33 ms |
+| FPS while rotating, 100,000 flashes | **10.7 fps** (54 frames in 5.04 s) |
+| Working set 10 s after load (before the flashes) | 815 MB (756 MB private, 388 MB managed) |
+| Working set after the bench | 1,155 MB (1,077 MB private, 257 MB managed) |
+
+**Below the 30 fps target (spec §10)** at the cap. 25,000 flashes gave 38.6 fps (Task 8); the 10-minute live run held
+13,000 to 22,000 flashes at 46 to 49 fps (Task 11). Recorded only, not redesigned in this wave: whether to draw fewer
+points at the cap (or another way) is an open decision.

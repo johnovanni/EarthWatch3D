@@ -60,7 +60,7 @@ xUnit 2.9.2.
 - New settings keys (in `AppSettings`, missing keys take the defaults): `ShowLightning`, `ShowClouds`,
   `LightningWindowMinutes`, `Units`, `DailyLimitMb` (null = off), `EumetsatKeyProtected`,
   `EumetsatSecretProtected` (base64 DPAPI blobs, null = not set).
-- New `AppPaths`: `CloudsDir` = `cache\clouds`, `DownloadMeterFile` = `cache\download-meter.json`.
+- New `AppPaths`: `CloudsDir` = `cache\clouds`, `DownloadMeterFile` = `download-meter.json` (in the data root, next to `settings.json`).
 - New `--layers` names: `lightning`, `clouds`.
 
 ## Review Focus

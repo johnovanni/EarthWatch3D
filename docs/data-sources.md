@@ -185,9 +185,10 @@ Summary:
 The app's download meter counts the bytes on the wire for every request. In 10 minutes with lightning on it counted
 33.1 MB: **20.5 MB in the first minute** (the 15-minute catch-up, at most 45 files per satellite, plus the other feeds'
 first downloads) and then **11.9 MB over the next 9 minutes, about 1.3 MB per minute or about 80 MB per hour** for both
-GLM feeds together (the other feeds add only a few MB per day). That is a little below the 102 MB/h the file sizes
-above give for both satellites running all the time, because the West feed polls only while the camera faces GOES-18
-and its files are small. Details in `docs/perf.md`.
+GLM feeds together (the other feeds add only a few MB per day). Both feeds were polled the whole time (West's flashes
+held grew from 353 to 593). The hour was lower than the 102 MB/h of the 2026-11-11 19 UTC sample above, which is
+consistent with GOES-19's hour-to-hour variation (38.8 to 71.6 MB/h in the hours recorded above; GOES-18 stays near
+30 MB/h). Details in `docs/perf.md`.
 
 ### File layout (NetCDF-4 / HDF5, read with netCDF4 and PureHDF)
 
