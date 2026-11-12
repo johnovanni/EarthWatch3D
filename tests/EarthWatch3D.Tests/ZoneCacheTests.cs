@@ -266,4 +266,47 @@ public sealed class ZoneCacheTests
         Assert.False(zc.TryGetCached(Pzz, out _));
         Assert.Equal(0, raised);
     }
+
+    [Fact]
+    public async Task LoadInBackgroundDownloadsMissingZonesWhenAsked()
+    {
+        // Replay and newly shown alert types need outlines the NWS feed never asked for (I4).
+        var handler = new SampleHttpHandler();
+        handler.Map(Pzz, Sample("nws_zone.json"));
+        var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
+        using var http = new FeedHttp(handler);
+        var zc = new ZoneCache(http, TempPaths(), clock, new RecordingLog());
+        var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        zc.ZonesLoaded += (_, _) => loaded.TrySetResult();
+        zc.LoadInBackground([Pzz, Pzz], downloadMissing: true);
+        await loaded.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(zc.TryGetCached(Pzz, out var areas));
+        Assert.Single(areas);
+        Assert.Single(handler.Requests);   // once, though asked twice
+
+        zc.LoadInBackground([Pzz], downloadMissing: true);   // now in memory: nothing more
+        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task LoadInBackgroundRespectsTheFailureBackoff()
+    {
+        var handler = new SampleHttpHandler();   // nothing mapped: every download fails
+        var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
+        using var http = new FeedHttp(handler);
+        var zc = new ZoneCache(http, TempPaths(), clock, new RecordingLog());
+        zc.LoadInBackground([Pzz], downloadMissing: true);
+        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Single(handler.Requests);
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);   // past the 30 s disk-miss memory, inside the 10 min retry wait
+        zc.LoadInBackground([Pzz], downloadMissing: true);
+        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Single(handler.Requests);
+        clock.UtcNow = clock.UtcNow.AddMinutes(10);
+        zc.LoadInBackground([Pzz], downloadMissing: true);
+        await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Equal(2, handler.Requests.Count);
+    }
 }

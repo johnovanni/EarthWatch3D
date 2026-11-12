@@ -526,12 +526,13 @@ public sealed class SceneController
                 _areasPending = false;
                 try
                 {
-                    // Planned here on the UI thread from memory only; zones not in memory yet are read from disk in the
-                    // background, and ZonesLoaded brings us back with a new key.
+                    // Planned here on the UI thread from memory only; zones not in memory yet are read from disk, or
+                    // downloaded, in the background (so replayed and newly shown alerts get outlines too), and
+                    // ZonesLoaded brings us back with a new key.
                     var unresolved = new List<string>();
                     var plan = AreasLayer.Plan(_visible, _vm.CurrentFilter,
                         id => Zones.TryGetCached(id, out var polys) ? polys : null, unresolved);
-                    if (unresolved.Count > 0) Zones.LoadInBackground(unresolved);
+                    if (unresolved.Count > 0) Zones.LoadInBackground(unresolved, downloadMissing: true);
                     if (plan.Key == _areasKey) continue;   // nothing that shows has changed
                     int w = _composed!.Width, h = _composed.Height;
                     var image = plan.Shapes.Count == 0 ? null : await _sta.InvokeAsync(() => AreasLayer.Rasterize(plan, w, h));

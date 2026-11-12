@@ -72,11 +72,13 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
 
     /// <summary>
     /// Reads from disk, on a background thread, the zones that are not in memory, and raises <see cref="ZonesLoaded"/>
-    /// if any were found (or had reached memory meanwhile). Never downloads: the NWS feed downloads the zones of the
-    /// alerts it wants. Never blocks and never touches the disk on the calling thread, so it is safe on the UI thread.
+    /// if any were found (or had reached memory meanwhile). With <paramref name="downloadMissing"/>, zones not on disk
+    /// either are then downloaded as by <see cref="Request"/> (same concurrency limit and failure backoff), so replayed
+    /// alerts and newly shown alert types get their outlines; otherwise only the NWS feed downloads (for current alerts).
+    /// Never blocks and never touches the disk on the calling thread, so it is safe on the UI thread.
     /// A zone missing from disk is not probed again for 30 s.
     /// </summary>
-    public void LoadInBackground(IEnumerable<string> zoneUrls)
+    public void LoadInBackground(IEnumerable<string> zoneUrls, bool downloadMissing = false)
     {
         var now = clock.UtcNow;
         var probe = new List<string>();
@@ -91,21 +93,29 @@ public sealed class ZoneCache(FeedHttp http, AppPaths paths, IClock clock, IAppL
             if (probe.Count == 0) return;
             if (_pending++ == 0) _idle = NewIdle(done: false);
         }
-        _ = Task.Run(() => ReadFromDisk(probe));
+        _ = Task.Run(() => ReadFromDisk(probe, downloadMissing));
     }
 
-    private void ReadFromDisk(List<string> urls)
+    private void ReadFromDisk(List<string> urls, bool downloadMissing)
     {
         var found = false;
+        var missing = new List<string>();
         try
         {
-            foreach (var url in urls) if (TryGet(url, out _)) found = true;   // TryGet logs and survives unreadable files
+            foreach (var url in urls)   // TryGet logs and survives unreadable files
+                if (TryGet(url, out _)) found = true; else missing.Add(url);
         }
         catch (Exception ex) { log.Warn("NWS: reading cached zones failed", ex); }
         finally
         {
             lock (_gate) foreach (var url in urls) _diskQueued.Remove(url);
             if (found) RaiseZonesLoaded();
+            // Queued before this read counts as done, so WhenIdleAsync also waits for the downloads.
+            if (downloadMissing && missing.Count > 0)
+            {
+                try { Request(missing); }
+                catch (Exception ex) { log.Warn("NWS: queueing zone downloads failed", ex); }
+            }
             WorkDone();
         }
     }
