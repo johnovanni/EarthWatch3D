@@ -109,4 +109,54 @@ public class EventCacheWriterTests
         writer.Flush();
         Assert.Equal(1, saves.Count);
     }
+
+    [Fact]
+    public void SavesAtMostEveryFiveMinutesAndStillDebounces()
+    {
+        var store = new EventStore(new TestClock(T0));
+        var saves = new Saves();
+        var time = new ManualTimeProvider();
+        using var writer = new EventCacheWriter(store, saves.Save, Delay, time: time);   // default minimum interval: 5 min
+        Assert.Equal(TimeSpan.FromMinutes(5), EventCacheWriter.DefaultMinInterval);
+
+        store.UpsertEarthquakes([Quake("a")]);
+        time.Advance(Delay);
+        Assert.Equal(1, saves.Count);                    // the first save is not held back
+
+        store.UpsertEarthquakes([Quake("b")]);           // 10 s after the first save
+        time.Advance(TimeSpan.FromMinutes(4) + TimeSpan.FromSeconds(59));
+        Assert.Equal(1, saves.Count);                    // the 10 s debounce has passed, but not 5 min since the last save
+        time.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(2, saves.Count);
+        Assert.Equal(2, saves.Calls[1].Snapshot.Earthquakes.Count);
+
+        time.Advance(TimeSpan.FromMinutes(6));           // quiet: nothing to save
+        Assert.Equal(2, saves.Count);
+        store.UpsertEarthquakes([Quake("c")]);
+        time.Advance(TimeSpan.FromSeconds(9));
+        store.UpsertEarthquakes([Quake("d")]);           // restarts the 10 s wait
+        time.Advance(TimeSpan.FromSeconds(9));
+        Assert.Equal(2, saves.Count);
+        time.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(3, saves.Count);
+        Assert.Equal(4, saves.Calls[2].Snapshot.Earthquakes.Count);
+    }
+
+    [Fact]
+    public void ExitSaveIgnoresTheMinimumInterval()
+    {
+        var store = new EventStore(new TestClock(T0));
+        var saves = new Saves();
+        var time = new ManualTimeProvider();
+        var writer = new EventCacheWriter(store, saves.Save, Delay, time: time);
+        store.UpsertEarthquakes([Quake("a")]);
+        time.Advance(Delay);
+        store.UpsertEarthquakes([Quake("b")]);
+        time.Advance(TimeSpan.FromMinutes(1));
+        Assert.Equal(1, saves.Count);                    // held back by the 5 min interval
+        writer.Dispose();
+        writer.SaveNow();                                // on exit: saved at once
+        Assert.Equal(2, saves.Count);
+        Assert.Equal(2, saves.Calls[1].Snapshot.Earthquakes.Count);
+    }
 }
