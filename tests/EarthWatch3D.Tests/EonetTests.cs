@@ -24,7 +24,7 @@ public sealed class EonetTests
         Assert.Equal(a.Fixes[^1].Position, a.Location);
         Assert.Equal(DateTimeKind.Utc, a.TimeUtc.Kind);
         Assert.Null(a.ClosedUtc);
-        Assert.Equal("https://eonet.gsfc.nasa.gov/api/v3/events/EONET_26159", a.Link?.ToString());
+        Assert.Equal("https://www.metoc.navy.mil/jtwc/products/sh0327.tcw", a.Link?.ToString());   // sources[0].url, a page people can read
         Assert.Equal(19, storms.Single(x => x.Id == "EONET_26157").Fixes.Count);
         Assert.Equal(20, storms.Single(x => x.Id == "EONET_26158").Fixes.Count);
         var c = storms.Single(x => x.Id == "EONET_25728");
@@ -96,5 +96,21 @@ public sealed class EonetTests
         Assert.Equal(TimeSpan.FromMinutes(30), feed.Interval);
         await feed.RunOnceAsync(CancellationToken.None);
         Assert.Equal(4, store.Snapshot.Eonet.Count);
+    }
+
+    [Theory]
+    [InlineData("""[{"id":"JTWC","url":"https://jtwc.example/a.tcw"},{"id":"X","url":"https://x/b"}]""", "https://jtwc.example/a.tcw")]
+    [InlineData("[]", "https://e/1")]                                    // no sources: the EONET link
+    [InlineData("""[{"id":"JTWC"}]""", "https://e/1")]   // a source without a URL
+    [InlineData("""[{"id":"JTWC","url":"not a url"}]""", "https://e/1")]
+    [InlineData("null", "https://e/1")]
+    public void LinkPrefersTheFirstSourcePage(string sources, string expected)
+    {
+        var json = """
+        {"events":[{"id":"E1","title":"T","link":"https://e/1","closed":null,"sources":SOURCES,"geometry":[
+          {"magnitudeValue":50,"magnitudeUnit":"kts","date":"2026-11-08T00:00:00Z","type":"Point","coordinates":[2,3]}]}]}
+        """.Replace("SOURCES", sources, StringComparison.Ordinal);
+        var s = EonetReader.Read(new MemoryStream(Encoding.UTF8.GetBytes(json)), new RecordingLog())[0];
+        Assert.Equal(expected, s.Link?.ToString());
     }
 }

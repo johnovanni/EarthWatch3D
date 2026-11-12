@@ -39,7 +39,7 @@ public static class EonetReader
                 var closedText = Str(e, "closed");
                 var closed = ParseTime(closedText);
                 if (closedText is not null && closed is null) log.Warn($"EONET: {id} has unparseable closed value '{closedText}'");
-                Uri? link = Uri.TryCreate(Str(e, "link"), UriKind.Absolute, out var uri) ? uri : null;
+                var link = SourcePage(e) ?? (Uri.TryCreate(Str(e, "link"), UriKind.Absolute, out var uri) ? uri : null);
                 result.Add(new EonetStorm(id, fixes[0].TimeUtc, fixes[^1].Position, Str(e, "title") ?? id, link, fixes, closed));
             }
             catch (Exception ex) when (ex is InvalidOperationException or FormatException)
@@ -48,6 +48,20 @@ public static class EonetReader
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// The first source's page (for example the JTWC warning), which people can read; EONET's own <c>link</c> is its
+    /// API's JSON, so it is used only when there is no usable source URL.
+    /// </summary>
+    private static Uri? SourcePage(JsonElement e)
+    {
+        if (!e.TryGetProperty("sources", out var sources) || sources.ValueKind != JsonValueKind.Array || sources.GetArrayLength() == 0)
+            return null;
+        var first = sources[0];
+        if (first.ValueKind != JsonValueKind.Object) return null;
+        return Uri.TryCreate(Str(first, "url"), UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp)
+            ? u : null;
     }
 
     private static StormFix? ReadFix(JsonElement g)

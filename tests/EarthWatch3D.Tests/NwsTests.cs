@@ -47,7 +47,7 @@ public sealed class NwsTests
         Assert.Equal(new DateTime(2026, 11, 11, 17, 0, 0, DateTimeKind.Utc), a.OnsetUtc);
         Assert.Equal(new DateTime(2026, 11, 12, 4, 0, 0, DateTimeKind.Utc), a.EndsUtc);
         Assert.Equal("Flood Warning", a.Title);
-        Assert.Equal("https://api.weather.gov/alerts/urn:a1", a.Link?.ToString());
+        Assert.Equal("https://alerts.weather.gov/", a.Link?.ToString());   // never the raw API JSON
         Assert.Null(a.CancelledUtc);
         Assert.Equal("https://api.weather.gov/alerts?cursor=x", next?.ToString());
 
@@ -235,4 +235,13 @@ public sealed class NwsTests
         var zoneReqs = handler.Requests.Where(r => r.StartsWith("https://z/", StringComparison.Ordinal)).ToList();
         Assert.Equal(["https://z/W"], zoneReqs);
     }
+
+    [Theory]
+    [InlineData("https://api.weather.gov/alerts/urn:oid:1", "https://alerts.weather.gov/")]   // the API's JSON: not a page
+    [InlineData("urn:oid:2.49.0.1.840.0.1", "https://alerts.weather.gov/")]
+    [InlineData("http://www.weather.gov/x", "https://alerts.weather.gov/")]                     // not https
+    [InlineData(null, "https://alerts.weather.gov/")]
+    [InlineData("https://www.weather.gov/safety/flood", "https://www.weather.gov/safety/flood")]
+    public void LinkIsAWebPage(string? featureId, string expected) =>
+        Assert.Equal(expected, NwsReader.WebLink(featureId).ToString());
 }

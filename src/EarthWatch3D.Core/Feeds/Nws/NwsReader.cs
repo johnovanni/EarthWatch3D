@@ -63,7 +63,7 @@ public static class NwsReader
                 if (z.ValueKind == JsonValueKind.String && z.GetString() is { Length: > 0 } zs) zones.Add(zs);
 
         var location = areas.Count > 0 ? Centroid(areas[0]) : new GeoPosition(0, 0);
-        Uri? link = Uri.TryCreate(featureId, UriKind.Absolute, out var lu) && lu.Scheme == Uri.UriSchemeHttps ? lu : null;
+        var link = WebLink(featureId);
         // A Cancel message is itself ended at its own sent time, so it never shows; the alerts it references are ended via SupersedesIds.
         bool isCancel = Str(p, "messageType") == "Cancel";
         DateTime? cancelled = isCancel ? sent : null;
@@ -75,6 +75,18 @@ public static class NwsReader
             Str(p, "severity") ?? "Unknown", onset.Value, ends.Value, cancelled, areas, zones, Str(p, "description") ?? "", supersedes,
             isCancel ? AlertEndReason.Cancelled : null);
     }
+
+    /// <summary>The page the details panel links to for an alert.</summary>
+    public static readonly Uri AlertsPage = new("https://alerts.weather.gov/");
+
+    /// <summary>
+    /// The alert's id when it is an https web page; otherwise (a URN, or an api.weather.gov URL, which returns JSON
+    /// rather than a page people can read) the NWS alerts page. Never the raw API.
+    /// </summary>
+    public static Uri WebLink(string? featureId) =>
+        Uri.TryCreate(featureId, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps
+        && !string.Equals(u.Host, "api.weather.gov", StringComparison.OrdinalIgnoreCase)
+            ? u : AlertsPage;
 
     /// <summary>Polygon or MultiPolygon geometry; every polygon goes through <see cref="DateLine.SplitPolygon"/>.</summary>
     internal static IReadOnlyList<GeoPolygon> ReadGeometry(JsonElement g)
