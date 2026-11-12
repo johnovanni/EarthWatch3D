@@ -42,6 +42,23 @@ Other measurements from the same runs:
   477–533 MB (the peak is during and just after the rotation bench).
 - `Get-Process` from outside: 1,235 MB 15 s after launch and 1,226 MB at 215 s (8192); 519 MB and 488 MB (4096).
 
+## Plan 2, Task 14: events on the globe
+
+Measured **2026-11-12** (06:10 and 06:20 UTC), same machine and window size, .NET 10.0.15, `--bench` as above. Both
+runs loaded the same event cache (1,850 quakes, 3 cyclone advisories, 3 EONET storms); with the default filter
+(M2.5+, last 24 h) 45 quake discs are drawn, 7 of them M5+ (3 of those labelled on the side facing the home view), and
+4 quakes under an hour old have pulsing rings.
+
+| Build | FPS while rotating | Working set 10 s after load |
+|---|---|---|
+| Before Task 14 (HEAD 2caa38d, no events drawn) | **52.4 fps** (262 frames in 5.00 s) | 538 MB |
+| Task 14 (quake discs, rings, storm glyphs and tracks, labels) | **44.8 fps** (225 frames in 5.02 s) | 542 MB |
+
+Both are above the 30 fps target. While the camera moves, each frame re-places the labels and Helix recomputes its
+screen-space lines (past, forecast and EONET tracks, quake rings) and billboards; the merged disc meshes are rebuilt only
+when the visible quakes or their colour buckets change, or the minimum disc size changes by more than 20%. One run each,
+so the difference includes run-to-run variation (Task 12's runs of the same build gave 46.4 and 48.6 fps).
+
 ## What the memory is
 
 At 8192×4096 one BGRA copy of the globe is 128 MiB. In the 8192 run the managed heap held only the base image

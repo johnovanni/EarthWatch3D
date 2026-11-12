@@ -27,7 +27,7 @@ namespace EarthWatch3D.App.Controllers;
 
 /// <summary>
 /// Owns the 3D scene: the globe image (load, then a recompose every minute so the day/night line moves),
-/// the Sun/Moon globe markers and screen overlay, and the camera rules, input and animation.
+/// the events and their labels, the Sun/Moon globe markers and screen overlay, and the camera rules, input and animation.
 /// </summary>
 public sealed class SceneController
 {
@@ -50,6 +50,11 @@ public sealed class SceneController
     private readonly CameraAnimator _animator;
     private readonly SunMoonOverlay _overlay;
     private readonly SunMoonGlobeMarkers _markers;
+    private readonly EventScene _events;
+    private readonly LabelOverlay _labels;
+    // Which events are visible is worked out again at most every 250 ms (scrubbing changes the time many times a second).
+    private readonly Throttle _eventThrottle = new(TimeSpan.FromMilliseconds(250));
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly ModelVisual3D _globeVisual = new();
     // Tooltip for the Sun/Moon surface markers (billboards can't carry WPF tooltips, so it is driven by hover tests).
     private readonly ToolTip _markerTip = new() { Placement = PlacementMode.Relative, StaysOpen = true };
@@ -68,6 +73,12 @@ public sealed class SceneController
     private bool _settingsDirty;
 
     private bool _overlayDirty = true, _adjustingCamera;
+    // The visible events must be worked out again (display time, store, filter or live mode changed).
+    private bool _eventsDirty = true;
+    // 1 while a store change is waiting to reach the UI thread (Changed fires on feed threads), so they coalesce.
+    private int _storeChangePending;
+    private VisibleEvents _visible = VisibleEvents.None;
+    private DateTime _visibleAtUtc;
     // Programmatic camera moves (CameraAnimator) do not always raise CameraChanged, so compare the pose too.
     private (Point3D, Vector3D, Vector3D, double) _lastPose;
 
@@ -78,7 +89,7 @@ public sealed class SceneController
     /// <param name="overlay">The canvas over the viewport for the Sun/Moon icons and edge arrows.</param>
     /// <param name="card">The Sun &amp; Moon card, which the edge arrows keep clear of. It and <paramref name="overlay"/> must share a parent.</param>
     /// <param name="window">The window hosting the viewport: its Loaded, Closed, StateChanged and PreviewKeyDown events drive the scene.</param>
-    /// <param name="store">The events to draw (used from Task 14 on).</param>
+    /// <param name="store">The events to draw.</param>
     /// <param name="zones">NWS zone shapes for alerts that name zones only (used from Task 15 on).</param>
     public SceneController(HelixViewport3D viewport, Canvas overlay, FrameworkElement card, MainViewModel vm, Window window,
                            EventStore store, ZoneCache zones)
@@ -95,7 +106,9 @@ public sealed class SceneController
         _overlay = new SunMoonOverlay(overlay);
         _markers = new SunMoonGlobeMarkers();
         _viewport.Children.Add(_globeVisual);
+        _events = new EventScene(_viewport);   // after the globe, before the Sun/Moon markers
         foreach (var v in _markers.Visuals) _viewport.Children.Add(v);
+        _labels = new LabelOverlay(overlay);
 
         _window.Loaded += OnLoaded;
         _window.Closed += OnClosed;
@@ -110,6 +123,9 @@ public sealed class SceneController
         _viewport.SizeChanged += OnViewportSizeChanged;
         _card.SizeChanged += OnViewportSizeChanged;   // collapsing the card changes the area the arrows avoid
         _vm.DisplayTimeChanged += OnDisplayTimeChanged;
+        _vm.FilterChanged += OnFilterChanged;
+        _vm.Timeline.PropertyChanged += OnTimelineChanged;
+        Store.Changed += OnStoreChanged;
         _vm.SunMoon.PropertyChanged += OnSunMoonChanged;
         _vm.SunMoon.FaceRequested += OnFaceRequested;
         _vm.Layers.PropertyChanged += OnDisplaySettingChanged;
@@ -195,6 +211,7 @@ public sealed class SceneController
 
     private void OnDisplayTimeChanged(object? sender, EventArgs e)
     {
+        _eventsDirty = true;
         if (_window.WindowState == WindowState.Minimized) return;   // composed on restore instead
         if (_schedule.IsDue(_vm.DisplayTimeUtc)) RequestRecompose();
     }
@@ -330,11 +347,52 @@ public sealed class SceneController
 
     private void OnRendering(object? sender, EventArgs e)
     {
-        if (_window.WindowState == WindowState.Minimized) { _overlay.HideAll(); _overlayDirty = true; return; }
+        if (_window.WindowState == WindowState.Minimized) { _overlay.HideAll(); _labels.Begin(); _labels.End(); _overlayDirty = true; return; }
         NoteCameraChange();
-        if (!_overlayDirty) return;
-        _overlayDirty = false;
-        UpdateSunMoon();
+        bool evaluate = _eventsDirty && _eventThrottle.TryAcquire(DateTime.UtcNow);
+        if (evaluate)
+        {
+            _eventsDirty = false;
+            _visibleAtUtc = _vm.DisplayTimeUtc;
+            _visible = EventVisibility.At(Store.Snapshot, _visibleAtUtc, _vm.CurrentFilter);
+            _overlayDirty = true;   // the labels
+        }
+        if (_overlayDirty)
+        {
+            _overlayDirty = false;
+            UpdateSunMoon();
+            UpdateEvents();
+        }
+        if (_events.HasRings) _events.AnimateRings(_clock.Elapsed);
+    }
+
+    // ---------------------------------------------------------------- events
+
+    // Called on the feed thread that wrote the store. Only a flag crosses threads; the store is read on the UI thread.
+    private void OnStoreChanged(object? sender, EventArgs e)
+    {
+        if (Interlocked.Exchange(ref _storeChangePending, 1) == 1) return;
+        _window.Dispatcher.BeginInvoke(() =>
+        {
+            Volatile.Write(ref _storeChangePending, 0);
+            _eventsDirty = true;
+        });
+    }
+
+    private void OnFilterChanged(object? sender, EventArgs e) => _eventsDirty = true;
+
+    private void OnTimelineChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TimelineViewModel.IsLive)) _eventsDirty = true;   // rings only while live
+    }
+
+    /// <summary>Hands the visible events to the scene (cheap if nothing changed) and places their labels.</summary>
+    private void UpdateEvents()
+    {
+        if (_viewport.Camera is not PerspectiveCamera camera) return;
+        var projector = new Projector(camera, _viewport.ActualWidth, _viewport.ActualHeight);
+        _events.Update(_visible, _visibleAtUtc, _vm.Timeline.IsLive, projector, ((Vector3D)camera.Position).Length);
+        _events.DrawLabels(_labels, projector);
     }
 
     private void NoteCameraChange()
@@ -498,6 +556,9 @@ public sealed class SceneController
         _viewport.SizeChanged -= OnViewportSizeChanged;
         _card.SizeChanged -= OnViewportSizeChanged;
         _vm.DisplayTimeChanged -= OnDisplayTimeChanged;
+        _vm.FilterChanged -= OnFilterChanged;
+        _vm.Timeline.PropertyChanged -= OnTimelineChanged;
+        Store.Changed -= OnStoreChanged;
         _trailing.Stop();
         _trailing.Tick -= OnTrailingTick;
         _vm.SunMoon.PropertyChanged -= OnSunMoonChanged;
