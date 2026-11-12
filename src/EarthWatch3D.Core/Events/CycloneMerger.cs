@@ -20,7 +20,9 @@ public static partial class CycloneMerger
 
     /// <summary>
     /// An NHC and a GDACS advisory with the same normalized name within <see cref="SameStormKm"/> are one storm:
-    /// the NHC advisory is kept (taking the GDACS wind areas if it has none) and the GDACS one dropped.
+    /// the NHC advisory is kept (taking the GDACS wind areas, and the GDACS past track, if it has none) and the GDACS
+    /// one dropped. NHC's feed gives only the forecast track and cone, so without GDACS's past track an NHC storm
+    /// would show no solid past track at all.
     /// </summary>
     public static IReadOnlyList<CycloneAdvisory> Merge(IReadOnlyList<CycloneAdvisory> latestPerStorm)
     {
@@ -38,7 +40,8 @@ public static partial class CycloneMerger
             if (match is not null)
             {
                 dropped.Add(match);
-                result.Add(a.WindAreas.Count == 0 ? a with { WindAreas = match.WindAreas } : a);
+                var merged = a.WindAreas.Count == 0 ? a with { WindAreas = match.WindAreas } : a;
+                result.Add(merged.PastTrack.Count == 0 ? merged with { PastTrack = match.PastTrack } : merged);
             }
             else result.Add(a);
         }

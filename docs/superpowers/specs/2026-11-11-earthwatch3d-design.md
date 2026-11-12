@@ -209,7 +209,8 @@ The endpoints and fields below were verified against the live services on 2026-1
   normalises longitudes and splits shapes that cross ±180°.
 - **Merging with GDACS:** a GDACS storm and an NHC storm are the same storm when their names match after removing
   GDACS's `-YY` year suffix (case-insensitive; `PENA-26` = `Pena`) and their current positions are within
-  300 km. In NHC basins the NHC advisory wins, and the GDACS wind bands are kept if NHC has none.
+  300 km. In NHC basins the NHC advisory wins, and the GDACS wind bands and past track are kept if NHC has none
+  (NHC's feed gives no past track, so this is where an NHC storm's past track comes from).
 
 ### 5.4 NWS US alerts
 

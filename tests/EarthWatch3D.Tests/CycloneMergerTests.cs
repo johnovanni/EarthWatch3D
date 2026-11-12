@@ -48,6 +48,24 @@ public class CycloneMergerTests
         Assert.Single(Assert.Single(CycloneMerger.Merge([nhc, gdacs])).WindAreas);
     }
 
+    [Fact] // Task 17 snapshot: NHC's feed has no past track, so the merged Pena showed none
+    public void MergedStormAdoptsGdacsPastTrackWhenNhcHasNone()
+    {
+        var pos = new GeoPosition(9.9, -167.7);
+        GeoLine past = new([new(11.3, -150.1), new(9.9, -167.7)]);
+        GeoLine forecast = new([new(9.9, -167.7), new(10.2, -172.6)]);
+        var nhc = Adv(EventSource.Nhc, "nhc:cp04", "Pena", pos) with { ForecastTrack = [forecast] };
+        var gdacs = Adv(EventSource.Gdacs, "gdacs:1001348", "PENA-26", pos) with { PastTrack = [past], ForecastTrack = [past] };
+        var m = Assert.Single(CycloneMerger.Merge([nhc, gdacs]));
+        Assert.Equal(EventSource.Nhc, m.Source);
+        Assert.Equal(past, Assert.Single(m.PastTrack));
+        Assert.Equal(forecast, Assert.Single(m.ForecastTrack));   // NHC's forecast is kept
+
+        GeoLine own = new([new(9, -160), new(9.9, -167.7)]);
+        var withOwn = Assert.Single(CycloneMerger.Merge([nhc with { PastTrack = [own] }, gdacs]));
+        Assert.Equal(own, Assert.Single(withOwn.PastTrack));
+    }
+
     [Fact]
     public void SameNamesFarApartAreTwoStorms()
     {
