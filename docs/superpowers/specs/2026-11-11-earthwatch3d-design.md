@@ -40,6 +40,15 @@ package, so it has to work without developer tools and explain itself to non-tec
 | Shared code | A new **AstroCore** repo, used as a git submodule at `external/AstroCore` |
 | Packaging | Self-contained x64 MSIX signed with Azure Trusted Signing, with an `.appinstaller` file for automatic updates |
 
+### Rulings made while building Plan 2 that changed behaviour
+
+| Ruling | Decision |
+|---|---|
+| R5 | The USGS week refresh deletes absent quakes only between the week's start and the feed's own `generated` time, so quakes newer than the CDN-cached week feed don't flicker (§4, §5.1) |
+| R7 | NWS Update and Cancel messages end the alerts they reference: the referenced alert's `CancelledUtc` becomes the newer message's sent time, including when the reference arrives first (§5.4) |
+| R8 | A merged NHC storm takes GDACS's past track when NHC has none, as it already took the wind bands (§5.3) |
+| R10 | Plate boundaries are drawn 3 px wide, fully opaque, in saturated colours (convergent #FF3030, divergent #FFE600, transform #00E5FF) instead of 1.5 px at 85% (§6, 5a) |
+
 ### Out of scope
 
 - Lightning history and replay, and the collector service (only its seam is designed, in §9).
@@ -126,9 +135,12 @@ readonly record struct LightningFlash(DateTime TimeUtc, float Lat, float Lon, fl
   EONET storms (7 days). It is thread-safe: feeds write from background threads, and the UI reads immutable
   snapshots.
 - Earthquakes are upserted by ID, so a revised magnitude replaces the old version. An earthquake missing from a
-  full weekly refresh counts as deleted and is removed.
-- The store is saved to `%LOCALAPPDATA%\EarthWatch3D\cache\*.json` after each change (debounced to once every
-  10 s) and loaded at startup. A corrupt file is deleted and its data downloaded again. MSIX redirects this path
+  full weekly refresh counts as deleted and is removed, but only between the week's start and the feed's own
+  `generated` time (ruling R5, §5.1).
+- The store is saved to `%LOCALAPPDATA%\EarthWatch3D\cache\events.json` 10 s after the last change, at most once
+  every 5 minutes, and once more on exit, and is loaded at startup. The file carries a `SchemaVersion` (currently 2):
+  a file from another version, a corrupt file, or one whose records hold nulls the model forbids is deleted and its
+  data downloaded again. MSIX redirects this path
   into the package's own folder transparently.
 - Lightning is not kept in the store. It lives in memory in the lightning source (§5.7).
 
@@ -153,8 +165,10 @@ only for wall-clock needs (feed polling, staleness, the live time itself).
 
 ## 5. Data sources
 
-Every feed implements `IEventFeed` (`Task<FeedResult> FetchAsync(DateTime sinceUtc, CancellationToken)`) and runs
-on its own timer in a `FeedScheduler`.
+Every feed implements `IEventFeed` (`string Name`, `TimeSpan Interval`, `Task RunOnceAsync(CancellationToken)`).
+A run fetches what it needs and writes it straight into the `EventStore`; a thrown exception is the run's failure.
+The `FeedScheduler` checks every 5 s and starts each feed that is due without waiting for the others, so one slow
+feed never holds back the rest; a feed is not started again while its own run is in flight.
 
 - **HTTP:** one shared `HttpClient` with a 30 s timeout. The User-Agent is `EarthWatch3D/<version> (+<project
   page>)`, set in one constant. It never contains user data.
@@ -173,6 +187,9 @@ The endpoints and fields below were verified against the live services on 2026-1
   milliseconds**), `url`, `type`; `geometry.coordinates` = [lon, lat, depth km].
 - `properties.type` is not always `earthquake` (quarry blasts and explosions appear). Only `earthquake` is shown.
 - The minimum magnitude shown is a display filter (M2.5 by default). All quakes are stored.
+- **Week refresh window (ruling R5):** the CDN copy of the week feed can be a minute or so old, so the refresh
+  removes only absent quakes between the week's start and the feed's `metadata.generated` time; newer quakes stay.
+  A week response with no quakes at all is treated as a bad response: it is logged and nothing is removed.
 
 ### 5.2 GDACS tropical cyclones
 
@@ -210,7 +227,7 @@ The endpoints and fields below were verified against the live services on 2026-1
 - **Merging with GDACS:** a GDACS storm and an NHC storm are the same storm when their names match after removing
   GDACS's `-YY` year suffix (case-insensitive; `PENA-26` = `Pena`) and their current positions are within
   300 km. In NHC basins the NHC advisory wins, and the GDACS wind bands and past track are kept if NHC has none
-  (NHC's feed gives no past track, so this is where an NHC storm's past track comes from).
+  (NHC's feed gives no past track, so this is where an NHC storm's past track comes from; ruling R8).
 
 ### 5.4 NWS US alerts
 
@@ -221,7 +238,14 @@ The endpoints and fields below were verified against the live services on 2026-1
   `effective`, `onset`, `expires`, `ends`, `headline`, `description`, `areaDesc`, `affectedZones`, `references`.
 - **Geometry is null for 94–98% of alerts.** Those use `affectedZones`: each zone URL
   (`https://api.weather.gov/zones/forecast/<id>`, 20–120 KB) returns a Polygon or MultiPolygon. Zones are fetched
-  on demand (at most 4 requests at a time) and cached in `cache/zones/` for 30 days.
+  on demand (at most 4 requests at a time) and cached in `cache/zones/` for 30 days. A failed zone download (an
+  HTTP error, no geometry, a parse error) is not tried again for 10 min, doubling after each further failure up to
+  6 h.
+- **References (ruling R7):** an Update or Cancel message ends the alerts it lists in `references`. The store sets
+  each referenced alert's `CancelledUtc` to the newer message's `sent` time (the earliest one wins), remembering
+  references that arrive before their original, and records whether an Update (superseded) or a Cancel
+  (cancelled) ended it. The details panel's "Until" shows the earlier of the end and that time, with
+  "(superseded)" or "(cancelled)". A Cancel message itself never shows.
 - **Default filter: Warnings only** (an `event` ending in "Warning"). Watches, Advisories and Statements can each
   be switched on in the ⋯ Display flyout. Zones are downloaded only for alerts that pass the filter.
 - Colours follow the standard NWS hazard colours for the common types (tornado, severe thunderstorm, flash flood,
@@ -230,7 +254,8 @@ The endpoints and fields below were verified against the live services on 2026-1
 ### 5.5 NASA EONET
 
 - Every 30 min: `https://eonet.gsfc.nasa.gov/api/v3/events?category=severeStorms&status=all&days=7` (slow: 3–4 s).
-- Events: `id`, `title`, `closed` (null while open, ISO when closed), `sources[].id`, and `geometry`: a list of
+- Events: `id`, `title`, `closed` (null while open, ISO when closed), `sources[].id` and `sources[].url` (the
+  details panel links to the first source's page, falling back to `link`), and `geometry`: a list of
   Points, one per fix (`date`, `coordinates` [lon, lat], `magnitudeValue` in kts), usually 6-hourly.
 - **EONET repeats storms GDACS and NHC already have** (in the sample all four were JTWC storms, one also an NHC
   storm). An EONET storm is hidden at time *t* when a GDACS or NHC cyclone is visible within 300 km of its
@@ -314,7 +339,8 @@ The endpoints and fields below were verified against the live services on 2026-1
      - **divergent** (spreading ridges `OSR`, continental rifts `CRB`): #FFE600;
      - **transform** (`OTF`, `CTF`): #00E5FF. All fully opaque, drawn 3 px wide so they read at full-globe zoom.
 
-     Drawn 3 px wide, fully opaque, into the same lines layer as the coastlines, on top of them.
+     Drawn 3 px wide, fully opaque, into the same lines layer as the coastlines, on top of them (ruling R10: the
+     first style, 1.5 px at 85% in paler colours, looked nearly grey at full-globe zoom).
 - **When it is rebuilt:** once a minute in live mode, whenever the overlay or clouds change, and while the time
   slider moves (at most every 250 ms, with a final rebuild once the slider stops).
 - The finished image is swapped onto the material on the UI thread. Target time: under 300 ms. If that target is
@@ -355,7 +381,8 @@ The endpoints and fields below were verified against the live services on 2026-1
   - Double-click centres on the clicked surface point.
   - Home resets the view.
   - **Face Sun** and **Face Moon** animate the camera to look straight down on the sub-solar or sub-lunar point.
-- **Picking:** hit-testing finds an event. A click selects it and fills the right panel. Hovering shows a
+- **Picking:** point events are found by projecting them to the screen; the surface point under the mouse (for
+  alert areas and double-click) comes from an analytic ray/unit-sphere intersection, cheap enough for hover. A click selects it and fills the right panel. Hovering shows a
   tooltip.
 - **Labels:** M5+ earthquakes and named storms get labels from the adapted label overlay, which avoids overlaps.
 
@@ -430,9 +457,12 @@ overlays. Only rarely changed settings go in dialog windows.
     `SceneController` (view side) watches the view models' state (time, layers, display options, selection) and
     the store's snapshots, and updates the Helix scene directly. The same applies to the Sun and Moon arrow
     overlay. The view models never reference WPF 3D types.
-  - **Services** reach the view models through constructor injection behind interfaces (`IClock`,
-    `IEventStore`, `ILightningSource`, `ISettingsStore`, `IDialogService`), so view models can be tested without
-    a window.
+  - **Services** reach the view models through constructor injection, so view models can be tested without a
+    window. The interfaces today are `IClock` (wall clock and live time), `ISettingsStore` (settings.json),
+    `IAppLog` (the log) and `IEventFeed` (each data source). The event store is the concrete, thread-safe
+    `EventStore` class and the NWS zone outlines the concrete `ZoneCache`; both go to `SceneController` through its
+    constructor. `ILightningSource`, `IDialogService` and `DownloadMeter` arrive with the lightning, settings and
+    download-meter work.
 
 ## 8. Packaging and signing
 
