@@ -34,7 +34,7 @@ package, so it has to work without developer tools and explain itself to non-tec
 | Lightning history | **Live only.** A rolling window of 5–60 minutes, 15 by default. No replay. The code is designed so a Windows Service collector can be added later (§9) |
 | Time | Live by default, plus replay: 7 days for earthquakes, 24 hours for storms and alerts |
 | Audience | Other people, installing a packaged app |
-| Globe look | Blue Marble on both hemispheres. The night side gets a translucent grey layer that follows the terminator. Live clouds can be switched on (NASA GIBS) |
+| Globe look | Blue Marble on both hemispheres. The night side is darkened with a slight blue tint, and a thin gold line marks the day/night boundary (changed 2026-11-11 from the original translucent grey layer, which lightened the dark Blue Marble oceans instead of darkening them). Live clouds can be switched on (NASA GIBS) |
 | Rendering | WPF 3D with HelixToolkit.Wpf (the same approach as SolarSystem3D) |
 | Shared code | A new **AstroCore** repo, used as a git submodule at `external/AstroCore` |
 | Packaging | Self-contained x64 MSIX signed with Azure Trusted Signing, with an `.appinstaller` file for automatic updates |
@@ -258,9 +258,12 @@ before any code depends on them.
   3. **Area features**: NWS alert polygons, cyclone cones and wind areas, filled at 35% opacity with 100% edges.
      They are drawn with a WPF `DrawingVisual` in equirectangular projection into a `RenderTargetBitmap` overlay,
      redrawn only when those features change.
-  4. **Night shade**: for each pixel, the Sun altitude *h* comes from `Terminator`. The pixel is blended with
-     grey (RGB 40, 40, 48) at opacity `maxOpacity × smoothstep(0°, −12°, h)`. `maxOpacity` defaults to 0.55 and
-     can be set from 0 to 0.9.
+  4. **Night shade**: for each pixel, the Sun altitude *h* comes from `Terminator`. Each channel is darkened:
+     `v × (1 − f·(1 − m))`, with f = `strength × smoothstep(0°, −12°, h)` and full-night multipliers
+     m = R 0.32, G 0.36, B 0.50 (a dark blue night that never brightens a pixel). `strength` defaults to 0.85 and
+     can be set from 0 to 1.
+  4a. **Day/night line**: a soft gold line (RGB 255, 200, 120, peak 70% opacity) along h = 0, fading out
+     2.5 image pixels each side, so the boundary shows even over dark ocean. It can be switched off.
   5. **Coastlines and borders** (Natural Earth 1:50m, public domain), 1-pixel lines, optional.
 - **When it is rebuilt:** once a minute in live mode, whenever the overlay or clouds change, and while the time
   slider moves (at most every 250 ms, with a final rebuild once the slider stops).
@@ -337,7 +340,7 @@ overlays. Only rarely changed settings go in dialog windows.
   - Minimum earthquake magnitude (M2.5 by default; "All" is allowed).
   - Earthquake display window: 24 h or 7 days.
   - Lightning window: 5–60 min (15 by default).
-  - Night-shade opacity.
+  - Night-shade strength, and the day/night line on or off.
 - **Sun & Moon card** (top right): sub-solar and sub-lunar points, the Moon's distance and its illuminated
   percentage, plus **Face Sun** and **Face Moon** buttons. It folds down to two icons.
 - **Details panel** (right): slides in when an event is selected and closes with × or Esc. It shows the event's

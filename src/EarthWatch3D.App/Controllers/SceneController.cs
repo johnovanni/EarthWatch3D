@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -33,7 +34,7 @@ public sealed class SceneController
     /// about 1.2 GB, mostly WPF's copies of the texture (see docs/perf.md). The 8192 asset is scaled down while decoding.
     /// </summary>
     public const int GlobeImageWidth = 4096;
-    public const double NightMaxOpacity = 0.55;
+    public const double NightStrength = 0.85;
     public static readonly TimeSpan RecomposeInterval = TimeSpan.FromMinutes(1);
 
     private const string AssetPrefix = "EarthWatch3D.App.Assets.";
@@ -50,6 +51,8 @@ public sealed class SceneController
     private readonly SunMoonOverlay _overlay;
     private readonly SunMoonGlobeMarkers _markers;
     private readonly ModelVisual3D _globeVisual = new();
+    // Tooltip for the Sun/Moon surface markers (billboards can't carry WPF tooltips, so it is driven by hover tests).
+    private readonly ToolTip _markerTip = new() { Placement = PlacementMode.Relative, StaysOpen = true };
     private readonly RecomposeSchedule _schedule = new(RecomposeInterval);
     private readonly TaskCompletionSource _firstCompose = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -93,6 +96,9 @@ public sealed class SceneController
         _viewport.CameraChanged += OnCameraChanged;
         _viewport.PreviewMouseWheel += OnPreviewMouseWheel;
         _viewport.PreviewMouseDown += OnPreviewMouseDown;
+        _viewport.MouseMove += OnViewportMouseMove;
+        _viewport.MouseLeave += OnViewportMouseLeave;
+        _markerTip.PlacementTarget = _viewport;
         _viewport.SizeChanged += OnViewportSizeChanged;
         _card.SizeChanged += OnViewportSizeChanged;   // collapsing the card changes the area the arrows avoid
         _vm.Ticked += OnTicked;
@@ -137,7 +143,7 @@ public sealed class SceneController
                 var now = _clock.UtcNow;
                 _schedule.MarkComposed(now);
                 var subSolar = SubPoints.SubSolarPoint(now);
-                var layers = new GlobeLayers(subSolar, NightMaxOpacity, SparseLines: _lines);
+                var layers = new GlobeLayers(subSolar, NightStrength, SparseLines: _lines);
                 var composer = _composer!;
                 var target = _composed!;
 #if PERF_LOG
@@ -300,6 +306,31 @@ public sealed class SceneController
             new Point3D(moon.X * moonR, moon.Y * moonR, moon.Z * moonR), fraction, sm.MoonWaxing, CardBounds());
     }
 
+    // ---------------------------------------------------------------- marker tooltips
+
+    private void OnViewportMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton == MouseButtonState.Pressed || Camera is not { } camera) { HideMarkerTip(); return; }
+        var mouse = e.GetPosition(_viewport);
+        var projector = new Projector(camera, _viewport.ActualWidth, _viewport.ActualHeight);
+        var sm = _vm.SunMoon;
+        string? text = MarkerHover.Hits(mouse, projector, sm.SubSolar) ? MarkerHover.SunText(sm.SubSolar)
+                     : MarkerHover.Hits(mouse, projector, sm.SubLunar) ? MarkerHover.MoonText(sm.SubLunar)
+                     : null;
+        if (text is null) { HideMarkerTip(); return; }
+        if (!Equals(_markerTip.Content, text)) _markerTip.Content = text;
+        _markerTip.HorizontalOffset = mouse.X + 16;
+        _markerTip.VerticalOffset = mouse.Y + 16;
+        _markerTip.IsOpen = true;
+    }
+
+    private void OnViewportMouseLeave(object sender, MouseEventArgs e) => HideMarkerTip();
+
+    private void HideMarkerTip()
+    {
+        if (_markerTip.IsOpen) _markerTip.IsOpen = false;
+    }
+
     /// <summary>The card's rectangle in overlay coordinates, or Rect.Empty if it is not shown. Allocation-free.</summary>
     private Rect CardBounds()
     {
@@ -407,6 +438,9 @@ public sealed class SceneController
         _viewport.CameraChanged -= OnCameraChanged;
         _viewport.PreviewMouseWheel -= OnPreviewMouseWheel;
         _viewport.PreviewMouseDown -= OnPreviewMouseDown;
+        _viewport.MouseMove -= OnViewportMouseMove;
+        _viewport.MouseLeave -= OnViewportMouseLeave;
+        HideMarkerTip();
         _viewport.SizeChanged -= OnViewportSizeChanged;
         _card.SizeChanged -= OnViewportSizeChanged;
         _vm.Ticked -= OnTicked;

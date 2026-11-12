@@ -8,10 +8,11 @@ A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is
 ## What works today
 
 - **Globe:** NASA Blue Marble imagery with Natural Earth coastlines and country borders. Rotate it and zoom in and out.
-- **Night shading:** a translucent grey layer covers the night side and follows the real day/night line, with a
-  soft twilight edge. The image is recomposed every minute (and after the PC wakes from sleep), so the line moves.
+- **Night shading:** the night side is darkened with a slight blue tint, with a soft twilight edge, and a thin gold
+  line marks the day/night boundary (sunset and sunrise), so it shows even over dark ocean. The image is recomposed every minute (and after the PC wakes from sleep), so the line moves.
 - **Sun and Moon markers:** the points directly under the Sun and the Moon are marked on the globe. The Moon marker
-  shows the current phase.
+  shows the current phase. Hover over a marker for a tooltip: it is where that body is directly overhead, which is
+  also the closest point on Earth to it.
 - **Arrows:** when the Sun or Moon is off screen, an arrow at the window edge points toward it
   ("Sun (behind)" / "Moon (behind)" when it is behind you, the camera: for example the Sun while you look at the day
   side). Arrows keep clear of the Sun & Moon card. When the Sun or Moon is in view but the Earth is in the way, its icon

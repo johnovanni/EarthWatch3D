@@ -4,14 +4,18 @@ namespace EarthWatch3D.Core.Globe;
 
 public sealed record GlobeLayers(
     GeoPosition SubSolarPoint,
-    double NightMaxOpacity,
+    double NightStrength,
     Bgra32Image? Clouds = null,
     Bgra32Image? Areas = null,
     Bgra32Image? Lines = null,
-    SparseOverlay? SparseLines = null);
+    SparseOverlay? SparseLines = null,
+    bool DrawTerminator = true);
 
 /// <summary>
-/// Composes the globe texture: base, clouds, areas, night shade, lines (each straight-alpha blended).
+/// Composes the globe texture: base, clouds, areas, night shade, day/night line, lines.
+/// The night side is darkened (each channel multiplied toward a blue-tinted dark, so it never gets lighter),
+/// with strength <c>NightStrength × smoothstep(0°, −12°, h)</c> where h is the Sun's altitude.
+/// The day/night line is a soft gold line along h = 0, about <see cref="TerminatorHalfWidthPx"/> pixels each side.
 /// Lines may be given dense (<see cref="GlobeLayers.Lines"/>) or sparse (<see cref="GlobeLayers.SparseLines"/>,
 /// same result, far less memory); if both are given, the sparse lines are drawn after the dense ones.
 /// Pixel (x, y) is centred at lon = -180 + (x+0.5)*360/W, lat = 90 - (y+0.5)*180/H.
@@ -20,14 +24,20 @@ public sealed class GlobeImageComposer(Bgra32Image baseImage)
 {
     private const double TwilightDeg = -12.0;
     private static readonly double SinTwilight = Math.Sin(TwilightDeg * Math.PI / 180.0);
-    private const byte ShadeB = 48, ShadeG = 40, ShadeR = 40;
+    // Full-night channel multipliers: darker in red and green than blue, so night reads as dark blue.
+    private const double NightMulB = 0.50, NightMulG = 0.36, NightMulR = 0.32;
+    // Day/night line: colour, peak opacity, and half-width in image pixels.
+    private const byte LineB = 120, LineG = 200, LineR = 255;
+    private const double LineMaxAlpha = 0.7;
+    public const double TerminatorHalfWidthPx = 2.5;
 
     private readonly Bgra32Image _base = baseImage ?? throw new ArgumentNullException(nameof(baseImage));
 
-    public static double NightOpacity(double sunAltitudeDeg, double maxOpacity)
+    /// <summary>How strongly a point is darkened: <paramref name="strength"/> × smoothstep(0°, −12°, altitude).</summary>
+    public static double NightFactor(double sunAltitudeDeg, double strength)
     {
         double t = Math.Clamp((sunAltitudeDeg - 0.0) / (TwilightDeg - 0.0), 0.0, 1.0);
-        return maxOpacity * (t * t * (3.0 - 2.0 * t));
+        return strength * (t * t * (3.0 - 2.0 * t));
     }
 
     public void ComposeInto(GlobeLayers layers, Bgra32Image target)
@@ -42,7 +52,7 @@ public sealed class GlobeImageComposer(Bgra32Image baseImage)
         if (layers.SparseLines is { } sl && (sl.Width != w || sl.Height != h))
             throw new ArgumentException($"SparseLines must be {w}x{h}, got {sl.Width}x{sl.Height}.", nameof(layers));
 
-        double max = Math.Clamp(layers.NightMaxOpacity, 0.0, 1.0);
+        double max = Math.Clamp(layers.NightStrength, 0.0, 1.0);
         double deg = Math.PI / 180.0;
         double sinDec = Math.Sin(layers.SubSolarPoint.LatitudeDeg * deg);
         double cosDec = Math.Cos(layers.SubSolarPoint.LatitudeDeg * deg);
@@ -56,10 +66,14 @@ public sealed class GlobeImageComposer(Bgra32Image baseImage)
         var fullB = new byte[256]; var fullG = new byte[256]; var fullR = new byte[256];
         for (int v = 0; v < 256; v++)
         {
-            fullB[v] = Mix(ShadeB, v, max);
-            fullG[v] = Mix(ShadeG, v, max);
-            fullR[v] = Mix(ShadeR, v, max);
+            fullB[v] = Darken(v, NightMulB, max);
+            fullG[v] = Darken(v, NightMulG, max);
+            fullR[v] = Darken(v, NightMulR, max);
         }
+
+        double lineHalfDeg = TerminatorHalfWidthPx * 180.0 / h;
+        double sinLineHalf = Math.Sin(lineHalfDeg * deg);
+        bool line = layers.DrawTerminator;
 
         var src = _base.Pixels;
         var dst = target.Pixels;
@@ -76,7 +90,7 @@ public sealed class GlobeImageComposer(Bgra32Image baseImage)
             if (clouds != null) Blend(clouds, dst, row, w);
             if (areas != null) Blend(areas, dst, row, w);
 
-            if (shade)
+            if (shade || line)
             {
                 double lat = 90.0 - (y + 0.5) * 180.0 / h;
                 double sinLat = Math.Sin(lat * deg), cosLat = Math.Cos(lat * deg);
@@ -85,20 +99,31 @@ public sealed class GlobeImageComposer(Bgra32Image baseImage)
                 for (int x = 0; x < w; x++, p += 4)
                 {
                     double s = a + b * cosDl[x];
-                    if (s >= 0.0) continue;
-                    if (s <= SinTwilight)
+                    if (shade && s < 0.0)
                     {
-                        dst[p] = fullB[dst[p]];
-                        dst[p + 1] = fullG[dst[p + 1]];
-                        dst[p + 2] = fullR[dst[p + 2]];
+                        if (s <= SinTwilight)
+                        {
+                            dst[p] = fullB[dst[p]];
+                            dst[p + 1] = fullG[dst[p + 1]];
+                            dst[p + 2] = fullR[dst[p + 2]];
+                        }
+                        else
+                        {
+                            double f = NightFactor(Math.Asin(s) / deg, max);
+                            dst[p] = Darken(dst[p], NightMulB, f);
+                            dst[p + 1] = Darken(dst[p + 1], NightMulG, f);
+                            dst[p + 2] = Darken(dst[p + 2], NightMulR, f);
+                        }
                     }
-                    else
+                    if (line && Math.Abs(s) < sinLineHalf)
                     {
-                        double alt = Math.Asin(s) / deg;
-                        double op = NightOpacity(alt, max);
-                        dst[p] = Mix(ShadeB, dst[p], op);
-                        dst[p + 1] = Mix(ShadeG, dst[p + 1], op);
-                        dst[p + 2] = Mix(ShadeR, dst[p + 2], op);
+                        double la = LineMaxAlpha * (1.0 - Math.Abs(Math.Asin(s) / deg) / lineHalfDeg);
+                        if (la > 0.0)
+                        {
+                            dst[p] = Mix(LineB, dst[p], la);
+                            dst[p + 1] = Mix(LineG, dst[p + 1], la);
+                            dst[p + 2] = Mix(LineR, dst[p + 2], la);
+                        }
                     }
                 }
             }
@@ -109,6 +134,10 @@ public sealed class GlobeImageComposer(Bgra32Image baseImage)
             for (int p = row + 3, end = row + w * 4; p < end; p += 4) dst[p] = 255;
         });
     }
+
+    /// <summary>v × (1 − f·(1 − m)): f = 0 leaves v unchanged, f = 1 multiplies it by m. Never brightens.</summary>
+    private static byte Darken(int v, double m, double f) =>
+        (byte)Math.Round(v * (1.0 - f * (1.0 - m)), MidpointRounding.AwayFromZero);
 
     private static byte Mix(int srcValue, int dstValue, double a) =>
         (byte)Math.Round(srcValue * a + dstValue * (1.0 - a), MidpointRounding.AwayFromZero);
