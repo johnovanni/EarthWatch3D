@@ -7,6 +7,7 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="CardStyles.xaml"/>
+                <ResourceDictionary Source="TimeBarStyles.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <Style TargetType="TextBlock">
                 <Setter Property="Foreground" Value="White"/>
@@ -104,14 +105,15 @@
                 <ColumnDefinition Width="6*"/>
                 <ColumnDefinition Width="1*"/>
             </Grid.ColumnDefinitions>
-            <!-- The last 24 h of the 7-day range: a lighter band behind the track. -->
+            <!-- The 6*/1* columns assume TimelineViewModel.Range is 7 days (24 h = 1/7). The slider Maximum is set in code from Range.
+                 The last 24 h of the 7-day range: a lighter band behind the track. -->
             <Rectangle Grid.Column="1" Height="8" Fill="#33FFFFFF" RadiusX="3" RadiusY="3" IsHitTestVisible="False"/>
-            <Slider Grid.ColumnSpan="2" x:Name="TimeSlider" Minimum="0" Maximum="604800"
+            <Slider Grid.ColumnSpan="2" x:Name="TimeSlider" Minimum="0"
                     SmallChange="60" LargeChange="3600" IsMoveToPointEnabled="True" VerticalAlignment="Center"
                     Value="{Binding SliderSeconds, Mode=TwoWay}"/>
         </Grid>
 
-        <TextBlock Grid.Column="6" FontFamily="Consolas" FontSize="13" Text="{Binding ReadoutText}"
+        <TextBlock Grid.Column="6" FontFamily="Consolas" FontSize="13" MinWidth="190" Text="{Binding ReadoutText}"
                    ToolTip="{Binding LocalTimeText}" Margin="0,0,10,0"/>
         <ContentControl Grid.Column="7" x:Name="StatusHost" VerticalAlignment="Center"/>
     </Grid>
