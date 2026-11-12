@@ -1,6 +1,7 @@
 #if PERF_LOG
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Runtime;
 using System.Runtime.InteropServices;
 using System.Windows.Media;
@@ -12,14 +13,46 @@ namespace EarthWatch3D.App.Diagnostics;
 /// <summary>
 /// PERF_LOG builds only. After load (and, with offline samples, once their events are drawn): working set at 10 s, the optional <c>--bench</c> rotation (360° about +Z over 5 s,
 /// average FPS from CompositionTarget.Rendering frames) and a forced-GC experiment.
-/// Every compose is logged by the SceneController.
+/// Every compose is logged by the SceneController, and every event cache save by the App. Once a minute for the whole
+/// run: memory, thread count, events.json size, alert count and how many of the alerts' zones are loaded.
 /// </summary>
 internal static class PerfRun
 {
     /// <param name="waitForData">Offline samples only: the bench waits for the events to be drawn first (see
     /// <see cref="SnapshotDiagnostic.WaitForDataAsync"/>), so it measures the globe with events on it.</param>
-    public static void Start(SceneController scene, string[] args, Func<Task>? waitForData = null) =>
+    public static void Start(SceneController scene, string[] args, Func<Task>? waitForData = null)
+    {
         _ = RunAsync(scene, args.Contains("--bench"), waitForData);
+        _ = MinuteLogAsync(scene);
+    }
+
+    private static async Task MinuteLogAsync(SceneController scene)
+    {
+        try
+        {
+            var store = scene.Store;
+            var zones = scene.Zones;
+            int zonesLoadedEvents = 0;
+            zones.ZonesLoaded += (_, _) => Interlocked.Increment(ref zonesLoadedEvents);
+            var eventsFile = Core.Storage.AppPaths.Default.EventsFile;
+            var zonesDir = Core.Storage.AppPaths.Default.ZonesDir;
+            using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+            for (int minute = 1; await timer.WaitForNextTickAsync(); minute++)
+            {
+                using var p = Process.GetCurrentProcess();
+                long cacheBytes = File.Exists(eventsFile) ? new FileInfo(eventsFile).Length : -1;
+                var s = store.Snapshot;
+                var zoneIds = s.Alerts.SelectMany(a => a.ZoneIds).Distinct(StringComparer.Ordinal).ToList();
+                int inMemory = zoneIds.Count(z => zones.TryGetCached(z, out _));
+                int zoneFiles = Directory.Exists(zonesDir) ? Directory.EnumerateFiles(zonesDir, "*.json").Count() : 0;
+                PerfLog.Write(string.Create(CultureInfo.InvariantCulture,
+                    $"minute {minute}: {PerfLog.Memory()} threads={p.Threads.Count} handles={p.HandleCount} events.json={cacheBytes / 1024.0:F0} KB " +
+                    $"quakes={s.Earthquakes.Count} advisories={s.Cyclones.Count} alerts={s.Alerts.Count} eonet={s.Eonet.Count} " +
+                    $"alert zones loaded={inMemory}/{zoneIds.Count} zone files={zoneFiles} ZonesLoaded events={Volatile.Read(ref zonesLoadedEvents)}"));
+            }
+        }
+        catch (Exception ex) { PerfLog.Write("minute log failed: " + ex); }
+    }
 
     private static async Task RunAsync(SceneController scene, bool bench, Func<Task>? waitForData)
     {

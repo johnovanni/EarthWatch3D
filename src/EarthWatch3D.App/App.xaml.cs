@@ -119,7 +119,16 @@ public partial class App : Application
             waitForData = async () => { await allOk; await zones.WhenIdleAsync(); };
         }
 
+#if PERF_LOG
+        int cacheSaves = 0;
+        _cacheWriter = new EventCacheWriter(store, s =>
+        {
+            bool ok = cache.Save(s);
+            PerfLog.Write($"event cache save #{Interlocked.Increment(ref cacheSaves)} ok={ok}: {s.Earthquakes.Count} quakes, {s.Alerts.Count} alerts");
+        }, log: log);
+#else
         _cacheWriter = new EventCacheWriter(store, s => cache.Save(s), log: log);
+#endif
         _pruneTimer = new Timer(_ => PruneStore(store, log), null, PruneInterval, PruneInterval);
 
         // Offline, the readout says SAMPLE instead of LIVE (and the window title says so), so sample data can never be
