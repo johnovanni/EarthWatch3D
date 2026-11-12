@@ -119,6 +119,51 @@ last update time or its error.
 - [ ] Start the app with a bad option, for example `--display-time yesterday`. A message explains what is wrong and
       the app closes without opening the globe.
 
+## MSIX
+
+The installed package, built by `tools/build-release.ps1` (see [release.md](release.md)). Before the first check,
+trust the test certificate once (elevated; the command is in release.md) and build a local test package whose
+`.appinstaller` points at the files on disk:
+
+```
+pwsh tools/build-release.ps1 -Signing Test -BaseUri "file:///C:/repos/EarthWatch3D/artifacts/release/"
+```
+
+If an unpackaged EarthWatch3D is running (`dotnet run`), close it first.
+
+- [ ] **Install:** double-click `artifacts\release\EarthWatch3D.appinstaller`. App Installer shows EarthWatch3D,
+      publisher **EarthWatch3D test build**, version 1.0.0.0; **Install** completes without an error.
+- [ ] **Start menu:** EarthWatch3D is in the Start menu with the globe icon (not a blank tile), also in the taskbar
+      once it runs, and in Settings → Apps → Installed apps.
+- [ ] **Starts:** the app starts from the Start menu, the globe and the events appear, and the status dots turn green.
+- [ ] **Welcome once:** the Welcome window shows on the first start of the installed app; after closing it and
+      restarting, it does not show again. (The installed app has its own settings, separate from `dotnet run`'s, so
+      Welcome shows once here even if you have seen it before.)
+- [ ] **Data folder:** About (the **i** button) shows the data folder as
+      `%LOCALAPPDATA%\Packages\johnovanni.EarthWatch3D_…\LocalCache\Local\EarthWatch3D` (with the real path, not
+      `%LOCALAPPDATA%\EarthWatch3D`), and **Open** opens that folder in Explorer, holding `settings.json`, the cache
+      and `logs`.
+- [ ] **Update keeps settings:**
+      1. In the installed app, open Settings: choose **miles**, set the daily limit to **50** MB, enter a test
+         EUMETSAT key and secret (any text; there is no need to press **Test**), and **Save**. Let the app run for a
+         minute so events are cached, then close it.
+      2. Raise the version in `Directory.Build.props` to `1.0.1` and build into the same folder with the same
+         command as above (the `file:///` base URI). Do not commit the version change unless it is a real release.
+      3. Start the app from the Start menu and accept the update prompt. Windows checks on start only when 24 hours
+         have passed since its last check (`HoursBetweenUpdateChecks="24"`), so right after installing there may be
+         no prompt yet: then double-click `artifacts\release\EarthWatch3D.appinstaller` instead, and App Installer
+         offers **Update** from 1.0.0.0 to 1.0.1.0. (Check the prompt itself on a later day.)
+      4. About shows version **1.0.1**. Settings still shows miles, the 50 MB limit, the test key in the key box and
+         **(saved)** next to the secret box. The events appear straight away from the cache, before the first
+         download finishes, and **Today:** keeps the day's count.
+      5. Put the version back to `1.0.0`.
+- [ ] **Uninstall:** Settings → Apps → Installed apps → EarthWatch3D → Uninstall. Afterwards there is no
+      `%LOCALAPPDATA%\Packages\johnovanni.EarthWatch3D_*` folder, and EarthWatch3D is gone from the Start menu.
+- [ ] **If the file:/// update source is refused** (App Installer reports it cannot use the URI): serve the folder
+      with `python -m http.server 8080 --bind 127.0.0.1` (run in `artifacts\release`), build with
+      `-BaseUri http://127.0.0.1:8080/` and install from `http://127.0.0.1:8080/EarthWatch3D.appinstaller`
+      (download it and open the file).
+
 ## Offline samples
 
 To check the drawing without depending on today's weather, start the app on the saved samples (captured around

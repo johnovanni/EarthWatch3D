@@ -46,12 +46,24 @@ A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is
   20 MB. If the globe image ever fails to compose, the plain Blue Marble is shown until the next try.
   The log is in `%LOCALAPPDATA%\EarthWatch3D\logs`.
 
-### Coming in plans 3–4
+### Coming in plan 3
 
 | Plan | Adds |
 |---|---|
 | 3. Lightning, clouds, data use | Live lightning (GOES GLM, and Meteosat MTG with your own EUMETSAT key), live clouds (NASA GIBS), a data-use meter and the Settings dialog |
-| 4. Ship | Welcome and About screens, a signed MSIX installer with automatic updates |
+
+## Install
+
+You need Windows 10 (version 1809 or later) or Windows 11 on a 64-bit (x64) PC.
+
+1. Download **`EarthWatch3D.appinstaller`** from the [latest release](https://github.com/johnovanni/EarthWatch3D/releases/latest).
+2. Open it (double-click). Windows' App Installer shows the app and its publisher; choose **Install**.
+
+EarthWatch3D then appears in the Start menu. Updates arrive by themselves: Windows looks for a new version in the
+background, and also when the app starts (at most once a day; then it asks before updating). Your settings and data
+are kept across updates. To remove the app, use Settings → Apps → Installed apps; that also removes its data folder.
+
+How the package is built and signed is in [docs/release.md](docs/release.md).
 
 ## Build and run
 

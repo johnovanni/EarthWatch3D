@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest template. tools/build-release.ps1 fills {Version}, {Publisher} and {PublisherDisplayName}
+  and writes the result to artifacts/stage/AppxManifest.xml. Publisher must equal the signing certificate's
+  subject exactly, or the package cannot be signed or installed.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="johnovanni.EarthWatch3D"
+    Version="{Version}"
+    Publisher="{Publisher}"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>EarthWatch3D</DisplayName>
+    <PublisherDisplayName>{PublisherDisplayName}</PublisherDisplayName>
+    <Logo>Images\StoreLogo.png</Logo>
+    <Description>Live Earth events (earthquakes, storms, wildfires, volcanoes, lightning, clouds) on a 3D globe.</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-US" />
+  </Resources>
+
+  <Applications>
+    <Application Id="EarthWatch3D" Executable="EarthWatch3D.App.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="EarthWatch3D"
+        Description="Live Earth events on a 3D globe"
+        BackgroundColor="transparent"
+        Square150x150Logo="Images\Square150x150Logo.png"
+        Square44x44Logo="Images\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Images\Wide310x150Logo.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

@@ -483,3 +483,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Signing settings that stay on this machine (Plan 4): Artifact Signing account details and the publisher.
+packaging/metadata.json
+packaging/signing.local.json

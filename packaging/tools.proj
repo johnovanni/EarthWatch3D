@@ -1,0 +1,23 @@
+<!--
+  Restores the pinned packaging tools into the NuGet cache; it builds nothing and is not part of
+  EarthWatch3D.sln. tools/build-release.ps1 runs `dotnet restore packaging/tools.proj` and then finds
+  makeappx.exe, makepri.exe, signtool.exe (x64) and Azure.CodeSigning.Dlib.dll in the cache.
+  Versions are exact; change them only on purpose (see docs/release.md).
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultItems>false</EnableDefaultItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Windows SDK build tools: makeappx, makepri, signtool (the machine's SDK 10.0.19041 is too old for Artifact Signing). -->
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9457" ExcludeAssets="all" />
+    <!-- Azure Artifact Signing (formerly Trusted Signing) client: Azure.CodeSigning.Dlib.dll for signtool /dlib. -->
+    <PackageReference Include="Microsoft.ArtifactSigning.Client" Version="1.0.151" ExcludeAssets="all" />
+  </ItemGroup>
+
+</Project>
