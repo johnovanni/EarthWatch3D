@@ -78,7 +78,7 @@ public sealed class SceneController
     private GlobeImageComposer? _composer;
     private Bgra32Image? _plain;
     private SparseOverlay? _lines;          // coastlines and borders
-    private SparseOverlay? _plates;         // plate boundaries, rasterized the first time they are shown
+    private readonly LazyLayer<SparseOverlay> _plates;   // plate boundaries, rasterized the first time they are shown
     private SparseOverlay? _linesAndPlates; // the two merged, plates on top
     private Bgra32Image? _composed;
     private WriteableBitmap? _bitmap;
@@ -129,6 +129,7 @@ public sealed class SceneController
         _window = window ?? throw new ArgumentNullException(nameof(window));
 
         _animator = new CameraAnimator(() => Camera);
+        _plates = new LazyLayer<SparseOverlay>(BuildPlatesAsync);
         _overlay = new SunMoonOverlay(overlay);
         _markers = new SunMoonGlobeMarkers();
         _viewport.Children.Add(_globeVisual);
@@ -297,6 +298,8 @@ public sealed class SceneController
         if (e.PropertyName is not (nameof(LayersViewModel.ShowCoastlines) or nameof(LayersViewModel.ShowPlates)
                                    or nameof(DisplayOptionsViewModel.NightStrength)
                                    or nameof(DisplayOptionsViewModel.ShowTerminator))) return;
+        // Switching plates off is the way to retry a plate load that failed (it is not retried on every compose).
+        if (e.PropertyName == nameof(LayersViewModel.ShowPlates) && !_vm.Layers.ShowPlates) _plates.ForgetFailure();
         _settingsDirty = true;
         if (_window.WindowState == WindowState.Minimized) return;   // composed on restore instead
         RequestRecompose();   // throttled: the night-shade slider changes it many times a second
@@ -394,42 +397,43 @@ public sealed class SceneController
 
     /// <summary>
     /// The lines layer for the toggles: coastlines and/or plate boundaries (plates on top), or null for neither.
-    /// The plates are read and rasterized on the STA worker the first time they are wanted, then kept.
+    /// The plates are read and rasterized on the STA worker the first time they are wanted, then kept. A failed load
+    /// is logged once and not retried on every compose, only after the user switches plates off and on again.
     /// </summary>
     private async Task<SparseOverlay?> GetLinesLayerAsync(bool coastlines, bool plates)
     {
-        if (plates && _plates is null && _lines is { } like)
+        var plateLines = plates && _lines is not null ? await _plates.GetAsync(OnPlatesFailed) : null;
+        if (plateLines is not null)
         {
-            int w = like.Width, h = like.Height;
-            try
-            {
-            _plates = await _sta.InvokeAsync(() =>
-            {
-                using var s = Asset("plate_boundaries.geojson");
-                var all = PlateBoundaries.Read(s);
-                IEnumerable<IReadOnlyList<GeoPosition>> Of(PlateBoundaryKind k) => all.Where(b => b.Kind == k).Select(b => b.Line.Points);
-                Color C(uint argb) => Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
-                return SparseOverlay.FromImage(LineRasterizer.Rasterize(
-                [
-                    (Of(PlateBoundaryKind.Transform), C(PlateBoundaries.TransformArgb)),
-                    (Of(PlateBoundaryKind.Divergent), C(PlateBoundaries.DivergentArgb)),
-                    (Of(PlateBoundaryKind.Convergent), C(PlateBoundaries.ConvergentArgb)),
-                ], w, h, 3.0));
-            });
-            }
-            catch (OperationCanceledException) when (_closed) { return null; }
-            catch (Exception ex)
-            {
-                _log.Error("Plate boundaries could not be drawn; showing coastlines only", ex);
-                return coastlines ? _lines : null;
-            }
-        }
-        if (plates && _plates is not null)
-        {
-            if (!coastlines || _lines is null) return _plates;
-            return _linesAndPlates ??= SparseOverlay.Merge(_lines, _plates);
+            if (!coastlines || _lines is null) return plateLines;
+            return _linesAndPlates ??= SparseOverlay.Merge(_lines, plateLines);
         }
         return coastlines ? _lines : null;
+    }
+
+    private void OnPlatesFailed(Exception ex)
+    {
+        if (_closed && ex is OperationCanceledException) return;   // the rasterizer was shut down by the window closing
+        _log.Error("Plate boundaries could not be drawn; showing coastlines only (switch plates off and on to try again)", ex);
+    }
+
+    /// <summary>Reads and rasterizes the PB2002 plate boundaries at the size of the coastlines layer (on the STA worker).</summary>
+    private Task<SparseOverlay> BuildPlatesAsync()
+    {
+        int w = _lines!.Width, h = _lines.Height;
+        return _sta.InvokeAsync(() =>
+        {
+            using var s = Asset("plate_boundaries.geojson");
+            var all = PlateBoundaries.Read(s);
+            IEnumerable<IReadOnlyList<GeoPosition>> Of(PlateBoundaryKind k) => all.Where(b => b.Kind == k).Select(b => b.Line.Points);
+            Color C(uint argb) => Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
+            return SparseOverlay.FromImage(LineRasterizer.Rasterize(
+            [
+                (Of(PlateBoundaryKind.Transform), C(PlateBoundaries.TransformArgb)),
+                (Of(PlateBoundaryKind.Divergent), C(PlateBoundaries.DivergentArgb)),
+                (Of(PlateBoundaryKind.Convergent), C(PlateBoundaries.ConvergentArgb)),
+            ], w, h, 3.0));
+        });
     }
 
     private static Stream Asset(string name) =>
