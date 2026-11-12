@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\Samples\**" CopyToOutputDirectory="PreserveNewest" LinkBase="Samples" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\EarthWatch3D.App\EarthWatch3D.App.csproj" />
     <ProjectReference Include="..\..\src\EarthWatch3D.Core\EarthWatch3D.Core.csproj" />
   </ItemGroup>
