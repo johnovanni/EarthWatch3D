@@ -32,6 +32,8 @@ public sealed record AppSettings
     public const int MinDailyLimitMb = 10, MaxDailyLimitMb = 100_000;
     /// <summary>Kilometres or miles for every distance and speed shown.</summary>
     public DistanceUnits Units { get; init; } = DistanceUnits.Kilometres;
+    /// <summary>True once the first-run Welcome window has been closed (any way), so it is not shown again.</summary>
+    public bool WelcomeShown { get; init; } = false;
     /// <summary>The EUMETSAT consumer key, encrypted (base64 DPAPI blob); null means not set. Never stored in plain text.</summary>
     public string? EumetsatKeyProtected { get; init; } = null;
     /// <summary>The EUMETSAT consumer secret, encrypted (base64 DPAPI blob); null means not set.</summary>

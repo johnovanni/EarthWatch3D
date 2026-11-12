@@ -118,6 +118,39 @@ public class CardReadabilityTests
         });
     }
 
+    [Theory, InlineData(false), InlineData(true)]
+    public void AllWelcomeWindowTextIsLight(bool mtg)
+    {
+        Sta.Run(() =>
+        {
+            var window = new WelcomeWindow(new WelcomeViewModel(new FakeSettingsStore(), new RecordingDialogService(), new RecordingLinkOpener(), mtg));
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+            content.Measure(new Size(520, 3000));
+            content.Arrange(new Rect(0, 0, 520, 3000));
+            content.UpdateLayout();
+            AssertAllLight(content, 8);
+            var texts = string.Join(" ", Descendants(content).OfType<TextBlock>().Select(TextOf));
+            Assert.Contains("Shown for interest, not for safety decisions.", texts);
+        });
+    }
+
+    [Fact]
+    public void WelcomeWindowFitsTheScreenAndKeepsItsButtonsOutsideTheScroller()
+    {
+        Sta.Run(() =>
+        {
+            var window = new WelcomeWindow(new WelcomeViewModel(new FakeSettingsStore(), new RecordingDialogService(), new RecordingLinkOpener(), true));
+            Assert.True(window.MaxHeight <= SystemParameters.WorkArea.Height);
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+            var scroller = Assert.IsType<ScrollViewer>(content.FindName("Scroller") ?? LogicalFind(content, "Scroller"));
+            Assert.Equal(ScrollBarVisibility.Auto, scroller.VerticalScrollBarVisibility);
+            var buttons = LogicalDescendants(content).OfType<Button>().ToList();
+            Assert.True(buttons.Count >= 2);
+            foreach (var b in buttons)
+                Assert.DoesNotContain(scroller, Ancestors(b));
+        });
+    }
+
     private static object? LogicalFind(DependencyObject root, string name) =>
         LogicalDescendants(root).OfType<FrameworkElement>().FirstOrDefault(e => e.Name == name);
 

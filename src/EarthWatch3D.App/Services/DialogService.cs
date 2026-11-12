@@ -25,6 +25,16 @@ public sealed class DialogService(Func<Window?> owner, ISettingsStore settings, 
         window.ShowDialog();
     }
 
+    public void ShowWelcome()
+    {
+        var window = CreateWelcome();
+        if (owner() is { IsLoaded: true } o) window.Owner = o;
+        window.ShowDialog();
+    }
+
+    /// <summary>The Welcome window, not yet shown (the <c>--dialog welcome</c> diagnostic shows it without blocking).</summary>
+    public WelcomeWindow CreateWelcome() => new(new WelcomeViewModel(settings, this, linkOpener));
+
     /// <summary>The About window, not yet shown (the <c>--dialog about</c> diagnostic shows it without blocking).</summary>
     public AboutWindow CreateAbout() => new(new AboutViewModel(linkOpener, dataFolder));
 }

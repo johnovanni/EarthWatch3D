@@ -263,22 +263,33 @@ public partial class App : Application
         if (options.Any)
             _ = SnapshotDiagnostic.RunAsync(window, window.Scene, vm, options, offsetClock, waitForData, log, name => name switch
             {
-                "about" => ShowAboutForDiagnostic(dialogs),
-                _ => throw new NotSupportedException($"--dialog {name} is not available yet"),
+                "about" => ShowForDiagnostic(dialogs.CreateAbout()),
+                "welcome" => ShowForDiagnostic(dialogs.CreateWelcome()),
+                _ => throw new NotSupportedException($"--dialog {name} is not available"),
             });
 #if PERF_LOG
         PerfRun.Start(window.Scene, e.Args, waitForData);
 #endif
+        // First run only, and never in a diagnostic or offline run. Shown once the globe is drawn, so it is already up
+        // behind the Welcome and the feeds have started. The flag goes through the debounced saver, flushed at shutdown.
+        if (WelcomeViewModel.ShouldShow(_settings.Load(), options))
+        {
+            void ShowWelcome(object? s, EventArgs a)
+            {
+                window.ContentRendered -= ShowWelcome;
+                dialogs.ShowWelcome();
+            }
+            window.ContentRendered += ShowWelcome;
+        }
         window.Show();
     }
 
-    /// <summary>Opens About without blocking (the diagnostic goes on to save it), over the main window.</summary>
-    private Window ShowAboutForDiagnostic(DialogService dialogs)
+    /// <summary>Opens a dialog without blocking (the diagnostic goes on to save it), over the main window.</summary>
+    private Window ShowForDiagnostic(Window dialog)
     {
-        var about = dialogs.CreateAbout();
-        if (MainWindow is { IsLoaded: true } owner) about.Owner = owner;
-        about.Show();
-        return about;
+        if (MainWindow is { IsLoaded: true } owner) dialog.Owner = owner;
+        dialog.Show();
+        return dialog;
     }
 
     protected override void OnExit(ExitEventArgs e)

@@ -8,4 +8,7 @@ public interface IDialogService
 
     /// <summary>Shows the About window (version, credits, licences) and returns when it is closed.</summary>
     void ShowAbout();
+
+    /// <summary>Shows the first-run Welcome window and returns when it is closed.</summary>
+    void ShowWelcome();
 }

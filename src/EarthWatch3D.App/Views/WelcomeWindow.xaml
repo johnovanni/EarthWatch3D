@@ -1,0 +1,85 @@
+<Window x:Class="EarthWatch3D.App.Views.WelcomeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Welcome to EarthWatch3D" Width="520" SizeToContent="Height" ResizeMode="NoResize"
+        ShowInTaskbar="False" WindowStartupLocation="CenterOwner" Background="#101624">
+    <!-- DataContext: WelcomeViewModel. The About window's look: dark, content scrolls, buttons stay in a footer. -->
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="CardStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <Style TargetType="TextBlock">
+                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="TextWrapping" Value="Wrap"/>
+            </Style>
+            <Style x:Key="Heading" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                <Setter Property="Foreground" Value="#C8CDD8"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Margin" Value="0,14,0,4"/>
+            </Style>
+            <Style x:Key="Note" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                <Setter Property="Foreground" Value="#C8CDD8"/>
+                <Setter Property="FontSize" Value="12"/>
+            </Style>
+            <Style TargetType="Hyperlink">
+                <Setter Property="Foreground" Value="#7FB6FF"/>
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Grid>
+    <Grid.RowDefinitions>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <ScrollViewer x:Name="Scroller" Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="20,16,20,0">
+        <TextBlock Text="Welcome to EarthWatch3D" FontSize="22" FontWeight="SemiBold"/>
+        <TextBlock Margin="0,8,0,0"
+                   Text="A 3D globe of what is happening on Earth now: live earthquakes, tropical cyclones, US weather warnings, NASA storm reports and lightning, with the Sun and Moon."/>
+
+        <TextBlock Style="{StaticResource Heading}" Text="Getting around"/>
+        <TextBlock Text="Drag to turn the globe, use the wheel to zoom, double-click to centre on a spot, and press Home to reset. Click a marker for details."/>
+
+        <TextBlock Style="{StaticResource Heading}" Text="Layers"/>
+        <TextBlock Text="The strip at the left turns layers on and off. Hover a button to see its key."/>
+
+        <TextBlock Style="{StaticResource Heading}" Text="Time"/>
+        <TextBlock Text="The time bar replays the last 7 days. Lightning is live only."/>
+
+        <TextBlock Style="{StaticResource Heading}" Text="Data use"/>
+        <TextBlock Text="About 80 MB an hour with lightning on, and a few MB a day without it. Settings can set a daily limit."/>
+
+        <TextBlock Style="{StaticResource Heading}" Text="Lightning in Europe and Africa"/>
+        <TextBlock>
+            <Run Text="{Binding KeyText, Mode=OneWay}"/>
+            <Run Text=" "/><Hyperlink Foreground="#7FB6FF" Command="{Binding OpenKeyLinkCommand}"><Run Text="Get a free key"/></Hyperlink>
+        </TextBlock>
+
+        <TextBlock Style="{StaticResource Note}" Margin="0,14,0,0" Text="Shown for interest, not for safety decisions."/>
+    </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel x:Name="Footer" Grid.Row="1" Margin="20,0,20,16">
+        <TextBlock Foreground="#FFB4A8" Margin="0,10,0,0" Text="{Binding Message}">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                    <Style.Triggers>
+                        <Trigger Property="Text" Value="">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+        <DockPanel Margin="0,16,0,0" LastChildFill="False">
+            <Button DockPanel.Dock="Right" Style="{StaticResource CardButton}" Content="Start" Padding="18,4" IsDefault="True"
+                    Command="{Binding StartCommand}"/>
+            <Button DockPanel.Dock="Right" Style="{StaticResource CardButton}" Content="Open Settings" Padding="14,4" Margin="0,0,10,0"
+                    Command="{Binding OpenSettingsCommand}"/>
+        </DockPanel>
+    </StackPanel>
+    </Grid>
+</Window>

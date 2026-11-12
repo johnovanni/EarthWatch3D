@@ -23,8 +23,19 @@ public class LaunchOptionsTests
     [Fact]
     public void IgnoresUnknownAndIncompleteArguments()
     {
-        var o = LaunchOptions.Parse(["--bench", "--delay-ms", "soon", "--snapshot"]);
+        var o = LaunchOptions.Parse(["--whatever", "--delay-ms", "soon", "--snapshot"]);
         Assert.Equal(new LaunchOptions(null, false, LaunchOptions.DefaultDelayMs), o);
+    }
+
+    [Fact]
+    public void BenchIsAFlagAndADiagnosticRun()
+    {
+        var o = LaunchOptions.Parse(["--bench"]);
+        Assert.True(o.Bench);
+        Assert.True(o.IsDiagnosticRun);
+        Assert.False(o.Any);   // nothing for the snapshot diagnostic to do
+        Assert.False(LaunchOptions.Parse([]).IsDiagnosticRun);
+        Assert.False(LaunchOptions.Parse(["--layers", "plates"]).IsDiagnosticRun);
     }
 
     [Fact]

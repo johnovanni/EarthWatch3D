@@ -23,7 +23,7 @@ namespace EarthWatch3D.App.Diagnostics;
 public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int DelayMs, bool SnapshotRecompose = false,
                                    string? OfflineSamplesDir = null, DateTime? DisplayTimeUtc = null,
                                    GeoPosition? LookAt = null, string? Error = null,
-                                   IReadOnlyList<string>? Layers = null, string? Dialog = null)
+                                   IReadOnlyList<string>? Layers = null, string? Dialog = null, bool Bench = false)
 {
     public const int DefaultDelayMs = 1500;
     public static readonly string[] LayerNames = ["quakes", "cyclones", "alerts", "eonet", "coastlines", "plates", "lightning", "clouds"];
@@ -39,6 +39,12 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
     /// <summary>True when <see cref="Diagnostics.SnapshotDiagnostic"/> has something to do after the first compose.</summary>
     public bool Any => SnapshotPath != null || FaceSun || LookAt != null || Dialog != null;
 
+    /// <summary>
+    /// True for any run that is not a normal user session: a picture, a camera move, offline samples, a dialog or the
+    /// benchmark. Such runs must never open a modal window of their own (the Welcome would hang a --snapshot run).
+    /// </summary>
+    public bool IsDiagnosticRun => Any || OfflineSamplesDir != null || Bench;
+
     public static LaunchOptions Parse(IReadOnlyList<string> args)
     {
         string? snapshot = null, offline = null;
@@ -48,6 +54,7 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
         GeoPosition? lookAt = null;
         List<string>? layers = null;
         string? dialog = null;
+        bool bench = false;
         var errors = new List<string>();
         for (int i = 0; i < args.Count; i++)
         {
@@ -58,6 +65,9 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
                     break;
                 case "--face-sun":
                     faceSun = true;
+                    break;
+                case "--bench":
+                    bench = true;   // PerfRun (PERF_LOG builds) reads it from the raw arguments itself
                     break;
                 case "--snapshot-recompose":
                     recompose = true;
@@ -97,7 +107,7 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
             }
         }
         return new LaunchOptions(snapshot, faceSun, delay, recompose, offline, displayTime, lookAt,
-                                 errors.Count == 0 ? null : string.Join(Environment.NewLine, errors), layers, dialog);
+                                 errors.Count == 0 ? null : string.Join(Environment.NewLine, errors), layers, dialog, bench);
     }
 
     private static string? Value(IReadOnlyList<string> args, ref int i, List<string> errors, string what)
