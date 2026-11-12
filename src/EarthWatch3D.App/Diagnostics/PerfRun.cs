@@ -46,7 +46,7 @@ internal static class PerfRun
                 int inMemory = zoneIds.Count(z => zones.TryGetCached(z, out _));
                 int zoneFiles = Directory.Exists(zonesDir) ? Directory.EnumerateFiles(zonesDir, "*.json").Count() : 0;
                 PerfLog.Write(string.Create(CultureInfo.InvariantCulture,
-                    $"minute {minute}: {PerfLog.Memory()} threads={p.Threads.Count} handles={p.HandleCount} events.json={cacheBytes / 1024.0:F0} KB " +
+                    $"minute {minute}: {PerfLog.Memory()} threads={p.Threads.Count} handles={p.HandleCount} gen2 GCs={GC.CollectionCount(2)} events.json={cacheBytes / 1024.0:F0} KB " +
                     $"quakes={s.Earthquakes.Count} advisories={s.Cyclones.Count} alerts={s.Alerts.Count} eonet={s.Eonet.Count} " +
                     $"alert zones loaded={inMemory}/{zoneIds.Count} zone files={zoneFiles} ZonesLoaded events={Volatile.Read(ref zonesLoadedEvents)}"));
             }

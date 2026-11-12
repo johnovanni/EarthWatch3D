@@ -100,6 +100,44 @@ the areas image (another 4096×2048 BGRA image, 32 MiB) and WPF's copy of the ne
 working set's rise from 424 MB at the first globe image to 562 MB just after. Working set stays under the 800 MB
 target.
 
+## Plan 2 final fix wave: 10 minutes live
+
+One launch of the PERF_LOG Release build (`dotnet build src/EarthWatch3D.App -c Release "-p:DefineConstants=TRACE%3BRELEASE%3BPERF_LOG"`)
+against the live services, 2026-11-12 09:14:29–09:24:45 UTC, ended with `Stop-Process` (so there was no exit save).
+The build logs, once a minute, the working set, the thread count, `events.json`'s size and the store and zone counts.
+
+| Minute | Working set | Private | Managed | Threads | Handles | events.json | Alerts | Alert zones in memory |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 576 MB | 489 MB | 128 MB | 36 | 927 | 2,409 KB | 1,350 | 46 of 647 |
+| 2 | 576 MB | 489 MB | 124 MB | 35 | 918 | 2,409 KB | 1,350 | 46 of 647 |
+| 3 | 586 MB | 500 MB | 139 MB | 28 | 914 | 2,409 KB | 1,351 | 46 of 647 |
+| 4 | 584 MB | 497 MB | 139 MB | 20 | 878 | 2,409 KB | 1,351 | 46 of 647 |
+| 5 | 596 MB | 512 MB | 149 MB | 27 | 911 | 2,409 KB | 1,351 | 46 of 647 |
+| 6 | 606 MB | 523 MB | 165 MB | 21 | 875 | 2,404 KB | 1,351 | 46 of 647 |
+| 7 | 616 MB | 535 MB | 175 MB | 25 | 897 | 2,404 KB | 1,351 | 46 of 647 |
+| 8 | 616 MB | 534 MB | 178 MB | 28 | 905 | 2,404 KB | 1,351 | 46 of 647 |
+| 9 | 656 MB | 575 MB | 217 MB | 26 | 900 | 2,404 KB | 1,358 | 46 of 647 |
+| 10 | 657 MB | 576 MB | 214 MB | 28 | 921 | 2,404 KB | 1,358 | 46 of 647 |
+
+- **Threads:** flat, 20–36 (the scheduler starts feeds without waiting and all rasterizing shares one STA thread, so
+  no thread is made per pass). Handles flat at 875–927.
+- **Memory:** the working set rose 576 → 657 MB and the managed heap 128 → 214 MB. That is garbage not yet collected,
+  not memory held: no forced collection ran after the first 15 s, and the biggest step (minute 8 → 9) is the one
+  Areas rebuild of the steady state (a new 32 MB image when 7 alerts arrived; the old one becomes garbage). To check
+  without a second launch, a throwaway test drove the NWS feed (the 1.8 MB sample), the zone cache, the store, the
+  cache save, the scheduler, the areas plan and the STA rasterizer through 60 two-minute cycles (two hours' worth)
+  and forced a full collection every 10 cycles: the live managed heap stayed at 6.7–6.8 MB. The minute line now
+  also logs the gen-2 collection count, so a longer run can tell garbage from growth directly.
+- **Cache:** `events.json` 2.4 MB (1,843 quakes, 3 advisories, about 1,350 alerts, 3 EONET storms). Two saves in
+  10 minutes (09:14:47 and 09:19:46), five minutes apart as the new minimum interval allows. The old cache had no
+  schema version and was deleted at start, as designed ("Event cache has schema version 0, not 2").
+- **NWS:** 1,350–1,358 alerts in the store (24 h of history plus active). The zones of the active Warnings (the
+  default filter) all loaded: 46 zone outlines, 17 ZonesLoaded events, no zone download failures. The other 601 zone
+  ids belong to alerts that are not Warnings or are no longer active, so none were downloaded (see I4).
+- **Composes:** one a minute, 17–30 ms in the steady state, plus one for the Areas rebuild.
+- **App log:** no errors. Two warnings: the old cache deleted (above) and "GDACS: geometry feature of event 1001347
+  malformed; skipped" (a coordinate with fewer than 2 numbers in GDACS's own data).
+
 ## What the memory is
 
 At 8192×4096 one BGRA copy of the globe is 128 MiB. In the 8192 run the managed heap held only the base image
