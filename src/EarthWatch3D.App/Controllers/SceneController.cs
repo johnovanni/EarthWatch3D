@@ -69,6 +69,12 @@ public sealed class SceneController
     private Bgra32Image? _composed;
     private WriteableBitmap? _bitmap;
     private bool _composing, _recomposePending, _closed;
+    // The Areas layer (alert zones, cones, wind bands): a new immutable image per change, rasterized off the UI thread
+    // one at a time. The previous image stays alive only while a compose still reads it.
+    private Bgra32Image? _areas;
+    private int _areasKey;
+    private bool _areasRunning, _areasPending;
+    private int _zonesChangePending;
     // A display setting (night strength, day/night line, coastlines) changed since the last compose started.
     private bool _settingsDirty;
 
@@ -126,6 +132,7 @@ public sealed class SceneController
         _vm.FilterChanged += OnFilterChanged;
         _vm.Timeline.PropertyChanged += OnTimelineChanged;
         Store.Changed += OnStoreChanged;
+        Zones.ZonesLoaded += OnZonesLoaded;
         _vm.SunMoon.PropertyChanged += OnSunMoonChanged;
         _vm.SunMoon.FaceRequested += OnFaceRequested;
         _vm.Layers.PropertyChanged += OnDisplaySettingChanged;
@@ -179,7 +186,7 @@ public sealed class SceneController
                 var subSolar = SubPoints.SubSolarPoint(now);
                 // The lines are rasterized once at load; switching coastlines off just leaves them out.
                 var display = _vm.Display;
-                var layers = new GlobeLayers(subSolar, display.NightStrength,
+                var layers = new GlobeLayers(subSolar, display.NightStrength, Areas: _areas,
                     SparseLines: _vm.Layers.ShowCoastlines ? _lines : null, DrawTerminator: display.ShowTerminator);
                 var composer = _composer!;
                 var target = _composed!;
@@ -303,6 +310,7 @@ public sealed class SceneController
             _composed = Bgra32Image.Create(w, h);
             _bitmap = ImageConversions.CreateBitmap(w, h);
             Recompose();
+            RequestAreas();   // composes again once the Areas layer exists
         }
         catch (Exception ex)
         {
@@ -356,6 +364,7 @@ public sealed class SceneController
             _visibleAtUtc = _vm.DisplayTimeUtc;
             _visible = EventVisibility.At(Store.Snapshot, _visibleAtUtc, _vm.CurrentFilter);
             _overlayDirty = true;   // the labels
+            RequestAreas();
         }
         if (_overlayDirty)
         {
@@ -377,6 +386,86 @@ public sealed class SceneController
             Volatile.Write(ref _storeChangePending, 0);
             _eventsDirty = true;
         });
+    }
+
+    // Raised on a background thread when zone shapes arrive; coalesced like store changes.
+    private void OnZonesLoaded(object? sender, EventArgs e)
+    {
+        if (Interlocked.Exchange(ref _zonesChangePending, 1) == 1) return;
+        _window.Dispatcher.BeginInvoke(() =>
+        {
+            Volatile.Write(ref _zonesChangePending, 0);
+            RequestAreas();
+        });
+    }
+
+    // ---------------------------------------------------------------- areas layer
+
+    /// <summary>Re-rasterizes the Areas layer if what it shows changed (one run at a time; requests meanwhile collapse into one).</summary>
+    private void RequestAreas()
+    {
+        if (_closed || _composed is null) return;   // before load completes, the load requests it
+        if (_areasRunning) { _areasPending = true; return; }
+        _ = AreasLoopAsync();
+    }
+
+    private async Task AreasLoopAsync()
+    {
+        _areasRunning = true;
+        try
+        {
+            do
+            {
+                _areasPending = false;
+                var visible = _visible;
+                var filter = _vm.CurrentFilter;
+                int w = _composed!.Width, h = _composed.Height;
+                int lastKey = _areasKey;
+                var zones = Zones;
+                var result = await RunOnStaThread(() => BuildAreasLayer(visible, filter, zones, w, h, lastKey));
+                if (_closed) return;
+                if (result is not { } r) continue;   // nothing that shows has changed
+                _areasKey = r.Key;
+                _areas = r.Image;   // null when nothing is to be drawn
+                Recompose();
+            } while (_areasPending && !_closed);
+        }
+        catch (Exception ex) { Trace.TraceError($"Areas layer failed: {ex}"); }
+        finally { _areasRunning = false; }
+    }
+
+    /// <summary>Null if the content key equals <paramref name="lastKey"/>; otherwise the new key and image (image null if empty). Runs on an STA thread.</summary>
+    public static (int Key, Bgra32Image? Image)? BuildAreasLayer(VisibleEvents visible, DisplayFilter filter, ZoneCache zones,
+                                                                     int w, int h, int lastKey)
+    {
+        var key = new HashCode();
+        key.Add(filter.ShowAlerts); key.Add(filter.ShowCyclones);
+        var alertAreas = new List<(GeoPolygon, Color)>();
+        foreach (var a in visible.Alerts)
+        {
+            key.Add(a.Id); key.Add(a.CancelledUtc);
+            var color = AlertColors.For(a.EventType);
+            if (a.Areas.Count > 0) { foreach (var p in a.Areas) alertAreas.Add((p, color)); continue; }
+            int resolved = 0;
+            foreach (var z in a.ZoneIds)
+            {
+                if (!zones.TryGet(z, out var polys)) continue;   // still loading: drawn once ZonesLoaded fires
+                resolved++;
+                foreach (var p in polys) alertAreas.Add((p, color));
+            }
+            key.Add(resolved);
+        }
+        var under = new List<(GeoPolygon, Color)>();
+        foreach (var c in visible.Cyclones)
+        {
+            key.Add(c.Id); key.Add(c.TimeUtc);
+            foreach (var wa in c.WindAreas) under.Add((wa.Area, AlertColors.ForWind(wa.ThresholdKmh)));
+            foreach (var p in c.Cone) under.Add((p, AlertColors.Cone));
+        }
+        int k = key.ToHashCode();
+        if (k == lastKey) return null;
+        under.AddRange(alertAreas);   // alerts on top
+        return (k, under.Count == 0 ? null : AreaRasterizer.Rasterize(under, w, h));
     }
 
     private void OnFilterChanged(object? sender, EventArgs e) => _eventsDirty = true;
@@ -559,6 +648,7 @@ public sealed class SceneController
         _vm.FilterChanged -= OnFilterChanged;
         _vm.Timeline.PropertyChanged -= OnTimelineChanged;
         Store.Changed -= OnStoreChanged;
+        Zones.ZonesLoaded -= OnZonesLoaded;
         _trailing.Stop();
         _trailing.Tick -= OnTrailingTick;
         _vm.SunMoon.PropertyChanged -= OnSunMoonChanged;
