@@ -72,6 +72,33 @@ public class LightningLayerTests
         Assert.Contains("MTG: newest flash 15 min ago (updates every 10 min)", LightningLayer.LegendNote(edge, Now, mtgAvailable: true));
     }
 
+    [Theory]
+    [InlineData(MtgFeedState.KeyRejected, "MTG: key rejected (Settings)")]
+    [InlineData(MtgFeedState.Paused, "MTG: paused (daily limit)")]
+    [InlineData(MtgFeedState.NotInView, "MTG: not in view")]
+    public void LegendNoteSaysWhyMtgHasNothingNew(MtgFeedState state, string expected)
+    {
+        // Even with an old newest flash: "(delayed)" is only for a product that is missing while the feed is running.
+        var c = new LightningCoverage(null, null, Now.AddMinutes(-40), MtgSetUp: true, MtgState: state);
+        var lines = LightningLayer.LegendNote(c, Now, mtgAvailable: true).Split('\n');
+        Assert.Equal(expected, lines[2]);
+        // Not set up wins over any state.
+        var notSetUp = new LightningCoverage(null, null, null, MtgSetUp: false, MtgState: state);
+        Assert.Equal("MTG: not set up (Settings)", LightningLayer.LegendNote(notSetUp, Now, mtgAvailable: true).Split('\n')[2]);
+    }
+
+    [Fact]
+    public void LiveSourceCarriesTheMtgState()
+    {
+        var buffer = new LightningBuffer();
+        var state = MtgFeedState.Running;
+        var source = new LiveLightningSource(buffer, () => true, () => state);
+        Assert.Equal(MtgFeedState.Running, source.Coverage.MtgState);
+        state = MtgFeedState.Paused;
+        Assert.Equal(MtgFeedState.Paused, source.Coverage.MtgState);
+        Assert.Equal(MtgFeedState.Running, new LiveLightningSource(buffer, () => true).Coverage.MtgState);
+    }
+
     [Fact]
     public void LegendNoteFlagsDelayedMtgPastFifteenMinutes()
     {

@@ -16,6 +16,8 @@ public static class MtgReader
     private const double ConfidenceScale = 0.004;
     /// <summary>Flashes whose scaled flash_filter_confidence is above this are left out (the product's scale runs from 0 = high confidence to 1 = low).</summary>
     private const double MaxConfidenceValue = 0.5;
+    /// <summary>A body file larger than this (real ones are about 0.4 MB) is not read into memory.</summary>
+    public const long MaxBodyBytes = 64L * 1024 * 1024;
 
     /// <summary>
     /// The flashes in file order (not time order). EnergyJ is 0: the product has radiance, not energy.
@@ -30,6 +32,7 @@ public static class MtgReader
             var entry = zip.Entries.FirstOrDefault(e =>
                     e.FullName.Contains("CHK-BODY", StringComparison.Ordinal) && e.FullName.EndsWith(".nc", StringComparison.OrdinalIgnoreCase))
                 ?? throw new FormatException("The MTG product has no CHK-BODY file.");
+            if (entry.Length > MaxBodyBytes) throw new FormatException("The MTG body file is implausibly large.");
             var nc = new MemoryStream(checked((int)entry.Length));
             using (var s = entry.Open()) s.CopyTo(nc);
             nc.Position = 0;

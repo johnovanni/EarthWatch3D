@@ -13,6 +13,29 @@ internal sealed class FakeProtector : IProtector
 
 public class EumetsatCredentialStoreTests
 {
+    private sealed class CountingProtector : IProtector
+    {
+        public int Unprotects;
+        public string Protect(string plain) => "P:" + plain;
+        public string? Unprotect(string protectedBase64) { Unprotects++; return protectedBase64[2..]; }
+    }
+
+    [Fact]
+    public void TheDecryptedPairIsKeptUntilTheSavedValuesChange()
+    {
+        var settings = new FakeSettingsStore();
+        var protector = new CountingProtector();
+        var creds = new EumetsatCredentialStore(settings, protector);
+        creds.Set(new EumetsatCredentials("k1", "s1"));
+        for (int i = 0; i < 5; i++) Assert.Equal(new EumetsatCredentials("k1", "s1"), creds.Current);
+        Assert.Equal(2, protector.Unprotects);   // the key and the secret, once
+        creds.Set(new EumetsatCredentials("k2", "s2"));
+        Assert.Equal(new EumetsatCredentials("k2", "s2"), creds.Current);
+        Assert.Equal(4, protector.Unprotects);
+        creds.Set(null);
+        Assert.Null(creds.Current);
+    }
+
     [Fact]
     public void UndecryptableIsTreatedAsNotSet()
     {

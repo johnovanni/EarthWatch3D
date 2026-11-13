@@ -174,9 +174,11 @@ public class EumetsatClientTests
         Assert.Equal(2, handler.Requests.Count(IsToken));
         Assert.Equal("new", handler.Requests[3].AuthParameter);
 
-        // Both answers 401: the key is rejected, with no further loop.
+        // Both answers 401 although the second token is fresh: the request is refused (the key is not what is wrong), with no
+        // further loop.
         var (bad, badHandler, _) = Make(n => n % 2 == 1 ? Token("t" + n) : new HttpResponseMessage(HttpStatusCode.Unauthorized));
-        await Assert.ThrowsAsync<EumetsatKeyRejectedException>(() => bad.SearchAsync(Creds, T0, CancellationToken.None));
+        var refused = await Assert.ThrowsAsync<HttpRequestException>(() => bad.SearchAsync(Creds, T0, CancellationToken.None));
+        Assert.Equal("EUMETSAT refused the request (HTTP 401)", refused.Message);
         Assert.Equal(4, badHandler.Requests.Count);
         Assert.Equal(2, badHandler.Requests.Count(IsToken));
     }
@@ -186,7 +188,48 @@ public class EumetsatClientTests
     {
         var product = new MtgProduct("P1", T0, T0, new Uri("https://api.eumetsat.int/data/download/1.0.0/collections/x/products/y"));
         var (bad, handler, _) = Make(n => n % 2 == 1 ? Token() : new HttpResponseMessage(HttpStatusCode.Forbidden));
-        await Assert.ThrowsAsync<EumetsatKeyRejectedException>(() => bad.DownloadAsync(Creds, product, CancellationToken.None));
+        var refused = await Assert.ThrowsAsync<HttpRequestException>(() => bad.DownloadAsync(Creds, product, CancellationToken.None));
+        Assert.Equal("EUMETSAT refused the request (HTTP 403)", refused.Message);
         Assert.Equal(4, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task OnlyTheTokenEndpointDecidesThatTheKeyIsRejected()
+    {
+        // The token request itself refused on the retry (the key was revoked meanwhile): that is a rejection.
+        var (client, _, _) = Make(n => n == 1 ? Token() : new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        await Assert.ThrowsAsync<EumetsatKeyRejectedException>(() => client.SearchAsync(Creds, T0, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("http://api.eumetsat.int/data/download/x")]
+    [InlineData("https://example.com/data/download/x")]
+    [InlineData("https://api.eumetsat.int.example.com/x")]
+    public async Task TheTokenGoesOnlyToEumetsatOverHttps(string link)
+    {
+        var (client, handler, _) = Make(_ => Token());
+        var product = new MtgProduct("P", T0, T0, new Uri(link));
+        await Assert.ThrowsAsync<FormatException>(() => client.DownloadAsync(Creds, product, CancellationToken.None));
+        Assert.Empty(handler.Requests);   // not even a token request
+    }
+
+    [Fact]
+    public async Task OneMalformedResultIsSkippedOnceAndTheOthersKept()
+    {
+        const string body =
+            "{\"features\":[" +
+            "{\"id\":\"BAD1\",\"properties\":{\"date\":\"2026-11-13T21:30:05Z/2026-11-13T21:40:05Z\",\"links\":{\"data\":[]}}}," +   // empty links
+            "{\"id\":\"BAD2\",\"properties\":{\"date\":\"not a date\",\"links\":{\"data\":[{\"href\":\"https://api.eumetsat.int/x\"}]}}}," +
+            "{\"properties\":{}}," +   // no id
+            "{\"id\":\"GOOD\",\"properties\":{\"date\":\"2026-11-13T21:20:05Z/2026-11-13T21:30:05Z\",\"links\":{\"data\":[{\"href\":\"https://api.eumetsat.int/data/download/1.0.0/collections/c/products/g\"}]}}}]}";
+        var handler = new ScriptedHandler(n => n == 1 ? Token() : Json(body));   // one token, then searches
+        var log = new RecordingLog();
+        var client = new EumetsatClient(new FeedHttp(handler), new TestClock(T0), log);
+        var first = await client.SearchAsync(Creds, T0, CancellationToken.None);
+        Assert.Equal("GOOD", Assert.Single(first).Id);
+        Assert.Equal(3, log.Warnings.Count);
+        await client.SearchAsync(Creds, T0, CancellationToken.None);   // the same results again: no new warnings
+        Assert.Equal(3, log.Warnings.Count);
+        Assert.All(log.Warnings, w => Assert.DoesNotContain("SECRET", w));
     }
 }

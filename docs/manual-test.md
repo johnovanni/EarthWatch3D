@@ -93,7 +93,7 @@ last update time or its error.
       and on again to check). The status bar
       shows **GLM East** (and **GLM West** when you turn the globe towards the Pacific) as dots, and **Today: ... MB** at
       the right of the time bar grows.
-- [ ] **Window chips:** in the Display flyout, choosing one of the window lengths (5, 15, 30 or 60 minutes) changes how
+- [ ] **Window chips:** in the Display flyout, choosing one of the window lengths (5, 10, 15, 30 or 60 minutes) changes how
       long a flash stays on the globe; fewer flashes at 5 than at 60. The choice is remembered after a restart.
 - [ ] **Lightning hides in replay:** with lightning on, drag the time slider back (or press the step-back button): all
       flashes disappear, and come back when you press **NOW**. (Lightning is live only.)
@@ -108,14 +108,19 @@ last update time or its error.
       **Save** the key is stored encrypted (not readable in `%LOCALAPPDATA%\EarthWatch3D\settings.json`). The **MTG**
       dot turns green and Europe/Africa flashes appear.
 - [ ] **MTG lightning:** with a valid key saved, Europe and Africa flashes appear within about a minute (the first
-      search fetches up to 8 products of 10 minutes each). Hover the lightning legend: the MTG line shows the age of the
+      search fetches the products of the chosen window: 1 or 2 at the default 15 minutes, up to 6 at 60). Hover the lightning legend: the MTG line shows the age of the
       newest flash and "updates every 10 min" (for example "MTG: newest flash 7 min ago (updates every 10 min)"); if the
       newest is over 15 minutes old it says "(delayed)" instead. The flashes only load while the camera faces Europe or
-      Africa (the **MTG** dot is grey and idle otherwise). Saving a wrong key turns the **MTG** dot red within a few minutes ("EUMETSAT key
-      rejected") and clicking it opens Settings; GOES East then shows flashes east of 37.6° W again.
+      Africa or GOES East (the **MTG** dot is grey and idle otherwise; the legend says "MTG: not in view"). Saving a wrong
+      key turns the **MTG** dot red within a few minutes ("EUMETSAT key rejected") and the legend says "MTG: key
+      rejected (Settings)"; clicking the dot opens Settings, and GOES East then shows flashes east of 37.6° W again.
+      Saving the right key makes MTG run again within a few seconds (no waiting out the red dot).
+- [ ] **MTG with short windows:** MTG flashes are 1 to 11 minutes old when they arrive, in steps of 10 minutes. With the
+      5-minute and 10-minute windows, Europe and Africa are therefore empty for part of each 10-minute cycle (about 6
+      minutes of it at 5 minutes); that is the Meteosat rhythm, not a fault. The 15-minute window or longer has no gap.
 - [ ] **Daily limit:** in Settings set the daily limit to **10** MB and Save. As soon as **Today:** reaches 10 MB the
-      GLM dots turn **blue** (paused), the status bar reads **Today: … MB (limit reached)**, no new flashes arrive, and
-      the other layers keep updating. Turning lightning off then turns the GLM dots grey (idle, "Not polled right
+      GLM dots and the **MTG** dot turn **blue** (paused; the legend says "MTG: paused (daily limit)"), the status bar reads **Today: … MB (limit reached)**, no new flashes arrive, and
+      the other layers keep updating. Turning lightning off then turns the GLM and MTG dots grey (idle, "Not polled right
       now"). Setting the limit to
       empty (no limit) resumes lightning at the next update (within 20 s). The count is kept when you restart the app
       on the same day.

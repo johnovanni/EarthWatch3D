@@ -111,15 +111,23 @@ public partial class App : Application
         meter.LimitBytes = AppSettings.DailyLimitBytes(_settings.Load().DailyLimitMb);   // out of range (hand-edited): no limit
         http.BytesReceived += meter.Add;
         // The user's own EUMETSAT key and secret: encrypted in the settings file, tested through the app's HTTP client.
-        var eumetsat = new EumetsatClient(http, wall);
+        var eumetsat = new EumetsatClient(http, wall, log);
         var credentials = new EumetsatCredentialStore(_settings, new DpapiProtector());
         MainViewModel? main = null;
         MainWindow? mainWindow = null;
         // Everything that must change when Settings is saved; one place, so each setting is applied the same way.
+        var savedCredentials = credentials.Current;
         void Applied(AppSettings saved)
         {
             if (main is { } m) m.Units = saved.Units;
             meter.LimitBytes = AppSettings.DailyLimitBytes(saved.DailyLimitMb);
+            // A new, fixed or removed EUMETSAT key must not wait out the MTG feed's failure backoff.
+            var nowSaved = credentials.Current;
+            if (!Equals(nowSaved, savedCredentials))
+            {
+                savedCredentials = nowSaved;
+                _scheduler?.RunSoon(StatusViewModel.MtgName);
+            }
         }
         var dialogs = new DialogService(() => mainWindow, _settings, credentials, eumetsat.TestAsync, Applied,
             new ShellLinkOpener(), paths.Root);
@@ -153,15 +161,17 @@ public partial class App : Application
         // MTG signs in with the key saved in Settings, read on every run so a new key takes effect without a restart. Offline
         // runs use fixed dummy credentials (the sample handler answers any), never the user's stored ones.
         EumetsatCredentials? CurrentCredentials() => samplesDir is null ? credentials.Current : OfflineSamples.OfflineCredentials;
-        var lightning = new LiveLightningSource(lightningBuffer, () => CurrentCredentials() is not null);
+        MtgFeed? mtgFeed = null;
+        var lightning = new LiveLightningSource(lightningBuffer, () => CurrentCredentials() is not null,
+            () => mtgFeed?.State ?? MtgFeedState.Running);
         var view = new ViewState();
-        var mtg = new MtgFeed(eumetsat, lightningBuffer, wall, view, CurrentCredentials,
+        var mtg = mtgFeed = new MtgFeed(eumetsat, lightningBuffer, wall, view, CurrentCredentials,
             () => TimeSpan.FromMinutes(Volatile.Read(ref lightningWindowMinutes)), () => meter.LimitReached,
             () => Volatile.Read(ref wantLightning), log);
-        // GLM East leaves the flashes east of 37.6 W to MTG only while MTG works: a key is saved and EUMETSAT has not refused it.
+        // GLM East leaves the flashes east of 37.6 W to MTG only once MTG has worked with the saved key and has not been refused since.
         GlmFeed Glm(LightningSensor sensor) => new(http, lightningBuffer, sensor, wall, view,
             () => TimeSpan.FromMinutes(Volatile.Read(ref lightningWindowMinutes)), () => meter.LimitReached,
-            () => CurrentCredentials() is not null && !mtg.KeyRejected,
+            () => mtg.Active,
             () => Volatile.Read(ref wantLightning), log);
         var glmEast = Glm(LightningSensor.GoesEast);
         var clouds = new GibsCloudsFeed(http, paths, wall, () => Volatile.Read(ref wantClouds), log, DecodeForBlackCheck);

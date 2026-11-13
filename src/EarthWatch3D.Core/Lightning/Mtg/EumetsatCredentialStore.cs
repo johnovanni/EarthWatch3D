@@ -9,6 +9,9 @@ namespace EarthWatch3D.Core.Lightning.Mtg;
 public sealed class EumetsatCredentialStore(ISettingsStore store, IProtector protector)
 {
     private readonly object _gate = new();
+    // The decrypted pair, kept for as long as the encrypted values in the settings are the ones it came from.
+    private string? _cachedKey, _cachedSecret;
+    private EumetsatCredentials? _cached;
 
     /// <summary>The saved credentials, or null when none are set or they cannot be decrypted. Safe from any thread.</summary>
     public EumetsatCredentials? Current
@@ -19,8 +22,12 @@ public sealed class EumetsatCredentialStore(ISettingsStore store, IProtector pro
             {
                 var s = store.Load();
                 if (s.EumetsatKeyProtected is not { } k || s.EumetsatSecretProtected is not { } sec) return null;
-                if (protector.Unprotect(k) is not { Length: > 0 } key || protector.Unprotect(sec) is not { Length: > 0 } secret) return null;
-                return new EumetsatCredentials(key, secret);
+                if (k == _cachedKey && sec == _cachedSecret) return _cached;
+                _cachedKey = k;
+                _cachedSecret = sec;
+                _cached = protector.Unprotect(k) is { Length: > 0 } key && protector.Unprotect(sec) is { Length: > 0 } secret
+                    ? new EumetsatCredentials(key, secret) : null;
+                return _cached;
             }
         }
     }

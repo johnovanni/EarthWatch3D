@@ -13,6 +13,7 @@ public sealed class FeedScheduler : IDisposable
         private bool _running;
         public IEventFeed Feed { get; } = feed;
         public FeedStatus Status { get; set; } = new(feed.Name, FeedState.NotStarted, null, null, 0, due);
+        public bool IsIdleNow => !_running;
         public bool IsDue(DateTime now) => !_running && Status.NextRunUtc <= now;
         public void BeginRun() => _running = true;
         public void EndRun() => _running = false;
@@ -75,6 +76,20 @@ public sealed class FeedScheduler : IDisposable
             started.Add(run);
         }
         return started;
+    }
+
+    /// <summary>
+    /// Makes the named feed due at the next tick with its failure count cleared, so a changed setting (a new EUMETSAT key)
+    /// does not wait out a backoff. Does nothing for a feed that is running now or an unknown name.
+    /// </summary>
+    public void RunSoon(string name)
+    {
+        lock (_gate)
+        {
+            var slot = _slots.FirstOrDefault(s => s.Feed.Name == name);
+            if (slot is null || !slot.IsIdleNow) return;
+            slot.Status = slot.Status with { NextRunUtc = _clock.UtcNow, ConsecutiveFailures = 0 };
+        }
     }
 
     private async Task RunSlotAsync(Slot slot, CancellationToken ct)

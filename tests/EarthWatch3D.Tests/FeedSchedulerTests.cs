@@ -138,6 +138,34 @@ public sealed class FeedSchedulerTests
     }
 
     [Fact]
+    public async Task RunSoonSkipsTheBackoffAndClearsTheFailures()
+    {
+        var clock = new FakeClock(T0);
+        var f = new FakeFeed("f", TimeSpan.FromMinutes(1)) { Fail = true };
+        var other = new FakeFeed("g", TimeSpan.FromMinutes(1)) { Fail = true };
+        using var s = new FeedScheduler([f, other], clock, new NullLog());
+        for (int i = 0; i < 4; i++)
+        {
+            await s.TickAsync(CancellationToken.None);
+            clock.UtcNow = s.Statuses.Max(st => st.NextRunUtc);
+        }
+        Assert.Equal(4, f.Runs);
+        await s.TickAsync(CancellationToken.None);   // nothing is due: the backoff is 5 minutes now
+        clock.UtcNow += TimeSpan.FromSeconds(1);
+        await s.TickAsync(CancellationToken.None);
+        Assert.Equal(5, f.Runs);
+
+        f.Fail = false;
+        s.RunSoon("f");
+        s.RunSoon("nobody");   // unknown names are ignored
+        Assert.Equal(0, s.Statuses[0].ConsecutiveFailures);
+        await s.TickAsync(CancellationToken.None);
+        Assert.Equal(6, f.Runs);
+        Assert.Equal(FeedState.Ok, s.Statuses[0].State);
+        Assert.Equal(5, other.Runs);   // the other feed was not touched
+    }
+
+    [Fact]
     public async Task FailingFeedBacksOffAndTurnsRed()
     {
         var clock = new FakeClock(T0);

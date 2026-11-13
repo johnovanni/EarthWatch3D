@@ -35,7 +35,9 @@ A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is
   by age with the newest brightest; the newest 30,000 are drawn. On by default; the Display options choose how long a
   flash stays on the globe (5 to 60 minutes). It is hidden while you replay the past.
 - **Lightning over Europe and Africa** (Meteosat MTG, with your own free EUMETSAT key from Settings): updated every
-  10 minutes, so the newest flashes are a few minutes old; the legend's MTG line says how old. Contains EUMETSAT data.
+  10 minutes, so the newest flashes are a few minutes old; the legend's MTG line says how old. With the 5- and
+  10-minute windows Europe and Africa can be empty for part of each 10-minute Meteosat cycle; use 15 minutes or more to
+  avoid that. Contains EUMETSAT data.
 - **Clouds** (NASA GIBS): a cloud image from the previous day's VIIRS satellite pass, fetched once a day. Off by
   default.
 - **Data use:** the status bar shows how much has been downloaded today ("Today: 123 MB"). Settings can set a daily

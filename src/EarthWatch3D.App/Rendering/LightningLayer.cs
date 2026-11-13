@@ -135,7 +135,14 @@ public sealed class LightningLayer
             Line("GOES-East", c.NewestGoesEastUtc, nowUtc),
             Line("GOES-West", c.NewestGoesWestUtc, nowUtc),
             !mtgAvailable ? MtgComingLine
-                : c.MtgSetUp ? Line("MTG", c.NewestMtgUtc, nowUtc, delayedAfter: MtgDelayed, rhythm: MtgRhythm) : "MTG: not set up (Settings)",
+                : !c.MtgSetUp ? "MTG: not set up (Settings)"
+                : c.MtgState switch
+                {
+                    MtgFeedState.KeyRejected => "MTG: key rejected (Settings)",
+                    MtgFeedState.Paused => "MTG: paused (daily limit)",
+                    MtgFeedState.NotInView => "MTG: not in view",
+                    _ => Line("MTG", c.NewestMtgUtc, nowUtc, delayedAfter: MtgDelayed, rhythm: MtgRhythm),
+                },
         };
         var note = string.Join('\n', lines);
         return flashesInWindow > MaxDrawnFlashes

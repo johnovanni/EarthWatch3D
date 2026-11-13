@@ -24,10 +24,15 @@ public sealed class MtgFeedTests
     private sealed class TokenGate(SampleHttpHandler inner) : HttpMessageHandler
     {
         public bool RejectToken { get; set; }
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage r, CancellationToken ct) =>
-            RejectToken && r.RequestUri!.ToString() == TokenUrl
-                ? new HttpResponseMessage(HttpStatusCode.Unauthorized)
-                : await new HttpMessageInvoker(inner, disposeHandler: false).SendAsync(r, ct);
+        /// <summary>Answers a request itself when it returns a response (null: the samples answer).</summary>
+        public Func<string, HttpResponseMessage?>? Intercept { get; set; }
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage r, CancellationToken ct)
+        {
+            var url = r.RequestUri!.ToString();
+            if (RejectToken && url == TokenUrl) return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            if (Intercept?.Invoke(url) is { } answer) return answer;
+            return await new HttpMessageInvoker(inner, disposeHandler: false).SendAsync(r, ct);
+        }
     }
 
     private sealed class Rig : IDisposable
@@ -119,10 +124,10 @@ public sealed class MtgFeedTests
         // First run: the window start (now - 60 min).
         Assert.Contains("dtstart=2026-11-13T20%3A55%3A30Z", q);
 
-        // Next run: from the end of the newest product seen (21:50:05).
+        // Next run: 20 minutes before the end of the newest product seen (21:50:05), so a late older product is still found.
         r.Clock.UtcNow += TimeSpan.FromSeconds(60);
         await r.Feed.RunOnceAsync(CancellationToken.None);
-        Assert.Contains("dtstart=2026-11-13T21%3A50%3A05Z", new Uri(r.Searches[1]).Query);
+        Assert.Contains("dtstart=2026-11-13T21%3A30%3A05Z", new Uri(r.Searches[1]).Query);
 
         // The newest product is downloaded first.
         Assert.Contains("20261113214005_20261113215005", r.Downloads[0]);
@@ -159,12 +164,166 @@ public sealed class MtgFeedTests
     public async Task SkippedWhenNotInViewOrNotWanted()
     {
         using var r = new Rig();
-        r.View.CameraSubPoint = new GeoPosition(0, -137);   // Pacific: the satellite at 0 is beyond 100 degrees
+        r.View.CameraSubPoint = new GeoPosition(0, 150);   // Western Pacific: neither MTG (0) nor GOES-East (-75) is within 100 degrees
         Assert.Equal(FeedRunResult.Skipped, await r.Feed.RunOnceAsync(CancellationToken.None));
         r.View.CameraSubPoint = new GeoPosition(0, 10);
         r.Wanted = false;
         Assert.Equal(FeedRunResult.Skipped, await r.Feed.RunOnceAsync(CancellationToken.None));
         Assert.Empty(r.Handler.Requests);
+    }
+
+    [Fact]
+    public async Task PolledWhenOnlyGoesEastFacesTheCamera()
+    {
+        using var r = new Rig();
+        r.View.CameraSubPoint = new GeoPosition(45, -110);   // Rockies: GOES-East 54 degrees away, MTG 104
+        Assert.Equal(FeedRunResult.Ok, await r.Feed.RunOnceAsync(CancellationToken.None));
+        Assert.NotEmpty(r.Downloads);
+    }
+
+    [Fact]
+    public async Task StateTellsWhyThereIsNothingNew()
+    {
+        using var r = new Rig();
+        Assert.Equal(MtgFeedState.Running, r.Feed.State);
+        r.View.CameraSubPoint = new GeoPosition(0, 150);
+        await r.Feed.RunOnceAsync(CancellationToken.None);
+        Assert.Equal(MtgFeedState.NotInView, r.Feed.State);
+        r.View.CameraSubPoint = new GeoPosition(10, 15);
+        r.Paused = true;
+        await r.Feed.RunOnceAsync(CancellationToken.None);
+        Assert.Equal(MtgFeedState.Paused, r.Feed.State);
+        r.Paused = false;
+        await r.Feed.RunOnceAsync(CancellationToken.None);
+        Assert.Equal(MtgFeedState.Running, r.Feed.State);
+        r.Gate.RejectToken = true;
+        r.Clock.UtcNow += TimeSpan.FromHours(2);
+        await Assert.ThrowsAsync<EumetsatKeyRejectedException>(() => r.Feed.RunOnceAsync(CancellationToken.None));
+        Assert.Equal(MtgFeedState.KeyRejected, r.Feed.State);
+    }
+
+    [Fact]
+    public async Task ActiveOnlyAfterASuccessWithTheseCredentials()
+    {
+        using var r = new Rig();
+        Assert.False(r.Feed.Active);   // a key is saved but MTG has not run yet: GOES-East keeps covering
+        await r.Feed.RunOnceAsync(CancellationToken.None);
+        Assert.True(r.Feed.Active);
+        r.Credentials = new EumetsatCredentials("K2", "S2");
+        Assert.False(r.Feed.Active);   // a new key: back to covering until it has worked
+        await r.Feed.RunOnceAsync(CancellationToken.None);
+        Assert.True(r.Feed.Active);
+        r.Gate.RejectToken = true;
+        r.Clock.UtcNow += TimeSpan.FromHours(2);
+        await Assert.ThrowsAsync<EumetsatKeyRejectedException>(() => r.Feed.RunOnceAsync(CancellationToken.None));
+        Assert.False(r.Feed.Active);
+    }
+
+    [Fact]
+    public async Task MtgFlashesReplaceGoesEastOnesInTheSamePeriodEastOf37W()
+    {
+        using var r = new Rig();
+        DateTime T(int h, int m) => new(2026, 11, 13, h, m, 0, DateTimeKind.Utc);
+        var inside = new LightningFlash(T(21, 35), 5, -30, 1e-13, LightningSensor.GoesEast);      // east of 37.6 W, inside a product period
+        var west = new LightningFlash(T(21, 35), 5, -50, 1e-13, LightningSensor.GoesEast);        // GOES-East owns this one
+        var before = new LightningFlash(T(21, 5), 5, -30, 1e-13, LightningSensor.GoesEast);       // before every product
+        var after = new LightningFlash(T(21, 52), 5, -30, 1e-13, LightningSensor.GoesEast);       // after every product
+        var pacific = new LightningFlash(T(21, 35), 5, -130, 1e-13, LightningSensor.GoesWest);
+        r.Buffer.Add([inside, west, before, after, pacific]);
+        int changed = 0;
+        r.Buffer.Changed += (_, _) => changed++;
+        await r.Feed.RunOnceAsync(CancellationToken.None);
+        var held = r.Buffer.Between(DateTime.MinValue, DateTime.MaxValue);
+        Assert.DoesNotContain(inside, held);
+        Assert.Contains(west, held);
+        Assert.Contains(before, held);
+        Assert.Contains(after, held);
+        Assert.Contains(pacific, held);
+        Assert.True(changed > 0);
+    }
+
+    [Fact]
+    public async Task AnOlderProductPublishedLaterIsStillFetched()
+    {
+        using var r = new Rig();
+        r.Handler.MapText(SearchPrefix, Features(("a", 21, 50)));
+        await r.Feed.RunOnceAsync(CancellationToken.None);
+        Assert.Single(r.Downloads);
+        // The next search (from 20 minutes before 21:50:05) now also lists an older product that came out late.
+        r.Handler.MapText(SearchPrefix, Features(("a", 21, 50), ("b", 21, 40)));
+        r.Clock.UtcNow += TimeSpan.FromSeconds(60);
+        await r.Feed.RunOnceAsync(CancellationToken.None);
+        Assert.Contains("dtstart=2026-11-13T21%3A30%3A05Z", new Uri(r.Searches[1]).Query);
+        Assert.Equal(2, r.Downloads.Count);
+        Assert.EndsWith("/b", r.Downloads[1]);
+    }
+
+    private static string Features(params (string Id, int Hour, int Minute)[] products) =>
+        "{\"features\":[" + string.Join(",", products.Select(p =>
+        {
+            var end = new DateTime(2026, 11, 13, p.Hour, p.Minute, 5, DateTimeKind.Utc);
+            return "{\"id\":\"" + p.Id + "\",\"properties\":{\"date\":\"" + end.AddMinutes(-10).ToString("yyyy-MM-ddTHH:mm:ssZ") + "/" +
+                   end.ToString("yyyy-MM-ddTHH:mm:ssZ") + "\",\"links\":{\"data\":[{\"href\":\"" + DownloadPrefix + p.Id + "\"}]}}}";
+        })) + "]}";
+
+    [Fact]
+    public async Task ADownloadRefusedWithAFreshTokenSkipsTheProductNotTheKey()
+    {
+        using var r = new Rig();
+        r.Gate.Intercept = u => u.StartsWith(OldestProduct, StringComparison.Ordinal) ? new HttpResponseMessage(HttpStatusCode.Forbidden) : null;
+        Assert.Equal(FeedRunResult.Ok, await r.Feed.RunOnceAsync(CancellationToken.None));
+        Assert.False(r.Feed.KeyRejected);
+        Assert.True(r.Buffer.Count > 0);
+        Assert.Empty(r.Log.Errors);
+    }
+
+    [Fact]
+    public async Task ANetworkFailureGetsOneRetryOnALaterRun()
+    {
+        using var r = new Rig();
+        int oldestTries = 0;
+        r.Gate.Intercept = u =>
+        {
+            if (!u.StartsWith(OldestProduct, StringComparison.Ordinal)) return null;
+            oldestTries++;
+            return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+        };
+        Assert.Equal(FeedRunResult.Ok, await r.Feed.RunOnceAsync(CancellationToken.None));
+        Assert.Equal(1, oldestTries);
+        Assert.Empty(r.Log.Warnings);   // not given up on yet
+        r.Clock.UtcNow += TimeSpan.FromSeconds(60);
+        // The retry is the only download of this run and fails too: a failed run, and now it is given up on (one warning).
+        await Assert.ThrowsAsync<HttpRequestException>(() => r.Feed.RunOnceAsync(CancellationToken.None));
+        Assert.Equal(2, oldestTries);
+        Assert.Single(r.Log.Warnings);
+        r.Clock.UtcNow += TimeSpan.FromSeconds(60);
+        Assert.Equal(FeedRunResult.Ok, await r.Feed.RunOnceAsync(CancellationToken.None));
+        Assert.Equal(2, oldestTries);   // and no more
+        Assert.Single(r.Log.Warnings);
+    }
+
+    [Fact]
+    public async Task ARetriedProductThatWorksLoadsItsFlashes()
+    {
+        using var r = new Rig();
+        r.Handler.MapText(SearchPrefix, Features(("a", 21, 50)));
+        bool fail = true;
+        r.Gate.Intercept = u => fail && u.EndsWith("/a", StringComparison.Ordinal) ? new HttpResponseMessage(HttpStatusCode.BadGateway) : null;
+        await Assert.ThrowsAsync<HttpRequestException>(() => r.Feed.RunOnceAsync(CancellationToken.None));   // all downloads failed: not Ok
+        Assert.Equal(0, r.Buffer.Count);
+        fail = false;
+        r.Clock.UtcNow += TimeSpan.FromSeconds(60);
+        Assert.Equal(FeedRunResult.Ok, await r.Feed.RunOnceAsync(CancellationToken.None));
+        Assert.True(r.Buffer.Count > 0);
+    }
+
+    [Fact]
+    public async Task EveryDownloadFailingIsAFailedRunNotOk()
+    {
+        using var r = new Rig();
+        r.Gate.Intercept = u => u.StartsWith(DownloadPrefix, StringComparison.Ordinal) ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) : null;
+        await Assert.ThrowsAsync<HttpRequestException>(() => r.Feed.RunOnceAsync(CancellationToken.None));
+        Assert.False(r.Feed.Active);
     }
 
     [Fact]

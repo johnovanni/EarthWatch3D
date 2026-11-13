@@ -214,4 +214,23 @@ public class LightningBufferTests
         Assert.Empty(errors);
         Assert.True(b.Count <= 5000);
     }
+
+    [Fact]
+    public void RemoveWhereRemovesMatchesRaisesChangedOnceAndFreesTheirKeys()
+    {
+        var buffer = new LightningBuffer();
+        var t = new DateTime(2026, 11, 13, 21, 0, 0, DateTimeKind.Utc);
+        var a = new LightningFlash(t, 1, 1, 0, LightningSensor.GoesEast);
+        var b = new LightningFlash(t.AddSeconds(1), 2, 2, 0, LightningSensor.GoesEast);
+        var c = new LightningFlash(t.AddSeconds(2), 3, 3, 0, LightningSensor.GoesWest);
+        buffer.Add([a, b, c]);
+        int changed = 0;
+        buffer.Changed += (_, _) => changed++;
+        Assert.Equal(2, buffer.RemoveWhere(f => f.Sensor == LightningSensor.GoesEast));
+        Assert.Equal(1, changed);
+        Assert.Equal([c], buffer.Between(DateTime.MinValue, DateTime.MaxValue));
+        Assert.Equal(0, buffer.RemoveWhere(f => f.Sensor == LightningSensor.GoesEast));
+        Assert.Equal(1, changed);   // nothing removed: no event
+        Assert.Equal(1, buffer.Add([a]));   // a removed flash can be added again
+    }
 }

@@ -97,6 +97,29 @@ public sealed class LightningBuffer(int capacity = 100_000)
         lock (_lock) RemoveFront(LowerBound(utc));
     }
 
+    /// <summary>
+    /// Removes every flash for which <paramref name="match"/> is true and returns how many there were. Raises
+    /// <see cref="Changed"/> once (outside the lock) when any were removed.
+    /// </summary>
+    public int RemoveWhere(Func<LightningFlash, bool> match)
+    {
+        ArgumentNullException.ThrowIfNull(match);
+        int removed;
+        lock (_lock)
+        {
+            var kept = new List<LightningFlash>(_flashes.Count);
+            foreach (var f in _flashes)
+            {
+                if (match(f)) _keys.Remove(KeyOf(f));
+                else kept.Add(f);
+            }
+            removed = _flashes.Count - kept.Count;
+            if (removed > 0) _flashes = kept;
+        }
+        if (removed > 0) Changed?.Invoke(this, EventArgs.Empty);
+        return removed;
+    }
+
     /// <summary>Time of the newest flash from <paramref name="s"/>, or null if none is held.</summary>
     public DateTime? Newest(LightningSensor s)
     {

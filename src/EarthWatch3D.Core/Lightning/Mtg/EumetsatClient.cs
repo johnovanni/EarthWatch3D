@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using EarthWatch3D.Core.Feeds;
+using EarthWatch3D.Core.Logging;
 using EarthWatch3D.Core.Time;
 
 namespace EarthWatch3D.Core.Lightning.Mtg;
@@ -12,14 +13,16 @@ namespace EarthWatch3D.Core.Lightning.Mtg;
 /// Authorization header of the token request, never into a URL, log line or message. SearchAsync and DownloadAsync call the
 /// Data Store with that token (docs/data-sources.md section 8).
 /// </summary>
-public sealed class EumetsatClient(FeedHttp http, IClock clock)
+public sealed class EumetsatClient(FeedHttp http, IClock clock, IAppLog? log = null)
 {
     private static readonly Uri TokenUri = new("https://api.eumetsat.int/token");
     private const string SearchBase = "https://api.eumetsat.int/data/search-products/1.0.0/os";
+    private const string DownloadHost = "api.eumetsat.int";
     private const string ProductType = "EO:EUM:DAT:0691";   // MTG LI-2-LFL, lightning flashes
     private static readonly TimeSpan Margin = TimeSpan.FromSeconds(60);
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly HashSet<string> _warnedIds = [];   // search results already reported as unreadable (one line each)
     private EumetsatCredentials? _cachedFor;
     private string? _token;
     private DateTime _renewAtUtc;
@@ -58,8 +61,8 @@ public sealed class EumetsatClient(FeedHttp http, IClock clock)
     /// <summary>
     /// The newest products (at most 20, newest first) whose sensing period ends at or after <paramref name="sinceUtc"/>.
     /// </summary>
-    /// <exception cref="EumetsatKeyRejectedException">Refused twice, the second time with a fresh token.</exception>
-    /// <exception cref="HttpRequestException">The service is unreachable or answered something unexpected.</exception>
+    /// <exception cref="EumetsatKeyRejectedException">The token request was refused.</exception>
+    /// <exception cref="HttpRequestException">The service is unreachable, refused the request twice or answered something unexpected.</exception>
     public async Task<IReadOnlyList<MtgProduct>> SearchAsync(EumetsatCredentials c, DateTime sinceUtc, CancellationToken ct)
     {
         var since = sinceUtc.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
@@ -70,10 +73,14 @@ public sealed class EumetsatClient(FeedHttp http, IClock clock)
     }
 
     /// <summary>The product's zip file.</summary>
-    /// <exception cref="EumetsatKeyRejectedException">Refused twice, the second time with a fresh token.</exception>
+    /// <exception cref="EumetsatKeyRejectedException">The token request was refused.</exception>
+    /// <exception cref="FormatException">The link is not on EUMETSAT's https address.</exception>
     public Task<byte[]> DownloadAsync(EumetsatCredentials c, MtgProduct p, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(p);
+        // The token goes only to EUMETSAT's own https address, whatever link the search answered with.
+        if (p.Download.Scheme != Uri.UriSchemeHttps || !string.Equals(p.Download.Host, DownloadHost, StringComparison.OrdinalIgnoreCase))
+            throw new FormatException("The product's download link is not an https://" + DownloadHost + " address.");
         return WithTokenAsync(c, auth => http.GetBytesAsync(p.Download, ct, auth), ct);
     }
 
@@ -87,9 +94,11 @@ public sealed class EumetsatClient(FeedHttp http, IClock clock)
             {
                 return await send(new AuthenticationHeaderValue("Bearer", token)).ConfigureAwait(false);
             }
-            catch (FeedAuthException)
+            catch (FeedAuthException e)
             {
-                if (attempt >= 1) throw new EumetsatKeyRejectedException();
+                // Only the token endpoint says the key is wrong. A data request refused with a token it has just issued
+                // is a problem with that request.
+                if (attempt >= 1) throw new HttpRequestException($"EUMETSAT refused the request (HTTP {(int)(e.StatusCode ?? 0)})", null, e.StatusCode);
                 await ForgetTokenAsync(token, ct).ConfigureAwait(false);
             }
         }
@@ -102,27 +111,43 @@ public sealed class EumetsatClient(FeedHttp http, IClock clock)
         finally { _gate.Release(); }
     }
 
-    private static IReadOnlyList<MtgProduct> ParseProducts(string body)
+    private IReadOnlyList<MtgProduct> ParseProducts(string body)
     {
+        JsonElement features;
         try
         {
             using var doc = JsonDocument.Parse(body);
-            var list = new List<MtgProduct>();
-            foreach (var f in doc.RootElement.GetProperty("features").EnumerateArray())
+            features = doc.RootElement.GetProperty("features").Clone();
+            if (features.ValueKind != JsonValueKind.Array) throw new InvalidOperationException("features is not an array");
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            throw new HttpRequestException("EUMETSAT search returned an unexpected response");
+        }
+
+        var list = new List<MtgProduct>();
+        var index = 0;
+        foreach (var f in features.EnumerateArray())
+        {
+            var label = "#" + index++;
+            try
             {
+                if (f.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String) label = idProp.GetString()!;
                 var props = f.GetProperty("properties");
                 var period = props.GetProperty("date").GetString()!.Split('/');
                 if (period.Length != 2) throw new FormatException("bad period");
                 var href = props.GetProperty("links").GetProperty("data")[0].GetProperty("href").GetString()!;
                 list.Add(new MtgProduct(f.GetProperty("id").GetString()!, ParseUtc(period[0]), ParseUtc(period[1]), new Uri(href)));
             }
-            return list;
+            catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException
+                                           or ArgumentOutOfRangeException or NullReferenceException or UriFormatException
+                                           or IndexOutOfRangeException)
+            {
+                // One unreadable result is skipped, once; the others still count.
+                if (_warnedIds.Add(label)) log?.Warn($"EUMETSAT search: skipped an unreadable result ({label}): {ex.Message}");
+            }
         }
-        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException
-                                       or ArgumentOutOfRangeException or NullReferenceException or UriFormatException)
-        {
-            throw new HttpRequestException("EUMETSAT search returned an unexpected response");
-        }
+        return list;
     }
 
     private static DateTime ParseUtc(string s) =>

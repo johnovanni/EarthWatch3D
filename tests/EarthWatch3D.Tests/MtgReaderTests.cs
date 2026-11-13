@@ -50,6 +50,20 @@ public class MtgReaderTests
     }
 
     [Fact]
+    public void ABodyFileOverTheSizeCapThrowsFormatException()
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            using var s = zip.CreateEntry("x--CHK-BODY--y_0001.nc", CompressionLevel.Fastest).Open();
+            var zeros = new byte[1 << 20];
+            for (var i = 0; i < 65; i++) s.Write(zeros);   // 65 MB of zeros: a few KB zipped
+        }
+        var ex = Assert.Throws<FormatException>(() => MtgReader.Read(ms.ToArray()));
+        Assert.Contains("large", ex.Message);
+    }
+
+    [Fact]
     public void GarbageThrowsFormatException() =>
         Assert.Throws<FormatException>(() => MtgReader.Read([1, 2, 3, 4, 5]));
 
