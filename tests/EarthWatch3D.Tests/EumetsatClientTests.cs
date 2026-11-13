@@ -150,6 +150,20 @@ public class EumetsatClientTests
     }
 
     [Fact]
+    public async Task ResultsWithANullIdOrLinkAreSkipped()
+    {
+        const string link = "{\"data\":[{\"href\":\"https://api.eumetsat.int/data/download/1.0.0/collections/c/products/p\"}]}";
+        const string date = "\"date\":\"2026-11-13T21:30:05Z/2026-11-13T21:40:05Z\"";
+        var body = "{\"features\":[" +
+            "{\"id\":null,\"properties\":{" + date + ",\"links\":" + link + "}}," +
+            "{\"id\":\"P0\",\"properties\":{" + date + ",\"links\":{\"data\":[{\"href\":null}]}}}," +
+            OneProduct["{\"features\":[".Length..^2] + "]}";
+        var (client, _, _) = Make(n => n == 1 ? Token() : Json(body));
+        var p = Assert.Single(await client.SearchAsync(Creds, T0, CancellationToken.None));
+        Assert.Equal("P1", p.Id);
+    }
+
+    [Fact]
     public async Task DownloadReturnsTheBytesWithTheBearerToken()
     {
         var product = new MtgProduct("P1", T0, T0, new Uri("https://api.eumetsat.int/data/download/1.0.0/collections/x/products/y"));

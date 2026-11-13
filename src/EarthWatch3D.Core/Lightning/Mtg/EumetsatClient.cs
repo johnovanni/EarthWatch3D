@@ -136,8 +136,10 @@ public sealed class EumetsatClient(FeedHttp http, IClock clock, IAppLog? log = n
                 var props = f.GetProperty("properties");
                 var period = props.GetProperty("date").GetString()!.Split('/');
                 if (period.Length != 2) throw new FormatException("bad period");
-                var href = props.GetProperty("links").GetProperty("data")[0].GetProperty("href").GetString()!;
-                list.Add(new MtgProduct(f.GetProperty("id").GetString()!, ParseUtc(period[0]), ParseUtc(period[1]), new Uri(href)));
+                var href = props.GetProperty("links").GetProperty("data")[0].GetProperty("href").GetString();
+                var id = f.GetProperty("id").GetString();
+                if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(href)) throw new FormatException("no product id or link");
+                list.Add(new MtgProduct(id, ParseUtc(period[0]), ParseUtc(period[1]), new Uri(href)));
             }
             catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException
                                            or ArgumentOutOfRangeException or NullReferenceException or UriFormatException
