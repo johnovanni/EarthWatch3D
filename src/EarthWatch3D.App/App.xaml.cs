@@ -150,10 +150,18 @@ public partial class App : Application
                 Volatile.Write(ref lightningWindowMinutes, vm.Display.LightningWindowMinutes);
         };
         var lightningBuffer = new LightningBuffer();
-        var lightning = new LiveLightningSource(lightningBuffer, () => false);   // MTG is not built yet: no EUMETSAT feed
+        // MTG signs in with the key saved in Settings, read on every run so a new key takes effect without a restart. Offline
+        // runs use fixed dummy credentials (the sample handler answers any), never the user's stored ones.
+        EumetsatCredentials? CurrentCredentials() => samplesDir is null ? credentials.Current : OfflineSamples.OfflineCredentials;
+        var lightning = new LiveLightningSource(lightningBuffer, () => CurrentCredentials() is not null);
         var view = new ViewState();
+        var mtg = new MtgFeed(eumetsat, lightningBuffer, wall, view, CurrentCredentials,
+            () => TimeSpan.FromMinutes(Volatile.Read(ref lightningWindowMinutes)), () => meter.LimitReached,
+            () => Volatile.Read(ref wantLightning), log);
+        // GLM East leaves the flashes east of 37.6 W to MTG only while MTG works: a key is saved and EUMETSAT has not refused it.
         GlmFeed Glm(LightningSensor sensor) => new(http, lightningBuffer, sensor, wall, view,
-            () => TimeSpan.FromMinutes(Volatile.Read(ref lightningWindowMinutes)), () => meter.LimitReached, () => false,
+            () => TimeSpan.FromMinutes(Volatile.Read(ref lightningWindowMinutes)), () => meter.LimitReached,
+            () => CurrentCredentials() is not null && !mtg.KeyRejected,
             () => Volatile.Read(ref wantLightning), log);
         var glmEast = Glm(LightningSensor.GoesEast);
         var clouds = new GibsCloudsFeed(http, paths, wall, () => Volatile.Read(ref wantClouds), log, DecodeForBlackCheck);
@@ -166,6 +174,7 @@ public partial class App : Application
             new EonetFeed(http, store, log),
             glmEast,
             Glm(LightningSensor.GoesWest),
+            mtg,
             clouds,
         ];
         var scheduler = _scheduler = new FeedScheduler(feeds, wall, log);
@@ -183,6 +192,7 @@ public partial class App : Application
                 .Where(f => f != clouds || OfflineSamples.CloudsWanted(vm.Layers.ShowClouds, options.Layers))
                 .Where(f => f != glmEast || OfflineSamples.LightningWanted(vm.Layers.ShowLightning, options.Layers))
                 .Where(f => f is not GlmFeed || f == glmEast)
+                .Where(f => f != mtg || OfflineSamples.LightningWanted(vm.Layers.ShowLightning, options.Layers))
                 .Select(f => f.Name));
             waitForData = async () => { await allOk; await zones.WhenIdleAsync(); };
         }
@@ -252,6 +262,7 @@ public partial class App : Application
                 Diagnostics.PerfLog.Write(string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"lightning minute: fps={frames / span.TotalSeconds:F1} {Diagnostics.PerfLog.Memory()} flashes={all.Count} " +
                     $"east={all.Count(f => f.Sensor == LightningSensor.GoesEast)} west={all.Count(f => f.Sensor == LightningSensor.GoesWest)} " +
+                    $"mtg={all.Count(f => f.Sensor == LightningSensor.Mtg)} " +
                     $"downloaded this minute={(bytes - lastBytes) / 1e6:F2} MB today={bytes / 1e6:F1} MB"));
                 frames = 0; lastBytes = bytes;
             };

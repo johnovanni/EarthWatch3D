@@ -114,4 +114,79 @@ public class EumetsatClientTests
         var (_, message) = await bad.TestAsync(Creds, CancellationToken.None);
         Assert.DoesNotContain("SECRET", message ?? "");
     }
+
+    private static HttpResponseMessage Json(string body) =>
+        new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+
+    private const string OneProduct =
+        "{\"features\":[{\"id\":\"P1\",\"properties\":{\"date\":\"2026-11-13T21:30:05Z/2026-11-13T21:40:05Z\"," +
+        "\"links\":{\"data\":[{\"href\":\"https://api.eumetsat.int/data/download/1.0.0/collections/EO%3AEUM%3ADAT%3A0691/products/a%2Cb%2Bc\"}]}}}]}";
+
+    private static bool IsToken(Seen s) => s.Uri.AbsolutePath == "/token";
+
+    [Fact]
+    public async Task SearchParsesProductsAndSendsTheBearerToken()
+    {
+        // Request 1 is the token, request 2 the search.
+        var (client, handler, _) = Make(n => n == 1 ? Token("T1") : Json(OneProduct));
+        var list = await client.SearchAsync(Creds, T0.AddMinutes(-30), CancellationToken.None);
+        var p = Assert.Single(list);
+        Assert.Equal("P1", p.Id);
+        Assert.Equal(new DateTime(2026, 11, 13, 21, 30, 5, DateTimeKind.Utc), p.SensingStartUtc);
+        Assert.Equal(new DateTime(2026, 11, 13, 21, 40, 5, DateTimeKind.Utc), p.SensingEndUtc);
+        Assert.Equal(DateTimeKind.Utc, p.SensingEndUtc.Kind);
+        Assert.EndsWith("/products/a%2Cb%2Bc", p.Download.AbsoluteUri);
+        var search = handler.Requests[1];
+        Assert.Equal("Bearer", search.AuthScheme);
+        Assert.Equal("T1", search.AuthParameter);
+        Assert.Contains("dtstart=2026-11-12T11%3A30%3A00Z", search.Uri.Query);
+    }
+
+    [Fact]
+    public async Task MalformedSearchAnswerIsAServiceProblem()
+    {
+        var (client, _, _) = Make(n => n == 1 ? Token() : Json("<html>"));
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.SearchAsync(Creds, T0, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DownloadReturnsTheBytesWithTheBearerToken()
+    {
+        var product = new MtgProduct("P1", T0, T0, new Uri("https://api.eumetsat.int/data/download/1.0.0/collections/x/products/y"));
+        var (client, handler, _) = Make(n => n == 1 ? Token("T9") : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([1, 2, 3]) });
+        Assert.Equal(new byte[] { 1, 2, 3 }, await client.DownloadAsync(Creds, product, CancellationToken.None));
+        Assert.Equal("T9", handler.Requests[1].AuthParameter);
+        Assert.Equal(product.Download, handler.Requests[1].Uri);
+    }
+
+    [Fact]
+    public async Task ExpiredTokenIsRenewedOnce()
+    {
+        // token, search 401, token, search 200
+        var (client, handler, _) = Make(n => n switch
+        {
+            1 => Token("old"),
+            2 => new HttpResponseMessage(HttpStatusCode.Unauthorized),
+            3 => Token("new"),
+            _ => Json(OneProduct),
+        });
+        Assert.Single(await client.SearchAsync(Creds, T0, CancellationToken.None));
+        Assert.Equal(2, handler.Requests.Count(IsToken));
+        Assert.Equal("new", handler.Requests[3].AuthParameter);
+
+        // Both answers 401: the key is rejected, with no further loop.
+        var (bad, badHandler, _) = Make(n => n % 2 == 1 ? Token("t" + n) : new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        await Assert.ThrowsAsync<EumetsatKeyRejectedException>(() => bad.SearchAsync(Creds, T0, CancellationToken.None));
+        Assert.Equal(4, badHandler.Requests.Count);
+        Assert.Equal(2, badHandler.Requests.Count(IsToken));
+    }
+
+    [Fact]
+    public async Task ExpiredTokenIsRenewedOnceForDownloadsToo()
+    {
+        var product = new MtgProduct("P1", T0, T0, new Uri("https://api.eumetsat.int/data/download/1.0.0/collections/x/products/y"));
+        var (bad, handler, _) = Make(n => n % 2 == 1 ? Token() : new HttpResponseMessage(HttpStatusCode.Forbidden));
+        await Assert.ThrowsAsync<EumetsatKeyRejectedException>(() => bad.DownloadAsync(Creds, product, CancellationToken.None));
+        Assert.Equal(4, handler.Requests.Count);
+    }
 }

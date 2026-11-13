@@ -87,6 +87,14 @@ public class WelcomeViewModelTests
     }
 
     [Fact]
+    public void TheAppAsBuiltOffersTheKeyForEuropeAndAfrica()
+    {
+        var vm = new WelcomeViewModel(new FakeSettingsStore(), new RecordingDialogService(), new RecordingLinkOpener());
+        Assert.Contains("adds Europe and Africa", vm.KeyText);
+        Assert.DoesNotContain("coming version", vm.KeyText);
+    }
+
+    [Fact]
     public void KeyTextFollowsMtgAvailability()
     {
         var without = Make(mtg: false).KeyText;

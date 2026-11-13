@@ -88,23 +88,31 @@ last update time or its error.
 
 ## Lightning, clouds and Settings (Plan 3)
 
-- [ ] **Lightning on/off:** the lightning button (bolt) in the layer strip shows and hides the flashes. Turn it on and
-      within about a minute flashes appear over the Americas (GOES East) in age colours, newest brightest. The status bar
+- [ ] **Lightning on/off:** lightning is on by default. Within about a minute of starting, flashes appear over the
+      Americas (GOES East) in age colours, newest brightest. The bolt button in the layer strip hides them (turn it off
+      and on again to check). The status bar
       shows **GLM East** (and **GLM West** when you turn the globe towards the Pacific) as dots, and **Today: ... MB** at
       the right of the time bar grows.
-- [ ] **Window chips:** in the Display flyout, choosing 5, 15, 30 or 60 minutes changes how long a flash stays on the
-      globe; fewer flashes at 5 than at 60. The choice is remembered after a restart.
+- [ ] **Window chips:** in the Display flyout, choosing one of the window lengths (5, 15, 30 or 60 minutes) changes how
+      long a flash stays on the globe; fewer flashes at 5 than at 60. The choice is remembered after a restart.
 - [ ] **Lightning hides in replay:** with lightning on, drag the time slider back (or press the step-back button): all
       flashes disappear, and come back when you press **NOW**. (Lightning is live only.)
 - [ ] **Clouds on/off:** the cloud button shows and hides the live cloud layer (it is off by default); there is no
       black gap in the clouds between 60° N and 60° S, and the globe looks as before with it off.
 - [ ] **Settings, no key:** open Settings (gear). With the EUMETSAT key and secret empty, **Test** says a key is needed
-      and nothing is saved. The **MTG** dot is grey. (Needs MTG: when MTG is available.)
+      and nothing is saved. The **MTG** dot is grey ("not set up") and the lightning legend's MTG line says
+      "MTG: not set up (Settings)".
 - [ ] **Settings, invalid key:** type a made-up key and secret, press **Test**: it says EUMETSAT rejected the key and
-      the key is not stored. (When MTG is available: the MTG dot turns red and clicking it opens Settings.)
+      the key is not stored.
 - [ ] **Settings, valid key:** enter your own EUMETSAT key and secret, press **Test**: it says it worked, and after
       **Save** the key is stored encrypted (not readable in `%LOCALAPPDATA%\EarthWatch3D\settings.json`). The **MTG**
-      dot turns green and Europe/Africa flashes appear. (When MTG is available.)
+      dot turns green and Europe/Africa flashes appear.
+- [ ] **MTG lightning:** with a valid key saved, Europe and Africa flashes appear within about a minute (the first
+      search fetches up to 8 products of 10 minutes each). Hover the lightning legend: the MTG line shows the age of the
+      newest flash and "updates every 10 min" (for example "MTG: newest flash 7 min ago (updates every 10 min)"); if the
+      newest is over 15 minutes old it says "(delayed)" instead. The flashes only load while the camera faces Europe or
+      Africa (the **MTG** dot is grey and idle otherwise). Saving a wrong key turns the **MTG** dot red within a few minutes ("EUMETSAT key
+      rejected") and clicking it opens Settings; GOES East then shows flashes east of 37.6° W again.
 - [ ] **Daily limit:** in Settings set the daily limit to **10** MB and Save. As soon as **Today:** reaches 10 MB the
       GLM dots turn **blue** (paused), the status bar reads **Today: … MB (limit reached)**, no new flashes arrive, and
       the other layers keep updating. Turning lightning off then turns the GLM dots grey (idle, "Not polled right

@@ -37,9 +37,8 @@ public class LightningLayerTests
     }
 
     [Fact]
-    public void LegendNoteSaysMtgIsComingUntilItsFeedExists()
+    public void LegendNoteSaysMtgIsComingWhileItIsNotAvailable()
     {
-        // A saved key does not change that: there is no MTG feed yet.
         foreach (var setUp in new[] { false, true })
         {
             var c = new LightningCoverage(Now.AddSeconds(-25), null, null, MtgSetUp: setUp);
@@ -49,26 +48,37 @@ public class LightningLayerTests
     }
 
     [Fact]
-    public void MtgIsNotPromisedWhileItsFeedDoesNotExist()
+    public void MtgIsOn()
     {
-        Assert.False(LightningLayer.MtgAvailable);   // flip this (one line in LightningLayer) when the MTG feed is built
+        Assert.True(LightningLayer.MtgAvailable);
         var c = new LightningCoverage(null, null, null, MtgSetUp: true);
-        Assert.EndsWith("MTG (Europe, Africa): coming in a later version", LightningLayer.LegendNote(c, Now));
-        Assert.Equal("Lightning (GOES GLM)", LightningLayer.LegendTitle);
-        Assert.Equal("GOES GLM: NOAA.", LightningLayer.Attribution);
-        Assert.Contains("The key is stored now and used when MTG lightning arrives in a later version.", LightningLayer.SettingsKeyNote);
+        Assert.EndsWith("MTG: no flashes yet (updates every 10 min)", LightningLayer.LegendNote(c, Now));
+        Assert.Equal("Lightning (GOES GLM, MTG LI)", LightningLayer.LegendTitle);
+        Assert.Equal("GOES GLM: NOAA. MTG LI: Contains EUMETSAT data.", LightningLayer.Attribution);
+        Assert.Equal("EUMETSAT consumer key (for MTG lightning over Europe and Africa)", LightningLayer.SettingsKeyLabel);
+        Assert.DoesNotContain("later version", LightningLayer.SettingsKeyNote);
         Assert.DoesNotContain("clear both", LightningLayer.SettingsKeyNote);
         Assert.Contains("clear the key to remove it", LightningLayer.SettingsKeyNote);
+        Assert.Equal(TimeSpan.FromMinutes(15), LightningLayer.MtgDelayed);
     }
 
     [Fact]
-    public void LegendNoteFlagsDelayedMtg()
+    public void LegendNoteGivesTheMtgAgeAndItsUpdateRhythm()
     {
-        var c = new LightningCoverage(null, null, Now.AddMinutes(-12), MtgSetUp: true);
-        Assert.Contains("MTG: newest flash 12 min ago (delayed)", LightningLayer.LegendNote(c, Now, mtgAvailable: true));
-        var fresh = new LightningCoverage(null, null, Now.AddMinutes(-4), MtgSetUp: true);
-        Assert.Contains("MTG: newest flash 4 min ago" + "\n", LightningLayer.LegendNote(fresh, Now, mtgAvailable: true) + "\n");
+        var fresh = new LightningCoverage(null, null, Now.AddMinutes(-7), MtgSetUp: true);
+        Assert.Contains("MTG: newest flash 7 min ago (updates every 10 min)", LightningLayer.LegendNote(fresh, Now, mtgAvailable: true));
         Assert.DoesNotContain("delayed", LightningLayer.LegendNote(fresh, Now, mtgAvailable: true));
+        var edge = new LightningCoverage(null, null, Now.AddMinutes(-15), MtgSetUp: true);
+        Assert.Contains("MTG: newest flash 15 min ago (updates every 10 min)", LightningLayer.LegendNote(edge, Now, mtgAvailable: true));
+    }
+
+    [Fact]
+    public void LegendNoteFlagsDelayedMtgPastFifteenMinutes()
+    {
+        var c = new LightningCoverage(null, null, Now.AddMinutes(-22), MtgSetUp: true);
+        var note = LightningLayer.LegendNote(c, Now, mtgAvailable: true);
+        Assert.Contains("MTG: newest flash 22 min ago (delayed)", note);
+        Assert.DoesNotContain("updates every", note);
     }
 
     [Fact]
@@ -215,7 +225,7 @@ public class LightningLayerTests
             Assert.Contains(texts, t => System.Windows.Data.BindingOperations.GetBinding(t, TextBlock.TextProperty)?.Path.Path == "Layers.LightningLegend");
             Assert.Contains(texts, t => t.Text == LightningLayer.Attribution);
             Assert.Contains(texts, t => t.Text == LightningLayer.LegendTitle);
-            Assert.DoesNotContain(texts, t => t.Text.Contains("EUMETSAT", StringComparison.Ordinal) || t.Text.Contains("MTG LI", StringComparison.Ordinal));
+            Assert.Contains(texts, t => t.Text.Contains("Contains EUMETSAT data", StringComparison.Ordinal));
             foreach (var t in texts)
             {
                 var c = Assert.IsType<SolidColorBrush>(t.Foreground).Color;

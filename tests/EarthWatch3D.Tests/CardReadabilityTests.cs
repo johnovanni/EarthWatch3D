@@ -75,7 +75,7 @@ public class CardReadabilityTests
             content.Arrange(new Rect(0, 0, 440, 900));
             content.UpdateLayout();
             AssertAllLight(content, 10);
-            // Until the MTG feed exists the key section says the key is kept for it, and how to remove the key.
+            // The key section says what the key is for, and how to remove the key.
             var texts = Descendants(content).OfType<TextBlock>().Select(TextOf).ToList();
             Assert.Contains(EarthWatch3D.App.Rendering.LightningLayer.SettingsKeyNote, texts);
             Assert.Contains(EarthWatch3D.App.Rendering.LightningLayer.SettingsKeyLabel, texts);

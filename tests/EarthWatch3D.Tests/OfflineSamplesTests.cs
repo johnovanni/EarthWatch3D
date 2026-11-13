@@ -12,6 +12,7 @@ using EarthWatch3D.Core.Feeds.Usgs;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Lightning;
 using EarthWatch3D.Core.Lightning.Glm;
+using EarthWatch3D.Core.Lightning.Mtg;
 using EarthWatch3D.Core.Storage;
 
 namespace EarthWatch3D.Tests;
@@ -146,6 +147,40 @@ public class OfflineSamplesTests
             try { Directory.Delete(paths.Root, true); } catch (IOException) { }
         }
     }
+
+    [Fact]
+    public void TheMtgSamplesAreListed()
+    {
+        Assert.Contains("eumetsat_token.json", OfflineSamples.Files);
+        Assert.Contains("mtg_search.json", OfflineSamples.Files);
+        Assert.Contains("mtg_lfl_sample.zip", OfflineSamples.Files);
+    }
+
+    [Fact]
+    public async Task OfflineRunHasMtgLightning()
+    {
+        var handler = OfflineSamples.CreateHandler(SamplesDir);
+        using var http = new FeedHttp(handler);
+        // 21:45 on the sample day: the 21:30-21:40 product of mtg_lfl_sample.zip is the newest published.
+        var clock = new TestClock(new DateTime(2026, 11, 13, 21, 45, 0, DateTimeKind.Utc));
+        var log = new RecordingLog();
+        var view = new ViewState { CameraSubPoint = new GeoPosition(10, 15) };
+        var buffer = new LightningBuffer();
+        var mtg = new MtgFeed(new EumetsatClient(http, clock), buffer, clock, view, () => OfflineSamples.OfflineCredentials,
+            () => TimeSpan.FromMinutes(60), () => false, () => true, log);
+        Assert.Equal(FeedRunResult.Ok, await mtg.RunOnceAsync(CancellationToken.None));
+        Assert.True(buffer.Count > 0);
+        Assert.NotNull(buffer.Newest(LightningSensor.Mtg));
+        Assert.Contains(handler.Requests, r => r == "https://api.eumetsat.int/token");
+        Assert.Contains(handler.Requests, r => r.StartsWith("https://api.eumetsat.int/data/search-products/1.0.0/os?", StringComparison.Ordinal));
+        Assert.Contains(handler.Requests, r => r.StartsWith("https://api.eumetsat.int/data/download/1.0.0/collections/", StringComparison.Ordinal));
+        Assert.Empty(log.Errors);
+        Assert.DoesNotContain(log.Warnings, w => w.Contains("skipped", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void OfflineRunsUseFixedDummyCredentials() =>
+        Assert.Equal(new EumetsatCredentials("offline", "offline"), OfflineSamples.OfflineCredentials);
 
     [Fact]
     public void StaleOfflineFoldersAreSwept()

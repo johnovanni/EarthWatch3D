@@ -37,6 +37,14 @@ public class AboutViewModelTests
     }
 
     [Fact]
+    public void TheAppAsBuiltCreditsEumetsat()
+    {
+        var vm = new AboutViewModel(new RecordingLinkOpener(), @"C:\data");
+        var credit = Assert.Single(vm.Credits, c => (c.Name + c.Text).Contains("EUMETSAT"));
+        Assert.Contains("Contains EUMETSAT data", credit.Text);
+    }
+
+    [Fact]
     public void EumetsatCreditOnlyWhenMtgIsAvailable()
     {
         Assert.DoesNotContain(Make(mtg: false).Credits, c => (c.Name + c.Text).Contains("EUMETSAT"));

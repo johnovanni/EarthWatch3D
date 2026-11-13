@@ -2,8 +2,8 @@
 
 A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is happening on it now.
 
-> **Status:** plans 1–4 are done. Lightning over Europe and Africa (Meteosat MTG, which needs a free EUMETSAT key)
-> is still to come.
+> **Status:** plans 1–4 are done, including lightning over Europe and Africa (Meteosat MTG, which needs a free
+> EUMETSAT key).
 
 ## What works today
 
@@ -31,15 +31,17 @@ A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is
   GDACS.
 - **Hover and click:** hovering over an event shows a one-line tooltip; clicking it opens a details panel with a link
   to the source's own page.
-- **Lightning** (NOAA GOES, live only): flashes over the Americas and the Pacific, coloured by age with the newest
-  brightest; the newest 30,000 are drawn. On by default; the Display options choose how long a flash stays on the
-  globe. It is hidden while you replay the past.
+- **Lightning** (live only): flashes over the Americas and the Pacific from NOAA GOES (about every 20 seconds), coloured
+  by age with the newest brightest; the newest 30,000 are drawn. On by default; the Display options choose how long a
+  flash stays on the globe (5 to 60 minutes). It is hidden while you replay the past.
+- **Lightning over Europe and Africa** (Meteosat MTG, with your own free EUMETSAT key from Settings): updated every
+  10 minutes, so the newest flashes are a few minutes old; the legend's MTG line says how old. Contains EUMETSAT data.
 - **Clouds** (NASA GIBS): a cloud image from the previous day's VIIRS satellite pass, fetched once a day. Off by
   default.
 - **Data use:** the status bar shows how much has been downloaded today ("Today: 123 MB"). Settings can set a daily
   limit; when it is reached, lightning pauses and the status bar says so, and the other layers carry on.
-- **Settings** (gear button): the daily limit, km or miles, and a place for your free EUMETSAT key and secret. The key
-  is stored now (encrypted for your Windows account) and will be used when Meteosat MTG lightning ships.
+- **Settings** (gear button): the daily limit, km or miles, and your free EUMETSAT key and secret for MTG lightning. The
+  key is stored encrypted for your Windows account.
 - **About** (**i** button): version, credits, licences, the data folder and a button that opens the licence texts.
   **Welcome** appears on the first start and explains the basics.
 - **Time bar** (bottom): the display time is live, or any time in the last 7 days. Step back or forward by 10 minutes
@@ -58,8 +60,6 @@ A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is
   The log folder is shown in About (Data and logs). Installed: under
   `%LOCALAPPDATA%\Packages\johnovanni.EarthWatch3D_…\LocalCache\Local\EarthWatch3D\logs`; run from source:
   `%LOCALAPPDATA%\EarthWatch3D\logs`.
-
-Still to come: lightning over Europe and Africa (Meteosat MTG, with your own free EUMETSAT key).
 
 ## Install
 

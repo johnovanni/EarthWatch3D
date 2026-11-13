@@ -2,6 +2,7 @@ using System.IO;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Gibs;
 using EarthWatch3D.Core.Lightning.Glm;
+using EarthWatch3D.Core.Lightning.Mtg;
 using EarthWatch3D.Core.Logging;
 
 namespace EarthWatch3D.App.Diagnostics;
@@ -24,7 +25,14 @@ public static class OfflineSamples
         "usgs_all_week.geojson", "usgs_all_hour.geojson", "gdacs_events_tc.json", "gdacs_geometry.json",
         "nhc_CurrentStorms.json", "nhc_track.kmz", "nhc_cone.kmz", "nws_active.json", "nws_zone.json", "eonet_storms.json",
         "gibs_viirs_noaa21_truecolor_4096.jpg", "glm_g19_listing.xml", "glm_g19_sample.nc", "glm_g18_sample.nc",
+        "eumetsat_token.json", "mtg_search.json", "mtg_lfl_sample.zip",
     ];
+
+    /// <summary>
+    /// What the MTG feed signs in with in an offline run: dummy values, never the user's stored key. The sample handler
+    /// answers the token request whatever it carries.
+    /// </summary>
+    public static EumetsatCredentials OfflineCredentials { get; } = new("offline", "offline");
 
     /// <summary>True when the clouds layer will be on: saved on, or named by <c>--layers</c> (which is applied after the feeds are set up).</summary>
     public static bool CloudsWanted(bool savedOn, IReadOnlyList<string>? layers) =>
@@ -115,6 +123,12 @@ public static class OfflineSamples
             Map(GlmListing.ListUri(bucket, sampleHour, null).ToString(), "glm_g19_listing.xml");
             Map($"https://{bucket}.s3.amazonaws.com/GLM-L2-LCFA/", sample);
         }
+
+        // MTG: the token, the search (4 products, 2026-11-13 21:10-21:50 UTC) and every product download (the 21:30-21:40
+        // product) are the samples whatever the product id.
+        Map("https://api.eumetsat.int/token", "eumetsat_token.json");
+        Map("https://api.eumetsat.int/data/search-products/1.0.0/os", "mtg_search.json");
+        Map("https://api.eumetsat.int/data/download/1.0.0/collections/", "mtg_lfl_sample.zip");
         return h;
     }
 }

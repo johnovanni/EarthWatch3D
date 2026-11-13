@@ -21,10 +21,10 @@ public sealed class LightningLayer
     /// </summary>
     public const int MaxDrawnFlashes = 30_000;
     /// <summary>
-    /// False until the MTG (EUMETSAT) lightning feed is built: the legend, the credit line and the Settings key section then
-    /// say MTG is coming rather than promise it. Turning MTG on later is this one line.
+    /// True now that the MTG (EUMETSAT) lightning feed exists. When false the legend, the credit line and the Settings key
+    /// section say MTG is coming rather than promise it.
     /// </summary>
-    public const bool MtgAvailable = false;
+    public const bool MtgAvailable = true;
     public const string LegendTitle = MtgAvailable ? "Lightning (GOES GLM, MTG LI)" : "Lightning (GOES GLM)";
     public const string Attribution = MtgAvailable ? "GOES GLM: NOAA. MTG LI: Contains EUMETSAT data." : "GOES GLM: NOAA.";
     public const string MtgComingLine = "MTG (Europe, Africa): coming in a later version";
@@ -36,8 +36,12 @@ public sealed class LightningLayer
     public const string SettingsKeyNote =
         (MtgAvailable ? "" : "The key is stored now and used when MTG lightning arrives in a later version. ")
         + "The key stays on this computer, encrypted for your Windows account. Leave the secret empty to keep the saved one; clear the key to remove it.";
-    /// <summary>A newest MTG flash older than this is called delayed (MTG data reaches the public with a lag).</summary>
-    public static readonly TimeSpan MtgDelayed = TimeSpan.FromMinutes(5);
+    /// <summary>
+    /// A newest MTG flash older than this is called delayed. A product appears about 40 s after its 10 minutes end, so the
+    /// newest flash is up to about 11 minutes old before the next product arrives; past 15 minutes something is late.
+    /// </summary>
+    public static readonly TimeSpan MtgDelayed = TimeSpan.FromMinutes(15);
+    private const string MtgRhythm = " (updates every 10 min)";
     public static readonly TimeSpan RebuildInterval = TimeSpan.FromSeconds(1);
 
     /// <summary>Upper age limits as percent of the window for buckets 0, 1 and 2 (bucket 3 is everything older).</summary>
@@ -120,7 +124,7 @@ public sealed class LightningLayer
 
     /// <summary>
     /// One line per sensor: how long ago its newest flash was, for the legend tooltip. While <paramref name="mtgAvailable"/>
-    /// is false (no MTG feed yet) the MTG line says it is coming. When <paramref name="flashesInWindow"/> is over
+    /// is false the MTG line says it is coming. When <paramref name="flashesInWindow"/> is over
     /// <see cref="MaxDrawnFlashes"/> a last line says only the newest are drawn.
     /// </summary>
     public static string LegendNote(LightningCoverage c, DateTime nowUtc, bool mtgAvailable = MtgAvailable, int flashesInWindow = 0)
@@ -131,7 +135,7 @@ public sealed class LightningLayer
             Line("GOES-East", c.NewestGoesEastUtc, nowUtc),
             Line("GOES-West", c.NewestGoesWestUtc, nowUtc),
             !mtgAvailable ? MtgComingLine
-                : c.MtgSetUp ? Line("MTG", c.NewestMtgUtc, nowUtc, delayedAfter: MtgDelayed) : "MTG: not set up (Settings)",
+                : c.MtgSetUp ? Line("MTG", c.NewestMtgUtc, nowUtc, delayedAfter: MtgDelayed, rhythm: MtgRhythm) : "MTG: not set up (Settings)",
         };
         var note = string.Join('\n', lines);
         return flashesInWindow > MaxDrawnFlashes
@@ -139,13 +143,13 @@ public sealed class LightningLayer
             : note;
     }
 
-    private static string Line(string name, DateTime? newest, DateTime nowUtc, TimeSpan? delayedAfter = null)
+    private static string Line(string name, DateTime? newest, DateTime nowUtc, TimeSpan? delayedAfter = null, string rhythm = "")
     {
-        if (newest is not { } t) return $"{name}: no flashes yet";
+        if (newest is not { } t) return $"{name}: no flashes yet{rhythm}";
         var age = nowUtc - t;
         if (age < TimeSpan.Zero) age = TimeSpan.Zero;
         string text = string.Create(CultureInfo.InvariantCulture, $"{name}: newest flash {Ago(age)} ago");
-        return delayedAfter is { } limit && age > limit ? text + " (delayed)" : text;
+        return delayedAfter is { } limit && age > limit ? text + " (delayed)" : text + rhythm;
     }
 
     private static string Ago(TimeSpan age) =>
