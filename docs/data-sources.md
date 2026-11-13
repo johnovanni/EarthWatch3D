@@ -18,7 +18,7 @@ Summary:
 | EONET | verified | Point tracks only (JTWC sourced), `closed` is null while open. |
 | GOES GLM | verified | 20 s files. G19 about 72 MB/h, G18 about 30 MB/h. `flash_lat` and `flash_lon` are plain floats. |
 | PureHDF | verified | 2.2.0 reads the real file with no extra filter package. |
-| EUMETSAT MTG LI | **deferred to plan 3** | No credentials during the spike. |
+| EUMETSAT MTG LI | verified (2026-11-13) | 10 min products (zip, ~300 KB), public ~37 s after the period ends. Free Core data, no licence. |
 | GIBS clouds | verified | No global geostationary IR layer exists. Chosen: daily VIIRS NOAA-21 true colour. |
 | Static assets | verified | NASA Blue Marble URL in the brief is dead. Replacement URL below. |
 
@@ -226,29 +226,71 @@ consistent with GOES-19's hour-to-hour variation (38.8 to 71.6 MB/h in the hours
 - Conclusion: spec 5.7 holds. PureHDF can read the GLM files. No change to the design.
 - Cadence: not applicable (a library check, not a feed).
 
-## 8. EUMETSAT MTG LI (spec 5.7): deferred to plan 3
+## 8. EUMETSAT MTG LI (spec 5.7)
 
-**Deferred to Plan 3 (needs the user's EUMETSAT key).** Not checked in this spike because no consumer key and secret were available. Nothing below is verified.
+Verified on 2026-11-13 with the user's key (Plan 3 Task 1). The key and secret were read from the git-ignored
+`tools/eumetsat.local.json` and never printed, logged or put in a URL.
 
-Known from the spec:
+**Licence.** None needed. EUMETSAT Data Policy (January 2026), Article 4: "LI Derived Products" (Level 2) are **Core**
+data, free and unrestricted (CC BY 4.0, credit "Contains EUMETSAT data"). Only raw Level 1 data under 1 hour old is
+"Recommended" and paid. The Data Store licences offered in the user portal are for Level 1 data and are not needed.
 
-- Collection `EO:EUM:DAT:0691` (MTG LI-2-LFL, lightning flashes).
-- Token endpoint `https://api.eumetsat.int/token` (OAuth client credentials from the user's consumer key and secret).
-- Search the Data Store for products newer than the last one read, then download each product's NetCDF file.
-- Credentials go in the git-ignored file `tools/eumetsat.local.json` (never in chat or in the repo).
+**Token.** `POST https://api.eumetsat.int/token`, HTTP Basic `key:secret`, form body `grant_type=client_credentials`.
+Answer 200 `{"access_token", "scope": "am_application_scope default", "token_type": "Bearer", "expires_in"}`
+(`expires_in` 2629 to 3284 s seen: the token's remaining life, under one hour). Sample:
+`tests/Samples/eumetsat_token.json` (token replaced by `REDACTED`).
+A wrong key answers **401** `{"error": "invalid_client", ...}`, so 401/403 = "key rejected" is right.
 
-Open questions for plan 3 (do these first):
+**Search.** `GET https://api.eumetsat.int/data/search-products/1.0.0/os?format=json&pi=EO:EUM:DAT:0691&dtstart=<ISO Z>&sort=start,time,0&c=20&si=0`
+- Works without a token (public), but the app sends its bearer token anyway.
+- `sort=start,time,0` = newest first. `c` = page size, `si` = start index.
+- `dtstart` matches products whose period **ends** at or after it (dtstart 21:20:02 returned the 21:10:05–21:20:05
+  product), so keep a "last product end" and also drop already-read product ids.
+- JSON: `totalResults`, `features[]`. Per feature: `id` (product id), `properties.date` = `"<start>/<end>"` (ISO, Z),
+  `properties.updated` (publish time), `properties.productInformation.size` (KB),
+  `properties.links.data[0].href` (the download URL; already URL-encoded).
+- About 8 KB of JSON per product returned, so poll with a recent `dtstart`. Sample: `tests/Samples/mtg_search.json`
+  (4 products, 2026-11-13 21:10–21:50 UTC).
 
-1. Token flow: exact request (basic auth with key:secret, `grant_type=client_credentials`), token lifetime.
-2. Search query: the Data Store search/browse endpoint and its parameters (`dtstart`, `dtend`, `sort`, paging), how a "newer than" query is written.
-3. Product layout: is one product one NetCDF file, a zip of several chunks, or many files per slot; group and variable names for flash latitude, longitude, radiance/energy and time; whether values are packed.
-4. Size per product and cadence (spec assumption: a file every 10 s? unknown), data per hour.
-5. **Latency** (product sensing end time versus when it appears in the search). If well over a few minutes, the legend must show the age of the newest MTG flash and nothing may be called "live".
-6. Whether PureHDF reads it (groups, string variables, deflate).
-7. Coverage edge and the overlap rule with GOES-East at 37.6 W.
+**Products.**
+- One product per 10 minutes (periods start at hh:m0:05). Id pattern:
+  `W_XX-EUMETSAT-Darmstadt,IMG+SAT,MTI1+LI-2-LFL--FD--x-x--ARC-x_C_EUMT_<created>_L2PF_OPE_<start>_<end>_N__O_<cycle>_0000`
+  (MTI1 = MTG-I1, Meteosat-12, at 0°).
+- **Latency:** published 28.7 to 43.0 s after the period ends (median 36.9 s, 20 products over 3 h 20 min). So a
+  flash is about 0.6 to 10.7 min old when its product appears, and just before the next product the newest MTG flash
+  is about 10.7 min old. MTG is never "live" the way GLM is.
+- **Download:** `GET <links.data href>` with `Authorization: Bearer <token>` → `application/zip`, 272 KB for the
+  sample (search sizes: median 310 KB, max 352 KB over 20 products at night). About **1.9 MB/h**. A bad token → 401;
+  no token → 404.
+- Zip entries: `...LI-2-LFL--FD--CHK-BODY--ARC-NC4E_..._0001.nc` (the flashes, 398 KB), `...CHK-TRAIL...0002.nc`
+  (statistics only), `manifest.xml`, `EOPMetadata.xml`, quicklook PNG/JPG. Read the entry whose name contains
+  `CHK-BODY`. (The entry names are long: do not extract them to disk under a deep folder; read them from the zip.)
+- Sample: `tests/Samples/mtg_lfl_sample.zip` (product 2026-11-13 21:30:05–21:40:05 UTC).
 
-`tools/dump_flashes.py` already has an `--mtg` option with an `--mtg-map` JSON variable map (defaults: `latitude`, `longitude`, `radiance`, `flash_time`,
-optional `group`). **It is untested**; the default names are guesses to be corrected in plan 3.
+**Layout of the BODY file** (NetCDF-4, all variables in the root group, no compression filters):
+
+| Variable | Type | Packing | Meaning |
+|---|---|---|---|
+| `latitude`, `longitude` | int16 | `scale_factor` 0.0027 (float32), `add_offset` 0, `_FillValue` −32767 | degrees |
+| `flash_time` | float64 | none | seconds since 2000-01-01 00:00:00 UTC |
+| `radiance` | uint16 (`_Unsigned`) | scale 1, `_FillValue` 65535 | mW m⁻² sr⁻¹ (not energy) |
+| `flash_filter_confidence` | uint8 | scale 0.004, `_FillValue` 255 | **0 = high confidence of a true flash, 1 = low** |
+| also | | | `flash_duration` (ms), `flash_footprint`, `flash_id`, `number_of_events`, `number_of_groups`, `truncated_flashes` |
+
+- Flashes are **not in time order** (1.2 % of steps go backwards). Times lie inside the product's period
+  (21:30:03.4 to 21:40:04.4 for 21:30:05–21:40:05).
+- `flash_filter_confidence`: the format spec (EUM/MTG/SPE/10/0452 v5C) defines it with the **opposite sense** to the
+  event and group QA values (where 1 = high). The data agree with the spec: in the sample, 11,643 flashes have 0
+  (median 11 groups, 42 events, radiance 167), 1,186 have 0.052, and **873 (6 %) have 1.0** (median 2 groups,
+  5 events, radiance 17). The app and `dump_flashes.py --mtg` leave out flashes above 0.5: **12,829** flashes kept.
+- The sample (night): latitude −29.3 to 43.8, longitude −78.9 to 67.5. 9,372 flashes lie west of 37.6°W
+  (South America), which the overlap rule gives to GOES-East. MTG sees to about 79°W, so the 37.6°W boundary leaves
+  no gap. About 80,000 flashes an hour over the full disc at this time.
+- `tools/dump_flashes.py --mtg` (defaults now the real names) dumps the BODY file; `tests/Samples/mtg_lfl_sample.csv`
+  holds the first 100 of the 12,829 kept flashes in file order (the `energy` column is radiance for MTG).
+
+**PureHDF 2.2.0** reads every variable above (`short[]`, `double[]`, `ushort[]`, `byte[]`, float and short attributes),
+with values matching h5py (throwaway console project outside the repo).
 
 ## 9. GIBS clouds (spec 5.6)
 
@@ -313,5 +355,5 @@ Differences from spec section 5. The spec has **not** been edited; the controlle
 8. **5.4 NWS.** History and paging work as assumed (`pagination.next` cursor URLs, 500 per page). But 94 to 98 percent of alerts have no geometry, so the zone path is the main path, and the 24 h startup history is about 1,100 alerts in 4 pages (roughly 5 MB, estimated) and could be more on a stormy day. The `/alerts/active` response has no paging.
 9. **5.1 USGS.** Matches the spec. (Note only: `time` and `updated` are epoch milliseconds.)
 10. **5.5 EONET.** Matches the spec (point fixes in a `geometry` list, `closed` null while open). Worth noting it is slow (3 to 4 s) and all events here are JTWC-sourced.
-11. **MTG (5.7, 12.2).** Not verified; deferred to plan 3. Latency, layout and size remain open.
+11. **MTG (5.7, 12.2).** Verified 2026-11-13 (section 8): 10-minute zipped products, public about 37 s after each period, ~1.9 MB/h. Flashes are 0.6 to 10.7 min old on arrival, so the legend shows the MTG age and MTG is not called live. Flashes with `flash_filter_confidence` above 0.5 are left out.
 12. **Blue Marble asset.** The `eoimages.gsfc.nasa.gov` URL in the plan does not respond; use `assets.science.nasa.gov/.../july/world.topo.bathy.200407.3x21600x10800.jpg` (27.2 MB). The image is the July month.
