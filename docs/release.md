@@ -1,5 +1,12 @@
 # Building and releasing EarthWatch3D
 
+> **Since v1.0.1, releases ship as a signed installer, `EarthWatch3D-Setup.exe`** (Inno Setup script
+> `packaging/installer/EarthWatch3D.iss`), built and signed by `.github/workflows/release.yml` when a version tag is
+> pushed. It installs to `C:\Program Files\Qapow\EarthWatch3D` by default. To release: raise `<Version>` in
+> `Directory.Build.props`, merge, then tag `v<version>` (the workflow checks they match).
+>
+> The MSIX packaging below (`tools/build-release.ps1`) is no longer used for releases. It is kept for reference.
+
 EarthWatch3D ships as one self-contained x64 MSIX package (`EarthWatch3D.msix`) plus an App Installer file
 (`EarthWatch3D.appinstaller`) that tells Windows where to look for updates. Both are built by
 `tools/build-release.ps1`.
