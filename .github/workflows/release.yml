@@ -1,0 +1,91 @@
+name: Release
+
+# Builds EarthWatch3D.msix and EarthWatch3D.appinstaller with tools/build-release.ps1 (see docs/release.md).
+# Pull requests: built unsigned (-Signing None) to check the build and the templates; uploaded as a workflow artifact.
+# Version tags (v1.0.0): built with -Signing Azure and attached to a GitHub Release, where the .appinstaller
+# expects them (releases/latest/download/). Raise the version in Directory.Build.props before tagging.
+#
+# Azure signing uses Artifact Signing (account JohnApolloni, profile JohnApolloniPublic), the same setup VoiceCoach uses.
+# The job runs in the "release" environment and signs in to Azure with GitHub's OIDC token, which needs repository
+# variables AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_SUBSCRIPTION_ID, and an Entra app with a federated credential
+# for the "release" environment that holds the "Artifact Signing Certificate Profile Signer" role on the account.
+# With GitHub's immutable OIDC subject, the credential's subject is
+# repo:johnovanni@11181099/EarthWatch3D@1454557228:environment:release.
+# The two local-only files the script reads (packaging/metadata.json, packaging/signing.local.json) are written here;
+# the publisher must be the certificate's subject exactly, and the script's self-check fails the build if it isn't.
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths: ['.github/workflows/release.yml', 'tools/build-release.ps1', 'packaging/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write # OIDC sign-in to Azure for code signing
+
+env:
+  # Pull request builds skip signing, so they never need Azure access.
+  SIGN: ${{ github.event_name != 'pull_request' }}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    # The Azure federated credential trusts this environment, so only runs that use it can sign.
+    environment: ${{ github.event_name != 'pull_request' && 'release' || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Write signing settings
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          @{ Endpoint = 'https://cus.codesigning.azure.net/'; CodeSigningAccountName = 'JohnApolloni'; CertificateProfileName = 'JohnApolloniPublic' } |
+            ConvertTo-Json | Set-Content packaging/metadata.json -Encoding utf8
+          @{ publisher = 'CN=John Apolloni, O=John Apolloni, L=Lakeville, S=mn, C=US'; publisherDisplayName = 'John Apolloni' } |
+            ConvertTo-Json | Set-Content packaging/signing.local.json -Encoding utf8
+
+      - name: Sign in to Azure
+        if: env.SIGN == 'true'
+        uses: azure/login@v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build package
+        shell: pwsh
+        run: pwsh tools/build-release.ps1 -Signing ${{ env.SIGN == 'true' && 'Azure' || 'None' }}
+
+      - name: Upload build
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: EarthWatch3D-package${{ env.SIGN != 'true' && '-unsigned' || '' }}
+          path: |
+            artifacts/release/EarthWatch3D.msix
+            artifacts/release/EarthWatch3D.appinstaller
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $files = 'artifacts/release/EarthWatch3D.msix', 'artifacts/release/EarthWatch3D.appinstaller'
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @files --clobber
+          } else {
+            gh release create $tag @files --title "$tag" --generate-notes
+          }
