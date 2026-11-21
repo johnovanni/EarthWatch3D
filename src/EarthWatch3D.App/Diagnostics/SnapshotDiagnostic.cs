@@ -35,7 +35,7 @@ public static class SnapshotDiagnostic
     public static async Task RunAsync(Window window, SceneController scene, MainViewModel vm, LaunchOptions options,
                                       OffsetClock? offsetClock = null, Func<Task>? waitForData = null, IAppLog? log = null,
                                       Func<string, Window>? showDialog = null, IReadOnlyList<SnapshotScene>? scenes = null,
-                                      OffsetClock? sceneClock = null)
+                                      SettableClock? sceneClock = null)
     {
         if (scenes is not null && sceneClock is not null && options.SnapshotOutDir is { } outDir)
         {
@@ -84,24 +84,25 @@ public static class SnapshotDiagnostic
     }
 
     /// <summary>
-    /// The <c>--snapshot-scenes</c> run: for each scene, moves <paramref name="sceneClock"/> (the app's clock, shared with the
-    /// feeds) to its display time, sets exactly its layers and camera, waits as the single --snapshot run does (every feed
+    /// The <c>--snapshot-scenes</c> run: for each scene, moves <paramref name="sceneClock"/> (the display clock; the feeds' clock stays put, so they do not run again;
+    /// it otherwise stands still) to its display time, sets exactly its layers and camera, waits as the single --snapshot run does (every feed
     /// reported once, the scene settled, a compose for that time displayed) and saves the scene's PNG in
     /// <paramref name="outDir"/>. Exits with 0, or 1 if any scene failed.
     /// </summary>
     private static async Task RunScenesAsync(Window window, SceneController scene, MainViewModel vm,
-                                             IReadOnlyList<SnapshotScene> scenes, OffsetClock sceneClock, string outDir,
+                                             IReadOnlyList<SnapshotScene> scenes, SettableClock sceneClock, string outDir,
                                              int delayMs, Func<Task>? waitForData, IAppLog log)
     {
         int exitCode = 0;
         try
         {
+            scene.FrozenRingTime = TimeSpan.Zero;   // the pulsing rings' phase is fixed, not read from the running stopwatch
             await scene.FirstComposeDisplayed;
             foreach (var s in scenes)
             {
                 try
                 {
-                    sceneClock.Offset = s.DisplayTimeUtc - DateTime.UtcNow;
+                    sceneClock.Now = s.DisplayTimeUtc;   // stands still until the next scene
                     var layers = vm.Layers;
                     bool On(string n) => s.Layers.Contains(n, StringComparer.OrdinalIgnoreCase);
                     layers.ShowQuakes = On("quakes"); layers.ShowCyclones = On("cyclones"); layers.ShowAlerts = On("alerts");

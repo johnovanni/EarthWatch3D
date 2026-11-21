@@ -60,6 +60,9 @@ public sealed class SceneController
     // Which events are visible is worked out again at most every 250 ms (scrubbing changes the time many times a second).
     private readonly Throttle _eventThrottle = new(TimeSpan.FromMilliseconds(250));
     private readonly Stopwatch _clock = Stopwatch.StartNew();
+
+    /// <summary>Diagnostics only (--snapshot-scenes): when set, the pulsing rings are drawn at this fixed time instead of the running stopwatch.</summary>
+    public TimeSpan? FrozenRingTime { get; set; }
     private readonly ModelVisual3D _globeVisual = new();
     // Tooltip for the Sun/Moon surface markers (billboards can't carry WPF tooltips, so it is driven by hover tests).
     // Left button went down at this point and has not moved far (a click, not a drag); null otherwise.
@@ -541,7 +544,7 @@ public sealed class SceneController
             UpdateSunMoon();
             UpdateEvents();
         }
-        if (_events.HasRings) _events.AnimateRings(_clock.Elapsed);
+        if (_events.HasRings) _events.AnimateRings(FrozenRingTime ?? _clock.Elapsed);
     }
 
     // ---------------------------------------------------------------- events

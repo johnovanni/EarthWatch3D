@@ -93,11 +93,13 @@ public partial class App : Application
         // real time. Otherwise the display runs on an adjustable clock only for --snapshot-recompose, which moves the
         // app's time forward part-way through. The log always uses the real time.
         var sampleOffset = samplesDir is not null && options.DisplayTimeUtc is { } start ? start - DateTime.UtcNow : TimeSpan.Zero;
-        // A scenes run moves one shared clock (display and feeds) to each scene's time, as a --display-time run would have it.
-        OffsetClock? sceneClock = scenes is null ? null : new OffsetClock(new SystemClock()) { Offset = sampleOffset };
-        IClock wall = sceneClock ?? (sampleOffset == TimeSpan.Zero ? (IClock)new SystemClock() : new OffsetClock(new SystemClock()) { Offset = sampleOffset });
+        // A scenes run stands both clocks still so pictures repeat exactly: the feeds' (wall) at the first scene's time for the
+        // whole run, which also keeps the schedule from running the feeds again, and the display's at each scene's time.
+        SettableClock? sceneClock = scenes is null ? null : new SettableClock(scenes[0].DisplayTimeUtc);
+        IClock wall = scenes is not null ? new SettableClock(scenes[0].DisplayTimeUtc)
+            : sampleOffset == TimeSpan.Zero ? new SystemClock() : new OffsetClock(new SystemClock()) { Offset = sampleOffset };
         OffsetClock? offsetClock = options.SnapshotRecompose ? new OffsetClock(new SystemClock()) { Offset = sampleOffset } : null;
-        IClock clock = offsetClock is null ? wall : offsetClock;
+        IClock clock = sceneClock ?? (offsetClock is null ? wall : offsetClock);
 
         // Offline, the cache, zone files and settings live in a temporary folder (deleted on exit), so the user's own
         // cache and saved layer choices are not touched. The log still goes to the usual logs folder.
