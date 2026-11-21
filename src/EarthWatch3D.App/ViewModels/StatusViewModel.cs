@@ -4,6 +4,7 @@ using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Lightning.Mtg;
+using GlobeCore.Feeds;
 
 namespace EarthWatch3D.App.ViewModels;
 

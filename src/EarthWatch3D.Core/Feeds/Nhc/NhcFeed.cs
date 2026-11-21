@@ -1,11 +1,13 @@
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Geo;
-using EarthWatch3D.Core.Logging;
+using GlobeCore.Feeds;
+using GlobeCore.Geo;
+using GlobeCore.Logging;
 
 namespace EarthWatch3D.Core.Feeds.Nhc;
 
 /// <summary>Polls NHC CurrentStorms.json every 15 min; each storm's track and cone KMZ is fetched only when its advisory number changes.</summary>
-public sealed class NhcFeed(FeedHttp http, EventStore store, IAppLog log) : IEventFeed
+public sealed class NhcFeed(FeedHttp http, EventStore store, IAppLog log) : IFeed
 {
     private static readonly Uri StormsUrl = new("https://www.nhc.noaa.gov/CurrentStorms.json");
     private static readonly Uri HomeUrl = new("https://www.nhc.noaa.gov/");

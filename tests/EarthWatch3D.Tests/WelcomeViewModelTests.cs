@@ -3,6 +3,8 @@ using EarthWatch3D.App.Diagnostics;
 using EarthWatch3D.App.Services;
 using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Geo;
+using GlobeCore.Wpf.Services;
 
 namespace EarthWatch3D.Tests;
 

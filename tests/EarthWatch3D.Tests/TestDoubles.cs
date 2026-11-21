@@ -1,6 +1,7 @@
-using EarthWatch3D.Core.Logging;
 using EarthWatch3D.Core.Storage;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Logging;
+using GlobeCore.Storage;
+using GlobeCore.Time;
 
 namespace EarthWatch3D.Tests;
 
@@ -18,7 +19,7 @@ internal sealed class RecordingLog : IAppLog
 internal sealed class TestClock(DateTime t) : IClock { public DateTime UtcNow { get; set; } = t; }
 
 /// <summary>In-memory, synchronous settings store: Load returns the last saved value.</summary>
-internal sealed class FakeSettingsStore(AppSettings? initial = null) : ISettingsStore
+internal sealed class FakeSettingsStore(AppSettings? initial = null) : ISettingsStore<AppSettings>
 {
     private readonly object _gate = new();
     private AppSettings _current = initial ?? new();

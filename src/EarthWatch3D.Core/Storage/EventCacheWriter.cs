@@ -1,5 +1,5 @@
 using EarthWatch3D.Core.Events;
-using EarthWatch3D.Core.Logging;
+using GlobeCore.Logging;
 
 namespace EarthWatch3D.Core.Storage;
 

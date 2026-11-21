@@ -1,7 +1,8 @@
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Geo;
-using EarthWatch3D.Core.Logging;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Feeds;
+using GlobeCore.Logging;
+using GlobeCore.Time;
 
 namespace EarthWatch3D.Core.Lightning.Mtg;
 
@@ -11,7 +12,7 @@ namespace EarthWatch3D.Core.Lightning.Mtg;
 /// wanted and the camera faces MTG (0 degrees longitude) or GOES-East (whose flashes east of 37.6 W belong to MTG).
 /// </summary>
 public sealed class MtgFeed(EumetsatClient client, LightningBuffer buffer, IClock clock, ViewState view,
-    Func<EumetsatCredentials?> credentials, Func<TimeSpan> window, Func<bool> paused, Func<bool> wanted, IAppLog log) : IEventFeed
+    Func<EumetsatCredentials?> credentials, Func<TimeSpan> window, Func<bool> paused, Func<bool> wanted, IAppLog log) : IFeed
 {
     public const int MaxProductsPerRun = 8;
     private const double SubSatelliteLon = 0.0, GoesEastLon = -75.2;

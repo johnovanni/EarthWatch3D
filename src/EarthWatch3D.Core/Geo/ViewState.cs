@@ -1,4 +1,5 @@
 using AstroCore.Earth;
+using GlobeCore.Geo;
 
 namespace EarthWatch3D.Core.Geo;
 
@@ -19,7 +20,7 @@ public sealed class ViewState
     /// <paramref name="maxAngleDeg"/> of great-circle angle from the camera's sub-point.</summary>
     public static bool Faces(GeoPosition cameraSubPoint, double subSatelliteLon, double maxAngleDeg = 100)
     {
-        double angleDeg = GeoMath.DistanceKm(cameraSubPoint, new GeoPosition(0, subSatelliteLon)) / GeoMath.EarthRadiusKm * 180 / Math.PI;
+        double angleDeg = GeoMath.DistanceKm(cameraSubPoint, new GeoPosition(0, subSatelliteLon), EarthSphere.RadiusKm) / EarthSphere.RadiusKm * 180 / Math.PI;
         return Math.Round(angleDeg, 9) < maxAngleDeg;   // rounding absorbs haversine round-off so an exact limit is "not facing"
     }
 }

@@ -2,11 +2,13 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using AstroCore.Earth;
+using EarthWatch3D.Core;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Lightning;
 using EarthWatch3D.Core.Lightning.Glm;
 using EarthWatch3D.Core.Lightning.Mtg;
+using GlobeCore.Feeds;
 
 namespace EarthWatch3D.Tests;
 
@@ -57,7 +59,7 @@ public sealed class MtgFeedTests
             Handler.Map(SearchPrefix, Sample("mtg_search.json"));
             Handler.Map(DownloadPrefix, Sample("mtg_lfl_sample.zip"));
             Gate = new TokenGate(Handler);
-            Http = new FeedHttp(Gate);
+            Http = new FeedHttp(AppInfo.UserAgent, Gate);
             View.CameraSubPoint = new GeoPosition(10, 15);
             Feed = new MtgFeed(new EumetsatClient(Http, Clock), Buffer, Clock, View, () => Credentials,
                 () => Window, () => Paused, () => Wanted, Log);
@@ -375,7 +377,7 @@ public sealed class MtgFeedTests
         samples.Map("https://noaa-goes19.s3.amazonaws.com/?list-type=2", Sample("glm_g19_listing.xml"));
         samples.Map("https://noaa-goes19.s3.amazonaws.com/GLM-L2-LCFA/", Sample("glm_g19_sample.nc"));
         var gate = new TokenGate(samples) { RejectToken = true };
-        using var http = new FeedHttp(gate);
+        using var http = new FeedHttp(AppInfo.UserAgent, gate);
         var clock = new TestClock(new DateTime(2026, 11, 11, 19, 59, 50, DateTimeKind.Utc));
         var view = new ViewState { CameraSubPoint = new GeoPosition(0, -30) };   // faces both GOES-East and MTG
         var log = new RecordingLog();
@@ -384,7 +386,7 @@ public sealed class MtgFeedTests
             () => TimeSpan.FromMinutes(15), () => false, () => true, log);
         var glm = new GlmFeed(http, buffer, LightningSensor.GoesEast, clock, view, () => TimeSpan.FromMinutes(15),
             () => false, () => !mtg.KeyRejected, () => true, log);
-        using var scheduler = new FeedScheduler([mtg, glm], clock, log);
+        using var scheduler = new FeedScheduler([mtg, glm], clock, log, AppInfo.FeedIdleNote);
 
         for (int i = 0; i < 3; i++)
         {

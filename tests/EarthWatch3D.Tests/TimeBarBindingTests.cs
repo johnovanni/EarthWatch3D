@@ -2,7 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.App.Views;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Time;
 
 namespace EarthWatch3D.Tests;
 

@@ -9,18 +9,23 @@ using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Eonet;
 using EarthWatch3D.Core.Feeds.Gdacs;
-using EarthWatch3D.Core.Feeds.Gibs;
 using EarthWatch3D.Core.Feeds.Nhc;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Feeds.Usgs;
 using EarthWatch3D.Core.Geo;
-using EarthWatch3D.Core.Globe;
 using EarthWatch3D.Core.Lightning;
 using EarthWatch3D.Core.Lightning.Glm;
 using EarthWatch3D.Core.Lightning.Mtg;
-using EarthWatch3D.Core.Logging;
 using EarthWatch3D.Core.Storage;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Earth.Clouds;
+using GlobeCore.Feeds;
+using GlobeCore.Imaging;
+using GlobeCore.Logging;
+using GlobeCore.Storage;
+using GlobeCore.Time;
+using GlobeCore.Wpf.Diagnostics;
+using GlobeCore.Wpf.Rendering;
+using GlobeCore.Wpf.Services;
 
 namespace EarthWatch3D.App;
 
@@ -33,7 +38,7 @@ public partial class App : Application
     private static readonly TimeSpan PruneInterval = TimeSpan.FromMinutes(1);
 
     private FileLog? _log;
-    private SettingsSaver? _settings;
+    private SettingsSaver<AppSettings>? _settings;
     private FeedHttp? _http;
     private FeedScheduler? _scheduler;
     private EventCacheWriter? _cacheWriter;
@@ -48,7 +53,7 @@ public partial class App : Application
         base.OnStartup(e);
         // The log comes first (it always uses the real time and the usual folder), so even a bad command line is logged.
         string logsDir = AppPaths.Default.LogsDir;
-        var log = _log = new FileLog(logsDir, new SystemClock());
+        var log = _log = new FileLog(logsDir, new SystemClock(), AppInfo.LogFilePrefix);
         log.Info($"EarthWatch3D {AppInfo.Version} starting" + (e.Args.Length > 0 ? " with " + string.Join(" ", e.Args) : ""));
         // Shown at once on the UI thread (after "too many errors" the process ends straight afterwards), otherwise
         // queued to it: unobserved task faults arrive on the finalizer thread.
@@ -58,7 +63,7 @@ public partial class App : Application
         {
             if (Dispatcher.CheckAccess()) ShowCrash(message);
             else Dispatcher.BeginInvoke(() => ShowCrash(message));
-        });
+        }, appName: AppInfo.Name);
         _crash.Install(this);
         // Offline runs that were killed leave their temporary data folder behind.
         OfflineSamples.SweepStaleFolders(Path.GetTempPath(), DateTime.UtcNow, log);
@@ -105,7 +110,7 @@ public partial class App : Application
         // cache and saved layer choices are not touched. The log still goes to the usual logs folder.
         var paths = AppPaths.Default;
         if (samplesDir is not null)
-            paths = new AppPaths(_offlineRoot = Path.Combine(Path.GetTempPath(), OfflineSamples.TempFolderPrefix + Guid.NewGuid().ToString("N")));
+            paths = new AppPaths(new AppDataRoot(_offlineRoot = Path.Combine(Path.GetTempPath(), OfflineSamples.TempFolderPrefix + Guid.NewGuid().ToString("N"))));
         // The app must still start without its data folders: settings fall back to defaults, the cache to empty,
         // and failed writes are logged (FileLog itself never throws). Logged once the log exists.
         Exception? foldersError = null;
@@ -115,12 +120,12 @@ public partial class App : Application
         if (samplesDir is not null)
             log.Info($"Offline samples from {samplesDir}; data folder {paths.Root}; clock moved by {sampleOffset.TotalHours:F2} h");
         // Saves are debounced and written off the UI thread (a failed write can sleep while it retries).
-        _settings = new SettingsSaver(new SettingsStore(paths, log), log: log);
+        _settings = new SettingsSaver<AppSettings>(new SettingsStore(paths, log), log: log);
 
         var cache = new EventCache(paths, log);
         var store = LoadCachedEvents(cache, paths, wall, log);
 
-        var http = _http = samplesDir is null ? new FeedHttp() : new FeedHttp(OfflineSamples.CreateHandler(samplesDir));
+        var http = _http = samplesDir is null ? new FeedHttp(AppInfo.UserAgent) : new FeedHttp(AppInfo.UserAgent, OfflineSamples.CreateHandler(samplesDir));
         // Today's download volume (wire bytes of every request), kept across restarts on the same local day. Offline it is
         // not saved to the user's file: the paths are the temporary folder's.
         var meter = _meter = new DownloadMeter(wall, TimeZoneInfo.Local, paths.DownloadMeterFile, log);
@@ -128,7 +133,7 @@ public partial class App : Application
         http.BytesReceived += meter.Add;
         // The user's own EUMETSAT key and secret: encrypted in the settings file, tested through the app's HTTP client.
         var eumetsat = new EumetsatClient(http, wall, log);
-        var credentials = new EumetsatCredentialStore(_settings, new DpapiProtector());
+        var credentials = new EumetsatCredentialStore(_settings, new DpapiProtector(EumetsatCredentialStore.ProtectorEntropy));
         MainViewModel? main = null;
         MainWindow? mainWindow = null;
         // Everything that must change when Settings is saved; one place, so each setting is applied the same way.
@@ -190,8 +195,8 @@ public partial class App : Application
             () => mtg.Active,
             () => Volatile.Read(ref wantLightning), log);
         var glmEast = Glm(LightningSensor.GoesEast);
-        var clouds = new GibsCloudsFeed(http, paths, wall, () => Volatile.Read(ref wantClouds), log, DecodeForBlackCheck);
-        IEventFeed[] feeds =
+        var clouds = new GibsCloudsFeed(http, paths.CloudsDir, wall, () => Volatile.Read(ref wantClouds), log, DecodeForBlackCheck);
+        IFeed[] feeds =
         [
             new UsgsFeed(http, store, wall, log),
             new GdacsFeed(http, store, wall, log),
@@ -203,7 +208,7 @@ public partial class App : Application
             mtg,
             clouds,
         ];
-        var scheduler = _scheduler = new FeedScheduler(feeds, wall, log);
+        var scheduler = _scheduler = new FeedScheduler(feeds, wall, log, AppInfo.FeedIdleNote);
         foreach (var status in scheduler.Statuses) vm.Status.Apply(status);   // grey dots until each first run
         scheduler.StatusChanged += (_, status) => vm.Status.Apply(status);   // background thread: Apply uses BeginInvoke
         // Offline, the diagnostics wait for the data: every feed has reported OK once and the zone downloads the NWS
@@ -337,7 +342,7 @@ public partial class App : Application
 
     // A small copy is enough to count black pixels.
     private static Bgra32Image DecodeForBlackCheck(byte[] jpeg) =>
-        Rendering.ImageConversions.DecodeToBgra32(new MemoryStream(jpeg), 1024);
+        ImageConversions.DecodeToBgra32(new MemoryStream(jpeg), 1024);
 
     /// <summary>Completes once every named feed has reported <see cref="FeedState.Ok"/> at least once.</summary>
     private static Task AllFeedsOkOnce(FeedScheduler scheduler, IEnumerable<string> names)

@@ -4,6 +4,8 @@ using AstroCore.Earth;
 using EarthWatch3D.App.Rendering;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Geo;
+using GlobeCore.Geo;
+using GlobeCore.Wpf.Rendering;
 
 namespace EarthWatch3D.Tests;
 

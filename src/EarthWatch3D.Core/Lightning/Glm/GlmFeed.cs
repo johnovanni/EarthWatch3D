@@ -1,7 +1,8 @@
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Geo;
-using EarthWatch3D.Core.Logging;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Feeds;
+using GlobeCore.Logging;
+using GlobeCore.Time;
 
 namespace EarthWatch3D.Core.Lightning.Glm;
 
@@ -9,7 +10,7 @@ namespace EarthWatch3D.Core.Lightning.Glm;
 /// Polls one GOES satellite's public NOAA S3 bucket every 20 s for new 20-second GLM files and puts their flashes into the
 /// lightning buffer. Runs only while the lightning layer is wanted and the camera faces the satellite.
 /// </summary>
-public sealed class GlmFeed : IEventFeed
+public sealed class GlmFeed : IFeed
 {
     public const int MaxFilesPerRun = 45;
     private static readonly TimeSpan BufferHorizon = TimeSpan.FromMinutes(60);

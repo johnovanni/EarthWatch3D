@@ -7,8 +7,8 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using EarthWatch3D.App.Controllers;
 using EarthWatch3D.App.ViewModels;
-using EarthWatch3D.Core.Logging;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Logging;
+using GlobeCore.Time;
 
 namespace EarthWatch3D.App.Diagnostics;
 

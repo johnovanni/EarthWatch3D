@@ -1,16 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using EarthWatch3D.Core.Logging;
+using GlobeCore.Logging;
+using GlobeCore.Storage;
 
 namespace EarthWatch3D.Core.Storage;
 
-public interface ISettingsStore
-{
-    AppSettings Load();
-    void Save(AppSettings s);
-}
-
-public sealed class SettingsStore(AppPaths paths, IAppLog log) : ISettingsStore
+public sealed class SettingsStore(AppPaths paths, IAppLog log) : ISettingsStore<AppSettings>
 {
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -42,5 +37,5 @@ public sealed class SettingsStore(AppPaths paths, IAppLog log) : ISettingsStore
         return false;
     }
 
-    void ISettingsStore.Save(AppSettings s) => Save(s);
+    void ISettingsStore<AppSettings>.Save(AppSettings s) => Save(s);
 }

@@ -5,6 +5,8 @@ using CommunityToolkit.Mvvm.Input;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Lightning.Mtg;
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Geo;
+using GlobeCore.Storage;
 
 namespace EarthWatch3D.App.ViewModels;
 
@@ -20,13 +22,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     private const string NoSpaces = "The consumer key and secret cannot contain spaces.";
     private const string BadLimit = "Daily limit: a whole number of MB from 10 to 100,000, or empty for no limit.";
 
-    private readonly ISettingsStore _store;
+    private readonly ISettingsStore<AppSettings> _store;
     private readonly EumetsatCredentialStore _creds;
     private readonly Func<EumetsatCredentials, CancellationToken, Task<(EumetsatTestResult, string?)>> _test;
     private readonly Action<AppSettings> _applied;
     private string? _savedSecret;
 
-    public SettingsViewModel(ISettingsStore store, EumetsatCredentialStore creds,
+    public SettingsViewModel(ISettingsStore<AppSettings> store, EumetsatCredentialStore creds,
         Func<EumetsatCredentials, CancellationToken, Task<(EumetsatTestResult, string?)>> test, Action<AppSettings> applied)
     {
         _store = store;

@@ -1,8 +1,10 @@
 using System.IO;
 using System.Text;
+using EarthWatch3D.Core;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Eonet;
+using GlobeCore.Feeds;
 
 namespace EarthWatch3D.Tests;
 
@@ -90,7 +92,7 @@ public sealed class EonetTests
         var handler = new SampleHttpHandler();
         handler.Map("https://eonet.gsfc.nasa.gov/api/v3/events?category=severeStorms&status=all&days=7", Sample("eonet_storms.json"));
         var store = new EventStore(new TestClock(new DateTime(2026, 11, 11, 12, 0, 0, DateTimeKind.Utc)));
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var feed = new EonetFeed(http, store, new RecordingLog());
         Assert.Equal("EONET", feed.Name);
         Assert.Equal(TimeSpan.FromMinutes(30), feed.Interval);

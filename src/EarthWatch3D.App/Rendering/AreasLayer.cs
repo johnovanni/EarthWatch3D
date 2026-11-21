@@ -2,7 +2,9 @@ using System.Runtime.CompilerServices;
 using System.Windows.Media;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Geo;
-using EarthWatch3D.Core.Globe;
+using GlobeCore.Geo;
+using GlobeCore.Imaging;
+using GlobeCore.Wpf.Rendering;
 
 namespace EarthWatch3D.App.Rendering;
 

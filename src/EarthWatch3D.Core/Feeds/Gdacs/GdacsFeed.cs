@@ -1,12 +1,13 @@
 using System.Globalization;
 using EarthWatch3D.Core.Events;
-using EarthWatch3D.Core.Logging;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Feeds;
+using GlobeCore.Logging;
+using GlobeCore.Time;
 
 namespace EarthWatch3D.Core.Feeds.Gdacs;
 
 /// <summary>Polls GDACS every 15 min for tropical cyclones of the last 2 days; geometry is fetched once per new episode.</summary>
-public sealed class GdacsFeed(FeedHttp http, EventStore store, IClock clock, IAppLog log) : IEventFeed
+public sealed class GdacsFeed(FeedHttp http, EventStore store, IClock clock, IAppLog log) : IFeed
 {
     private readonly HashSet<(int EventId, int EpisodeId, DateTime ModifiedUtc)> _seen = [];
 

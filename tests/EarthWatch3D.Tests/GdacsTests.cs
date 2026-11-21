@@ -1,9 +1,11 @@
 using System.IO;
 using System.Text;
 using AstroCore.Earth;
+using EarthWatch3D.Core;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Gdacs;
+using GlobeCore.Feeds;
 
 namespace EarthWatch3D.Tests;
 
@@ -104,7 +106,7 @@ public sealed class GdacsTests
         handler.Map("https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?", Sample("gdacs_geometry.json"));
         var clock = new TestClock(new DateTime(2026, 11, 11, 15, 0, 0, DateTimeKind.Utc));
         var store = new EventStore(clock);
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var feed = new GdacsFeed(http, store, clock, new RecordingLog());
         Assert.Equal("GDACS", feed.Name);
         Assert.Equal(TimeSpan.FromMinutes(15), feed.Interval);
@@ -155,7 +157,7 @@ public sealed class GdacsTests
         var clock = new TestClock(new DateTime(2026, 11, 11, 15, 0, 0, DateTimeKind.Utc));
         var store = new EventStore(clock);
         var log = new RecordingLog();
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         await new GdacsFeed(http, store, clock, log).RunOnceAsync(CancellationToken.None);
         Assert.Single(store.Snapshot.Cyclones);
         Assert.Equal("gdacs:2", store.Snapshot.Cyclones[0].Id);

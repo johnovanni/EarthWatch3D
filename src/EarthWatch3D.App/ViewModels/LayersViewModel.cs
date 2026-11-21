@@ -1,12 +1,13 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Storage;
 
 namespace EarthWatch3D.App.ViewModels;
 
 /// <summary>The layer strip's toggles. Starts from the saved settings; any change is saved.</summary>
 public partial class LayersViewModel : ObservableObject
 {
-    private readonly ISettingsStore _store;
+    private readonly ISettingsStore<AppSettings> _store;
 
     [ObservableProperty] private bool _showQuakes;
     [ObservableProperty] private bool _showCyclones;
@@ -23,7 +24,7 @@ public partial class LayersViewModel : ObservableObject
     /// <summary>The strip shows text labels beside its icons.</summary>
     [ObservableProperty] private bool _isExpanded;
 
-    public LayersViewModel(ISettingsStore store)
+    public LayersViewModel(ISettingsStore<AppSettings> store)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         var s = store.Load();

@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Media.Media3D;
 using AstroCore.Earth;
 using EarthWatch3D.Core.Geo;
+using GlobeCore.Geo;
+using GlobeCore.Wpf.Rendering;
 
 namespace EarthWatch3D.App.Rendering;
 

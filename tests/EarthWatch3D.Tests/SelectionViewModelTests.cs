@@ -2,6 +2,7 @@ using AstroCore.Earth;
 using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Geo;
+using GlobeCore.Geo;
 
 namespace EarthWatch3D.Tests;
 

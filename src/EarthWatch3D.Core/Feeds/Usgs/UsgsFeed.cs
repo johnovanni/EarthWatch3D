@@ -1,11 +1,12 @@
 using EarthWatch3D.Core.Events;
-using EarthWatch3D.Core.Logging;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Feeds;
+using GlobeCore.Logging;
+using GlobeCore.Time;
 
 namespace EarthWatch3D.Core.Feeds.Usgs;
 
 /// <summary>Polls USGS every 60 s: the hour feed, and the week feed on the first run and every 30 min or more.</summary>
-public sealed class UsgsFeed(FeedHttp http, EventStore store, IClock clock, IAppLog log) : IEventFeed
+public sealed class UsgsFeed(FeedHttp http, EventStore store, IClock clock, IAppLog log) : IFeed
 {
     private static readonly Uri HourUrl = new("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson");
     private static readonly Uri WeekUrl = new("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson");

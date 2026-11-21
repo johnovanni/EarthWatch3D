@@ -3,8 +3,9 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using EarthWatch3D.Core.Feeds;
-using EarthWatch3D.Core.Logging;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Feeds;
+using GlobeCore.Logging;
+using GlobeCore.Time;
 
 namespace EarthWatch3D.Core.Lightning.Mtg;
 

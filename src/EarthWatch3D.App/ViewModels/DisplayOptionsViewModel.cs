@@ -1,13 +1,14 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Storage;
 
 namespace EarthWatch3D.App.ViewModels;
 
 /// <summary>The ⋯ Display flyout's choices. Starts from the saved settings; any change is saved.</summary>
 public partial class DisplayOptionsViewModel : ObservableObject
 {
-    private readonly ISettingsStore _store;
+    private readonly ISettingsStore<AppSettings> _store;
     private double _minMagnitude;
     private int _quakeWindowDays;
     private double _nightStrength;
@@ -20,7 +21,7 @@ public partial class DisplayOptionsViewModel : ObservableObject
     /// <summary>The soft gold day/night line.</summary>
     [ObservableProperty] private bool _showTerminator;
 
-    public DisplayOptionsViewModel(ISettingsStore store)
+    public DisplayOptionsViewModel(ISettingsStore<AppSettings> store)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         var s = store.Load();

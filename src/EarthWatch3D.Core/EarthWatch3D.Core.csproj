@@ -1,7 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\external\AstroCore\src\AstroCore\AstroCore.csproj" />
+    <ProjectReference Include="$(AstroCoreRoot)src\AstroCore\AstroCore.csproj" />
+    <ProjectReference Include="$(GlobeCoreRoot)src\GlobeCore\GlobeCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>

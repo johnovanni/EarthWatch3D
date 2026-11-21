@@ -69,7 +69,7 @@ internal static class PerfRun
             PerfLog.Write("first compose displayed: " + PerfLog.Memory());
             if (waitForData is not null)
             {
-                await SnapshotDiagnostic.WaitForDataAsync(scene, waitForData, SnapshotDiagnostic.DataTimeout, new Core.Logging.NullLog());
+                await SnapshotDiagnostic.WaitForDataAsync(scene, waitForData, SnapshotDiagnostic.DataTimeout, new GlobeCore.Logging.NullLog());
                 PerfLog.Write($"offline data drawn (areas shown={scene.AreasDisplayed}): " + PerfLog.Memory());
             }
             await Task.Delay(10_000);

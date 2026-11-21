@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using EarthWatch3D.App.Rendering;
 using EarthWatch3D.App.Services;
 using EarthWatch3D.Core;
+using GlobeCore.Wpf.Services;
 
 namespace EarthWatch3D.App.ViewModels;
 

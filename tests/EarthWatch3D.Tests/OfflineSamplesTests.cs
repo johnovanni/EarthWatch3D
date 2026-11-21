@@ -1,11 +1,11 @@
 using System.IO;
 using AstroCore.Earth;
 using EarthWatch3D.App.Diagnostics;
+using EarthWatch3D.Core;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Eonet;
 using EarthWatch3D.Core.Feeds.Gdacs;
-using EarthWatch3D.Core.Feeds.Gibs;
 using EarthWatch3D.Core.Feeds.Nhc;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Feeds.Usgs;
@@ -14,6 +14,9 @@ using EarthWatch3D.Core.Lightning;
 using EarthWatch3D.Core.Lightning.Glm;
 using EarthWatch3D.Core.Lightning.Mtg;
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Earth.Clouds;
+using GlobeCore.Feeds;
+using GlobeCore.Storage;
 
 namespace EarthWatch3D.Tests;
 
@@ -51,23 +54,23 @@ public class OfflineSamplesTests
     public async Task EveryFeedRunsFromTheSamples()
     {
         var handler = OfflineSamples.CreateHandler(SamplesDir);
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var clock = new TestClock(SampleTime);
         var log = new RecordingLog();
         var store = new EventStore(clock);
-        var paths = new AppPaths(Path.Combine(Path.GetTempPath(), "ew3d-offline-" + Guid.NewGuid().ToString("N")));
+        var paths = new AppPaths(new AppDataRoot(Path.Combine(Path.GetTempPath(), "ew3d-offline-" + Guid.NewGuid().ToString("N"))));
         try
         {
             paths.EnsureCreated();
             var zones = new ZoneCache(http, paths, clock, log);
-            IEventFeed[] feeds =
+            IFeed[] feeds =
             [
                 new UsgsFeed(http, store, clock, log),
                 new GdacsFeed(http, store, clock, log),
                 new NhcFeed(http, store, log),
                 new NwsFeed(http, store, zones, () => AlertTypes.Warnings, clock, log),
                 new EonetFeed(http, store, log),
-                new GibsCloudsFeed(http, paths, clock, () => true, log),
+                new GibsCloudsFeed(http, paths.CloudsDir, clock, () => true, log),
             ];
             foreach (var f in feeds) await f.RunOnceAsync(CancellationToken.None);   // throws if a request 404s
             await zones.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(20));
@@ -102,10 +105,10 @@ public class OfflineSamplesTests
     public async Task OfflineRunHasLightningAndClouds()
     {
         var handler = OfflineSamples.CreateHandler(SamplesDir);
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var clock = new TestClock(SampleTime);
         var log = new RecordingLog();
-        var paths = new AppPaths(Path.Combine(Path.GetTempPath(), "ew3d-offline-" + Guid.NewGuid().ToString("N")));
+        var paths = new AppPaths(new AppDataRoot(Path.Combine(Path.GetTempPath(), "ew3d-offline-" + Guid.NewGuid().ToString("N"))));
         try
         {
             paths.EnsureCreated();
@@ -135,7 +138,7 @@ public class OfflineSamplesTests
             Assert.Contains(handler.Requests, r => r.StartsWith("https://noaa-goes18.s3.amazonaws.com/GLM-L2-LCFA/", StringComparison.Ordinal));
 
             CloudImage? ready = null;
-            var clouds = new GibsCloudsFeed(http, paths, clock, () => true, log);
+            var clouds = new GibsCloudsFeed(http, paths.CloudsDir, clock, () => true, log);
             clouds.ImageReady += (_, image) => ready = image;
             Assert.Equal(FeedRunResult.Ok, await clouds.RunOnceAsync(CancellationToken.None));
             Assert.NotNull(ready);
@@ -160,7 +163,7 @@ public class OfflineSamplesTests
     public async Task OfflineRunHasMtgLightning()
     {
         var handler = OfflineSamples.CreateHandler(SamplesDir);
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         // 21:45 on the sample day: the 21:30-21:40 product of mtg_lfl_sample.zip is the newest published.
         var clock = new TestClock(new DateTime(2026, 11, 13, 21, 45, 0, DateTimeKind.Utc));
         var log = new RecordingLog();

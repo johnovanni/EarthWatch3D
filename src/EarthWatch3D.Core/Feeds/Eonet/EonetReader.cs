@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using AstroCore.Earth;
 using EarthWatch3D.Core.Events;
-using EarthWatch3D.Core.Logging;
+using GlobeCore.Logging;
 
 namespace EarthWatch3D.Core.Feeds.Eonet;
 

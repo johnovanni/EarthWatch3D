@@ -1,10 +1,11 @@
 using EarthWatch3D.Core.Events;
-using EarthWatch3D.Core.Logging;
+using GlobeCore.Feeds;
+using GlobeCore.Logging;
 
 namespace EarthWatch3D.Core.Feeds.Eonet;
 
 /// <summary>Polls NASA EONET severe storms every 30 min.</summary>
-public sealed class EonetFeed(FeedHttp http, EventStore store, IAppLog log) : IEventFeed
+public sealed class EonetFeed(FeedHttp http, EventStore store, IAppLog log) : IFeed
 {
     private static readonly Uri Url = new("https://eonet.gsfc.nasa.gov/api/v3/events?category=severeStorms&status=all&days=7");
 

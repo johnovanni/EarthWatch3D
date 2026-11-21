@@ -5,6 +5,7 @@ using System.Net.Http;
 using EarthWatch3D.App.Services;
 using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.Core;
+using GlobeCore.Wpf.Services;
 
 namespace EarthWatch3D.Tests;
 

@@ -1,7 +1,8 @@
 using System.Globalization;
 using EarthWatch3D.Core.Events;
-using EarthWatch3D.Core.Logging;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Feeds;
+using GlobeCore.Logging;
+using GlobeCore.Time;
 
 namespace EarthWatch3D.Core.Feeds.Nws;
 
@@ -9,7 +10,7 @@ namespace EarthWatch3D.Core.Feeds.Nws;
 /// Polls NWS every 2 min. The first run also reads the last 24 h of history (following pagination, at most 20 pages).
 /// Zone outlines are requested only for alerts of the types the user chose that are active now.
 /// </summary>
-public sealed class NwsFeed(FeedHttp http, EventStore store, ZoneCache zones, Func<AlertTypes> filter, IClock clock, IAppLog log) : IEventFeed
+public sealed class NwsFeed(FeedHttp http, EventStore store, ZoneCache zones, Func<AlertTypes> filter, IClock clock, IAppLog log) : IFeed
 {
     private const int MaxHistoryPages = 20;
     private static readonly Uri ActiveUrl = new("https://api.weather.gov/alerts/active");

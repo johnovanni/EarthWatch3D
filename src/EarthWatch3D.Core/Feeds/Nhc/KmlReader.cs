@@ -4,7 +4,8 @@ using System.Xml;
 using System.Xml.Linq;
 using AstroCore.Earth;
 using EarthWatch3D.Core.Geo;
-using EarthWatch3D.Core.Logging;
+using GlobeCore.Geo;
+using GlobeCore.Logging;
 
 namespace EarthWatch3D.Core.Feeds.Nhc;
 

@@ -2,7 +2,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Geo;
-using EarthWatch3D.Core.Logging;
+using GlobeCore.Geo;
+using GlobeCore.Logging;
+using GlobeCore.Storage;
 
 namespace EarthWatch3D.Core.Storage;
 

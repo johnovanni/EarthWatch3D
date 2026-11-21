@@ -1,9 +1,11 @@
 using System.IO;
 using AstroCore.Earth;
+using EarthWatch3D.Core;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Lightning;
 using EarthWatch3D.Core.Lightning.Glm;
+using GlobeCore.Feeds;
 
 namespace EarthWatch3D.Tests;
 
@@ -32,7 +34,7 @@ public sealed class GlmFeedTests
             foreach (var h in new[] { "18", "20" })   // hours with no files yet (or none in the sample)
                 Handler.MapText(ListPrefix(h), "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"></ListBucketResult>");
             Handler.Map(Bucket + "GLM-L2-LCFA/", Sample("glm_g19_sample.nc"));
-            Http = new FeedHttp(Handler);
+            Http = new FeedHttp(AppInfo.UserAgent, Handler);
             View.CameraSubPoint = new GeoPosition(0, -75);
             Feed = new GlmFeed(Http, Buffer, LightningSensor.GoesEast, Clock, View, () => Window, () => Paused, () => false, () => Wanted, Log);
         }

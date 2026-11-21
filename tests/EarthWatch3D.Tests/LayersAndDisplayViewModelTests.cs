@@ -7,6 +7,7 @@ using EarthWatch3D.App.Views;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Feeds;
 
 namespace EarthWatch3D.Tests;
 
@@ -279,12 +280,12 @@ public class LayersAndDisplayViewModelTests
     {
         var store = new FakeSettingsStore();
         var vm = new MainViewModel(new TestClock(T0), store);
-        Assert.Equal(EarthWatch3D.Core.Geo.DistanceUnits.Kilometres, vm.Units);
-        vm.Units = EarthWatch3D.Core.Geo.DistanceUnits.Miles;
-        Assert.Equal(EarthWatch3D.Core.Geo.DistanceUnits.Miles, store.Load().Units);
+        Assert.Equal(GlobeCore.Geo.DistanceUnits.Kilometres, vm.Units);
+        vm.Units = GlobeCore.Geo.DistanceUnits.Miles;
+        Assert.Equal(GlobeCore.Geo.DistanceUnits.Miles, store.Load().Units);
         Assert.EndsWith(" mi", vm.SunMoon.MoonDistanceText);
         var again = new MainViewModel(new TestClock(T0), store);
-        Assert.Equal(EarthWatch3D.Core.Geo.DistanceUnits.Miles, again.Units);
+        Assert.Equal(GlobeCore.Geo.DistanceUnits.Miles, again.Units);
         Assert.EndsWith(" mi", again.SunMoon.MoonDistanceText);
     }
 }

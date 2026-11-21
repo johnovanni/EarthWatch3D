@@ -1,8 +1,11 @@
 using System.Net.Http;
 using System.IO;
+using EarthWatch3D.Core;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Feeds;
+using GlobeCore.Storage;
 
 namespace EarthWatch3D.Tests;
 
@@ -13,7 +16,7 @@ public sealed class ZoneCacheTests
 
     private static AppPaths TempPaths()
     {
-        var p = new AppPaths(Path.Combine(Path.GetTempPath(), "ew3d-zc-" + Guid.NewGuid().ToString("N")));
+        var p = new AppPaths(new AppDataRoot(Path.Combine(Path.GetTempPath(), "ew3d-zc-" + Guid.NewGuid().ToString("N"))));
         p.EnsureCreated();
         return p;
     }
@@ -25,7 +28,7 @@ public sealed class ZoneCacheTests
         handler.Map(Pzz, Sample("nws_zone.json"));
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
         var paths = TempPaths();
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var zc = new ZoneCache(http, paths, clock, new RecordingLog());
         var loaded = 0;
         zc.ZonesLoaded += (_, _) => Interlocked.Increment(ref loaded);
@@ -60,7 +63,7 @@ public sealed class ZoneCacheTests
         handler.Map(Pzz, Sample("nws_zone.json"));
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
         var paths = TempPaths();
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var zc = new ZoneCache(http, paths, clock, new RecordingLog());
         zc.Request([Pzz]);
         await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
@@ -79,7 +82,7 @@ public sealed class ZoneCacheTests
         handler.Map(Pzz, Sample("nws_zone.json"));
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
         var paths = TempPaths();
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var writer = new ZoneCache(http, paths, clock, new RecordingLog());
         var reader = new ZoneCache(http, paths, clock, new RecordingLog());
         Assert.False(reader.TryGet(Pzz, out _));                 // miss, remembered
@@ -98,7 +101,7 @@ public sealed class ZoneCacheTests
         handler.Map("https://api.weather.gov/zones/", Sample("nws_zone.json"));
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
         var paths = TempPaths();
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var zc = new ZoneCache(http, paths, clock, new RecordingLog());
         zc.Request(["https://api.weather.gov/zones/forecast/X", "https://api.weather.gov/zones/county/X"]);
         await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
@@ -111,7 +114,7 @@ public sealed class ZoneCacheTests
     }
 
     /// <summary>Records each warning and whether it carried an exception (and so a stack trace).</summary>
-    private sealed class TraceLog : EarthWatch3D.Core.Logging.IAppLog
+    private sealed class TraceLog : GlobeCore.Logging.IAppLog
     {
         private readonly object _gate = new();
         public List<(string Message, bool HasException)> Warnings { get; } = [];
@@ -126,7 +129,7 @@ public sealed class ZoneCacheTests
         var handler = new SampleHttpHandler();   // nothing mapped: every zone is a 404
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
         var log = new TraceLog();
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var zc = new ZoneCache(http, TempPaths(), clock, log);
 
         async Task RequestAt(TimeSpan sinceStart)
@@ -174,7 +177,7 @@ public sealed class ZoneCacheTests
         var handler = new SampleHttpHandler();
         handler.MapText(Pzz, """{"id":"x","geometry":null}""");
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var zc = new ZoneCache(http, TempPaths(), clock, new RecordingLog());
         zc.Request([Pzz]);
         await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
@@ -214,7 +217,7 @@ public sealed class ZoneCacheTests
         inner.Map("https://api.weather.gov/zones/forecast/", Sample("nws_zone.json"));
         var delay = new DelayHandler(inner);
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
-        using var http = new FeedHttp(delay);
+        using var http = new FeedHttp(AppInfo.UserAgent, delay);
         var zc = new ZoneCache(http, TempPaths(), clock, new RecordingLog());
         var urls = Enumerable.Range(0, 50).Select(i => "https://api.weather.gov/zones/forecast/Z" + (i % 10)).ToList();
         zc.Request(urls);
@@ -235,7 +238,7 @@ public sealed class ZoneCacheTests
         handler.Map(Pzz, Sample("nws_zone.json"));
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
         var paths = TempPaths();
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var writer = new ZoneCache(http, paths, clock, new RecordingLog());
         writer.Request([Pzz]);
         await writer.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));
@@ -256,7 +259,7 @@ public sealed class ZoneCacheTests
         var handler = new SampleHttpHandler();
         handler.Map(Pzz, Sample("nws_zone.json"));
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var zc = new ZoneCache(http, TempPaths(), clock, new RecordingLog());
         int raised = 0;
         zc.ZonesLoaded += (_, _) => Interlocked.Increment(ref raised);
@@ -274,7 +277,7 @@ public sealed class ZoneCacheTests
         var handler = new SampleHttpHandler();
         handler.Map(Pzz, Sample("nws_zone.json"));
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var zc = new ZoneCache(http, TempPaths(), clock, new RecordingLog());
         var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         zc.ZonesLoaded += (_, _) => loaded.TrySetResult();
@@ -295,7 +298,7 @@ public sealed class ZoneCacheTests
     {
         var handler = new SampleHttpHandler();   // nothing mapped: every download fails
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var zc = new ZoneCache(http, TempPaths(), clock, new RecordingLog());
         zc.LoadInBackground([Pzz], downloadMissing: true);
         await zc.WhenIdleAsync().WaitAsync(TimeSpan.FromSeconds(30));

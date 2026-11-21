@@ -1,9 +1,10 @@
 using System.IO;
 using EarthWatch3D.Core.Feeds;
-using EarthWatch3D.Core.Feeds.Gibs;
 using EarthWatch3D.Core.Lightning.Glm;
 using EarthWatch3D.Core.Lightning.Mtg;
-using EarthWatch3D.Core.Logging;
+using GlobeCore.Earth.Clouds;
+using GlobeCore.Feeds;
+using GlobeCore.Logging;
 
 namespace EarthWatch3D.App.Diagnostics;
 

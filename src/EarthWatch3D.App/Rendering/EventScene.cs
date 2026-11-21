@@ -5,6 +5,8 @@ using System.Windows.Media.Media3D;
 using AstroCore.Earth;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Geo;
+using GlobeCore.Geo;
+using GlobeCore.Wpf.Rendering;
 using HelixToolkit.Geometry;
 using HelixToolkit.Wpf;
 using MeshGeometry3D = System.Windows.Media.Media3D.MeshGeometry3D;

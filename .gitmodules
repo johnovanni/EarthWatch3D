@@ -1,3 +1,6 @@
 [submodule "external/AstroCore"]
 	path = external/AstroCore
 	url = ../AstroCore
+[submodule "external/GlobeCore"]
+	path = external/GlobeCore
+	url = ../GlobeCore

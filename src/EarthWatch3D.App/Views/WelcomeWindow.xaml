@@ -7,7 +7,7 @@
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="CardStyles.xaml"/>
+                <ResourceDictionary Source="/GlobeCore.Wpf;component/Styles/CardStyles.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <Style TargetType="TextBlock">
                 <Setter Property="Foreground" Value="White"/>

@@ -1,7 +1,8 @@
 using AstroCore.Earth;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Geo;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Geo;
+using GlobeCore.Time;
 
 namespace EarthWatch3D.Tests;
 

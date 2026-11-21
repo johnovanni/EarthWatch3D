@@ -5,7 +5,7 @@ using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Lightning;
-using EarthWatch3D.Core.Logging;
+using GlobeCore.Logging;
 
 namespace EarthWatch3D.App;
 

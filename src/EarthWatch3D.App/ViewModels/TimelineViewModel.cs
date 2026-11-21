@@ -1,7 +1,7 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Time;
 
 namespace EarthWatch3D.App.ViewModels;
 

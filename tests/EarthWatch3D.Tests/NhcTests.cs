@@ -1,10 +1,13 @@
 using System.IO;
 using System.Text;
 using AstroCore.Earth;
+using EarthWatch3D.Core;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Nhc;
 using EarthWatch3D.Core.Geo;
+using GlobeCore.Feeds;
+using GlobeCore.Geo;
 
 namespace EarthWatch3D.Tests;
 
@@ -134,7 +137,7 @@ public sealed class NhcTests
         handler.Map("https://www.nhc.noaa.gov/storm_graphics/api/CP042026_020adv_TRACK.kmz", Sample("nhc_track.kmz"));
         handler.Map("https://www.nhc.noaa.gov/storm_graphics/api/CP042026_020adv_CONE.kmz", Sample("nhc_cone.kmz"));
         var store = new EventStore(new TestClock(new DateTime(2026, 11, 11, 15, 30, 0, DateTimeKind.Utc)));
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var feed = new NhcFeed(http, store, new RecordingLog());
         Assert.Equal("NHC", feed.Name);
         await feed.RunOnceAsync(CancellationToken.None);
@@ -157,7 +160,7 @@ public sealed class NhcTests
         handler.Map("https://www.nhc.noaa.gov/CurrentStorms.json", Sample("nhc_CurrentStorms.json"));
         handler.Map("https://www.nhc.noaa.gov/storm_graphics/api/CP042026_020adv_CONE.kmz", Sample("nhc_cone.kmz"));
         var store = new EventStore(new TestClock(new DateTime(2026, 11, 11, 15, 30, 0, DateTimeKind.Utc)));
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var log = new RecordingLog();
         var feed = new NhcFeed(http, store, log);
         await feed.RunOnceAsync(CancellationToken.None);

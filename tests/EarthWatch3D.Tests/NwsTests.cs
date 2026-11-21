@@ -1,9 +1,12 @@
 using System.IO;
 using System.Text;
+using EarthWatch3D.Core;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Feeds;
+using GlobeCore.Storage;
 
 namespace EarthWatch3D.Tests;
 
@@ -14,7 +17,7 @@ public sealed class NwsTests
 
     private static AppPaths TempPaths()
     {
-        var p = new AppPaths(Path.Combine(Path.GetTempPath(), "ew3d-nws-" + Guid.NewGuid().ToString("N")));
+        var p = new AppPaths(new AppDataRoot(Path.Combine(Path.GetTempPath(), "ew3d-nws-" + Guid.NewGuid().ToString("N"))));
         p.EnsureCreated();
         return p;
     }
@@ -87,7 +90,7 @@ public sealed class NwsTests
     {
         var handler = new SampleHttpHandler();
         var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
-        return (handler, new FeedHttp(handler), new EventStore(clock), clock);
+        return (handler, new FeedHttp(AppInfo.UserAgent, handler), new EventStore(clock), clock);
     }
 
     [Fact]

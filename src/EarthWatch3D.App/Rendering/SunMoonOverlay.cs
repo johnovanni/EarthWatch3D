@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
 using System.Windows.Shapes;
+using GlobeCore.Wpf.Rendering;
 
 namespace EarthWatch3D.App.Rendering;
 

@@ -1,9 +1,11 @@
 using System.IO;
 using System.Text;
 using AstroCore.Earth;
+using EarthWatch3D.Core;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Feeds.Usgs;
+using GlobeCore.Feeds;
 
 namespace EarthWatch3D.Tests;
 
@@ -80,7 +82,7 @@ public sealed class UsgsTests
         var t0 = new DateTime(2026, 11, 11, 12, 0, 0, DateTimeKind.Utc);
         var clock = new TestClock(t0);
         var store = new EventStore(clock);
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var feed = new UsgsFeed(http, store, clock, new RecordingLog());
         Assert.Equal("USGS", feed.Name);
         Assert.Equal(TimeSpan.FromSeconds(60), feed.Interval);
@@ -107,7 +109,7 @@ public sealed class UsgsTests
         var clock = new TestClock(t0);
         var store = new EventStore(clock);
         var log = new RecordingLog();
-        using var http = new FeedHttp(handler);
+        using var http = new FeedHttp(AppInfo.UserAgent, handler);
         var feed = new UsgsFeed(http, store, clock, log);
         await feed.RunOnceAsync(CancellationToken.None);
         Assert.Equal(1806, store.Snapshot.Earthquakes.Count);

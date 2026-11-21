@@ -2,15 +2,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EarthWatch3D.Core\EarthWatch3D.Core.csproj" />
+    <ProjectReference Include="$(GlobeCoreRoot)src\GlobeCore.Wpf\GlobeCore.Wpf.csproj" />
+    <!-- The Earth pack embeds the Blue Marble, Natural Earth and PB2002 assets the globe is drawn from. -->
+    <ProjectReference Include="$(GlobeCoreRoot)src\GlobeCore.Earth\GlobeCore.Earth.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="HelixToolkit.Wpf" Version="3.1.2" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Include="Assets\**" Exclude="Assets\README.md" />
   </ItemGroup>
 
   <ItemGroup>

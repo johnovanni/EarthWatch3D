@@ -1,4 +1,5 @@
-using EarthWatch3D.Core.Time;
+using GlobeCore.Time;
+
 
 namespace EarthWatch3D.App.Diagnostics;
 

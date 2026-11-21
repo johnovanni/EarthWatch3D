@@ -6,6 +6,7 @@ using System.Windows.Data;
 using System.Windows.Media;
 using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.Core.Feeds;
+using GlobeCore.Feeds;
 
 namespace EarthWatch3D.App.Views;
 

@@ -6,7 +6,9 @@ using EarthWatch3D.App.Services;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Storage;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Geo;
+using GlobeCore.Storage;
+using GlobeCore.Time;
 
 namespace EarthWatch3D.App.ViewModels;
 
@@ -17,17 +19,17 @@ public partial class MainViewModel : ObservableObject
 
     private readonly IClock _clock;
     private readonly IDialogService? _dialogs;
-    private readonly ISettingsStore _settings;
+    private readonly ISettingsStore<AppSettings> _settings;
     private DateTime? _lastTick;
     // Replaced whole, never mutated, so feeds may read it from any thread.
     private volatile DisplayFilter _currentFilter;
 
     /// <param name="settings">Where layer and display choices are loaded from and saved to. In the app this is a
-    /// <see cref="SettingsSaver"/>, so saves never block the UI thread.</param>
+    /// <see cref="SettingsSaver{T}"/>, so saves never block the UI thread.</param>
     /// <param name="dispatcher">The UI thread's dispatcher, used by the status dots; null in tests, where updates
     /// apply directly.</param>
     /// <param name="dialogs">Opens the Settings dialog; null in tests.</param>
-    public MainViewModel(IClock clock, ISettingsStore settings, Dispatcher? dispatcher = null, IDialogService? dialogs = null)
+    public MainViewModel(IClock clock, ISettingsStore<AppSettings> settings, Dispatcher? dispatcher = null, IDialogService? dialogs = null)
     {
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _dialogs = dialogs;

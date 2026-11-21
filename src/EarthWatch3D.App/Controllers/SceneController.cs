@@ -13,13 +13,18 @@ using AstroCore.Earth;
 using EarthWatch3D.App.Rendering;
 using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.Core.Events;
-using EarthWatch3D.Core.Feeds.Gibs;
 using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Geo;
-using EarthWatch3D.Core.Globe;
 using EarthWatch3D.Core.Lightning;
-using EarthWatch3D.Core.Logging;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Earth;
+using GlobeCore.Earth.Clouds;
+using GlobeCore.Geo;
+using GlobeCore.Imaging;
+using GlobeCore.Logging;
+using GlobeCore.Wpf.Camera;
+using GlobeCore.Wpf.Layers;
+using GlobeCore.Wpf.Rendering;
+using GlobeCore.Wpf.Viewport;
 using HelixToolkit.Wpf;
 using Microsoft.Win32;
 #if PERF_LOG
@@ -41,7 +46,6 @@ public sealed class SceneController
     public const int GlobeImageWidth = 4096;
     public static readonly TimeSpan RecomposeInterval = TimeSpan.FromMinutes(1);
 
-    private const string AssetPrefix = "EarthWatch3D.App.Assets.";
     private const double EarthRadiusKm = 6371.0;
     private const double ClickSlopPx = 4;
     private static readonly GeoPosition HomeView = new(20, -40);
@@ -273,7 +277,7 @@ public sealed class SceneController
 #endif
                 if (_closed) return;
                 ImageConversions.CopyInto(target, _bitmap!);
-                _globeVisual.Content ??= new GeometryModel3D(GlobeMesh.Create(), new DiffuseMaterial(new ImageBrush(_bitmap)));
+                _globeVisual.Content ??= new GeometryModel3D(BodyMesh.Create(), new DiffuseMaterial(new ImageBrush(_bitmap)));
                 AreasDisplayed = composed && layers.Areas is not null;
 #if PERF_LOG
                 PerfLog.Write(string.Create(System.Globalization.CultureInfo.InvariantCulture,
@@ -383,13 +387,9 @@ public sealed class SceneController
 #if PERF_LOG
             var load = Stopwatch.StartNew();
 #endif
-            var decodeTask = Task.Run(() =>
-            {
-                using var s = Asset("bluemarble-8192.jpg");
-                return ImageConversions.DecodeToBgra32(s, GlobeImageWidth);
-            });
-            var linesTask = Task.Run(() => (Coast: ReadLines("ne_50m_coastline.geojson"),
-                                            Borders: ReadLines("ne_50m_admin_0_boundary_lines_land.geojson")));
+            var decodeTask = Task.Run(() => EarthAssets.LoadBlueMarble(GlobeImageWidth));
+            var linesTask = Task.Run(() => (Coast: NaturalEarthLines.Coastlines(),
+                                            Borders: NaturalEarthLines.LandBoundaries()));
             await Task.WhenAll(decodeTask, linesTask);   // observes both exceptions
             var baseImage = decodeTask.Result;
             var (coast, borders) = linesTask.Result;
@@ -489,7 +489,7 @@ public sealed class SceneController
         int w = _lines!.Width, h = _lines.Height;
         return _sta.InvokeAsync(() =>
         {
-            using var s = Asset("plate_boundaries.geojson");
+            using var s = EarthAssets.Open(EarthAssets.PlateBoundariesFile);
             var all = PlateBoundaries.Read(s);
             IEnumerable<IReadOnlyList<GeoPosition>> Of(PlateBoundaryKind k) => all.Where(b => b.Kind == k).Select(b => b.Line.Points);
             Color C(uint argb) => Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
@@ -500,16 +500,6 @@ public sealed class SceneController
                 (Of(PlateBoundaryKind.Convergent), C(PlateBoundaries.ConvergentArgb)),
             ], w, h, 3.0));
         });
-    }
-
-    private static Stream Asset(string name) =>
-        typeof(SceneController).Assembly.GetManifestResourceStream(AssetPrefix + name)
-        ?? throw new InvalidOperationException($"Missing embedded resource {name}.");
-
-    private static List<IReadOnlyList<GeoPosition>> ReadLines(string name)
-    {
-        using var s = Asset(name);
-        return GeoJsonLines.Read(s).ToList();
     }
 
     // ---------------------------------------------------------------- Sun/Moon markers and overlay
@@ -724,7 +714,7 @@ public sealed class SceneController
 
     /// <summary>The cards' dark tooltip (light text on dark), for the hover tip, instead of the system's light one.</summary>
     public static Style DarkToolTipStyle() =>
-        (Style)new ResourceDictionary { Source = new Uri("/EarthWatch3D.App;component/Views/CardStyles.xaml", UriKind.Relative) }[typeof(ToolTip)];
+        (Style)new ResourceDictionary { Source = new Uri("/GlobeCore.Wpf;component/Styles/CardStyles.xaml", UriKind.Relative) }[typeof(ToolTip)];
 
     private void UpdateHover(Point mouse)
     {
@@ -791,7 +781,7 @@ public sealed class SceneController
     }
 
     private double FitDistanceForViewport(PerspectiveCamera camera) =>
-        CameraRules.FitDistance(camera.FieldOfView, _viewport.ActualWidth / Math.Max(1, _viewport.ActualHeight));
+        CameraRules.FitDistance(camera.FieldOfView, _viewport.ActualWidth / Math.Max(1, _viewport.ActualHeight), CameraLimits.EarthDefault);
 
     private void ApplyRotationSensitivity(PerspectiveCamera camera) =>
         _viewport.RotationSensitivity = CameraRules.RotationSensitivity(((Vector3D)camera.Position).Length);
@@ -824,7 +814,7 @@ public sealed class SceneController
         _adjustingCamera = true;
         try
         {
-            var clamped = CameraRules.ClampDistance(camera.Position);
+            var clamped = CameraRules.ClampDistance(camera.Position, CameraLimits.EarthDefault);
             if (clamped != camera.Position)
             {
                 camera.Position = clamped;
@@ -851,7 +841,7 @@ public sealed class SceneController
         if (Camera is not { } camera) return;
         double notches = e.Delta / 120.0;
         var pos = (Vector3D)camera.Position;
-        var next = CameraRules.ClampDistance(new Point3D(0, 0, 0) + pos * Math.Pow(CameraRules.ZoomPerNotch, -notches));
+        var next = CameraRules.ClampDistance(new Point3D(0, 0, 0) + pos * Math.Pow(CameraLimits.EarthDefault.ZoomPerNotch, -notches), CameraLimits.EarthDefault);
         camera.Position = next;
         camera.LookDirection = -(Vector3D)next;
     }

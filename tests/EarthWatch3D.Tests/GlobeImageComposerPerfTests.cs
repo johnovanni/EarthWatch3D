@@ -1,4 +1,5 @@
-using EarthWatch3D.Core.Globe;
+using GlobeCore.Imaging;
+
 
 namespace EarthWatch3D.Tests;
 

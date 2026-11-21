@@ -1,6 +1,7 @@
 using EarthWatch3D.App.Controllers;
 using EarthWatch3D.App.ViewModels;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Time;
+using GlobeCore.Wpf.Layers;
 
 namespace EarthWatch3D.Tests;
 

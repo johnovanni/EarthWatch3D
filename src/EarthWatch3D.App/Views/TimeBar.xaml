@@ -7,8 +7,8 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="CardStyles.xaml"/>
-                <ResourceDictionary Source="TimeBarStyles.xaml"/>
+                <ResourceDictionary Source="/GlobeCore.Wpf;component/Styles/CardStyles.xaml"/>
+                <ResourceDictionary Source="/GlobeCore.Wpf;component/Styles/TimeBarStyles.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <Style TargetType="TextBlock">
                 <Setter Property="Foreground" Value="White"/>

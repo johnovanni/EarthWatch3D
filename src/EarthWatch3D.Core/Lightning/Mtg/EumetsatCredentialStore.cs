@@ -1,4 +1,5 @@
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Storage;
 
 namespace EarthWatch3D.Core.Lightning.Mtg;
 
@@ -6,8 +7,11 @@ namespace EarthWatch3D.Core.Lightning.Mtg;
 /// The user's EUMETSAT consumer key and secret, kept in the settings file only in encrypted form. A pair that cannot
 /// be decrypted (another Windows user's, or damaged) counts as not set.
 /// </summary>
-public sealed class EumetsatCredentialStore(ISettingsStore store, IProtector protector)
+public sealed class EumetsatCredentialStore(ISettingsStore<AppSettings> store, IProtector protector)
 {
+    /// <summary>The DPAPI entropy for the protected key and secret; saved values only decrypt with this exact string.</summary>
+    public const string ProtectorEntropy = "EarthWatch3D.EUMETSAT";
+
     private readonly object _gate = new();
     // The decrypted pair, kept for as long as the encrypted values in the settings are the ones it came from.
     private string? _cachedKey, _cachedSecret;

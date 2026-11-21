@@ -3,7 +3,8 @@
   Downloads the NASA Blue Marble image and Natural Earth line files, and writes the app assets.
 .DESCRIPTION
   Downloads to a scratch folder (outside the repo), resizes the Blue Marble to 8192x4096
-  (HighQualityBicubic, JPEG quality 90) and copies the GeoJSON files into src/EarthWatch3D.App/Assets.
+  (HighQualityBicubic, JPEG quality 90) and copies the GeoJSON files into GlobeCore's Earth pack,
+  external/GlobeCore/src/GlobeCore.Earth/Assets (the app embeds them from there; commit any change in GlobeCore).
   Also builds plate_boundaries.geojson from Peter Bird's PB2002 steps (Hugo Ahlenius / Nordpil, ODC-By 1.0):
   the 5,824 step LineStrings are merged into polylines per boundary kind (convergent, divergent, transform).
   URLs are the ones recorded in docs/data-sources.md, section "Static assets".
@@ -12,7 +13,7 @@ param([string]$WorkDir = (Join-Path $env:TEMP 'EarthWatch3D.assets'))
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
-$assets = Join-Path $PSScriptRoot '..\src\EarthWatch3D.App\Assets'
+$assets = Join-Path $PSScriptRoot '..\external\GlobeCore\src\GlobeCore.Earth\Assets'
 New-Item -ItemType Directory -Force $assets, $WorkDir | Out-Null
 $assets = (Resolve-Path $assets).Path
 

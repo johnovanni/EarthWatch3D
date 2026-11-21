@@ -4,18 +4,20 @@ using EarthWatch3D.App.Diagnostics;
 using EarthWatch3D.App.Rendering;
 using EarthWatch3D.App.Services;
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Storage;
+using GlobeCore.Wpf.Services;
 
 namespace EarthWatch3D.App.ViewModels;
 
 /// <summary>The first-run Welcome window: a short tour, and a way to Settings. Closing it in any way marks it as shown.</summary>
 public sealed partial class WelcomeViewModel : ObservableObject
 {
-    private readonly ISettingsStore _store;
+    private readonly ISettingsStore<AppSettings> _store;
     private readonly IDialogService _dialogs;
     private readonly ILinkOpener _opener;
     private bool _closed;
 
-    public WelcomeViewModel(ISettingsStore store, IDialogService dialogs, ILinkOpener opener,
+    public WelcomeViewModel(ISettingsStore<AppSettings> store, IDialogService dialogs, ILinkOpener opener,
         bool mtgAvailable = LightningLayer.MtgAvailable)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));

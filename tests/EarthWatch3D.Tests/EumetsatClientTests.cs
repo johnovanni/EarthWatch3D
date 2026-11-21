@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using EarthWatch3D.Core;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Lightning.Mtg;
+using GlobeCore.Feeds;
 using Xunit;
 
 namespace EarthWatch3D.Tests;
@@ -36,7 +38,7 @@ public class EumetsatClientTests
     {
         var handler = new ScriptedHandler(respond);
         var clock = new TestClock(T0);
-        return (new EumetsatClient(new FeedHttp(handler), clock), handler, clock);
+        return (new EumetsatClient(new FeedHttp(AppInfo.UserAgent, handler), clock), handler, clock);
     }
 
     private static readonly EumetsatCredentials Creds = new("K-SECRET", "S-SECRET");
@@ -238,7 +240,7 @@ public class EumetsatClientTests
             "{\"id\":\"GOOD\",\"properties\":{\"date\":\"2026-11-13T21:20:05Z/2026-11-13T21:30:05Z\",\"links\":{\"data\":[{\"href\":\"https://api.eumetsat.int/data/download/1.0.0/collections/c/products/g\"}]}}}]}";
         var handler = new ScriptedHandler(n => n == 1 ? Token() : Json(body));   // one token, then searches
         var log = new RecordingLog();
-        var client = new EumetsatClient(new FeedHttp(handler), new TestClock(T0), log);
+        var client = new EumetsatClient(new FeedHttp(AppInfo.UserAgent, handler), new TestClock(T0), log);
         var first = await client.SearchAsync(Creds, T0, CancellationToken.None);
         Assert.Equal("GOOD", Assert.Single(first).Id);
         Assert.Equal(3, log.Warnings.Count);

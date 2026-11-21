@@ -2,8 +2,10 @@ using System.IO;
 using AstroCore.Earth;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Geo;
-using EarthWatch3D.Core.Logging;
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Geo;
+using GlobeCore.Logging;
+using GlobeCore.Storage;
 
 namespace EarthWatch3D.Tests;
 
@@ -14,7 +16,7 @@ public sealed class StorageTests : IDisposable
 
     public StorageTests()
     {
-        _paths = new AppPaths(_root);
+        _paths = new AppPaths(new AppDataRoot(_root));
         _paths.EnsureCreated();
     }
 

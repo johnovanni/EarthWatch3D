@@ -1,8 +1,10 @@
 using System.IO;
 using System.Text.Json;
+using EarthWatch3D.Core;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Lightning.Mtg;
-using EarthWatch3D.Core.Time;
+using GlobeCore.Feeds;
+using GlobeCore.Time;
 using Xunit.Abstractions;
 
 namespace EarthWatch3D.Tests;
@@ -34,7 +36,7 @@ public class MtgLiveTests(ITestOutputHelper output)
         var creds = new EumetsatCredentials(
             doc.RootElement.GetProperty("consumerKey").GetString()!, doc.RootElement.GetProperty("consumerSecret").GetString()!);
 
-        using var http = new FeedHttp();
+        using var http = new FeedHttp(AppInfo.UserAgent);
         var client = new EumetsatClient(http, new SystemClock());
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
 

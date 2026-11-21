@@ -3,7 +3,8 @@ using AstroCore.Earth;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EarthWatch3D.Core.Geo;
-using UnitFormat = EarthWatch3D.Core.Geo.Units;
+using GlobeCore.Geo;
+using UnitFormat = GlobeCore.Geo.Units;
 
 namespace EarthWatch3D.App.ViewModels;
 
