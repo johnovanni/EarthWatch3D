@@ -68,6 +68,16 @@ public partial class App : Application
         string? optionsError = options.Error;
         if (samplesDir is not null && !Directory.Exists(samplesDir))
             optionsError = (optionsError is null ? "" : optionsError + Environment.NewLine) + $"--offline-samples: the folder {samplesDir} does not exist.";
+        // --snapshot-scenes: the scenes are read now. The union of their layers is on from the start so every feed they need
+        // runs and reports once, and the app's clock starts at the first scene's time.
+        IReadOnlyList<SnapshotScene>? scenes = null;
+        if (options.SnapshotScenesFile is { } scenesFile)
+        {
+            try { scenes = SnapshotDiagnostic.LoadScenes(Path.GetFullPath(scenesFile)); }
+            catch (FormatException ex) { optionsError = (optionsError is null ? "" : optionsError + Environment.NewLine) + ex.Message; }
+            if (samplesDir is null)
+                optionsError = (optionsError is null ? "" : optionsError + Environment.NewLine) + "--snapshot-scenes needs --offline-samples.";
+        }
         if (optionsError is not null)
         {
             log.Error("Command line: " + optionsError);
@@ -75,13 +85,17 @@ public partial class App : Application
             Shutdown(2);
             return;
         }
+        if (scenes is not null)
+            options = options with { DisplayTimeUtc = scenes[0].DisplayTimeUtc, Layers = scenes.SelectMany(s => s.Layers).Distinct().ToList() };
 
         // With offline samples the app's clock starts at --display-time, so the samples (captured 2026-11-11) are
         // neither pruned by the store's retention nor treated as ended because of today's date; it then runs on in
         // real time. Otherwise the display runs on an adjustable clock only for --snapshot-recompose, which moves the
         // app's time forward part-way through. The log always uses the real time.
         var sampleOffset = samplesDir is not null && options.DisplayTimeUtc is { } start ? start - DateTime.UtcNow : TimeSpan.Zero;
-        IClock wall = sampleOffset == TimeSpan.Zero ? new SystemClock() : new OffsetClock(new SystemClock()) { Offset = sampleOffset };
+        // A scenes run moves one shared clock (display and feeds) to each scene's time, as a --display-time run would have it.
+        OffsetClock? sceneClock = scenes is null ? null : new OffsetClock(new SystemClock()) { Offset = sampleOffset };
+        IClock wall = sceneClock ?? (sampleOffset == TimeSpan.Zero ? (IClock)new SystemClock() : new OffsetClock(new SystemClock()) { Offset = sampleOffset });
         OffsetClock? offsetClock = options.SnapshotRecompose ? new OffsetClock(new SystemClock()) { Offset = sampleOffset } : null;
         IClock clock = offsetClock is null ? wall : offsetClock;
 
@@ -287,7 +301,7 @@ public partial class App : Application
                 "about" => ShowForDiagnostic(dialogs.CreateAbout()),
                 "welcome" => ShowForDiagnostic(dialogs.CreateWelcome()),
                 _ => throw new NotSupportedException($"--dialog {name} is not available"),
-            });
+            }, scenes, sceneClock);
 #if PERF_LOG
         PerfRun.Start(window.Scene, e.Args, waitForData);
 #endif

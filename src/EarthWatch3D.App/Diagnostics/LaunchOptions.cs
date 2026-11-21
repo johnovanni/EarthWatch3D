@@ -17,13 +17,16 @@ namespace EarthWatch3D.App.Diagnostics;
 /// quakes, cyclones, alerts, eonet, coastlines, plates, lightning, clouds; for example <c>--layers plates</c>).
 /// <c>--dialog about|welcome</c> opens that dialog once the globe is shown; with <c>--snapshot</c> the picture is of the
 /// dialog alone (not the main window).
+/// <c>--snapshot-scenes &lt;json&gt; --snapshot-out &lt;dir&gt;</c> (with <c>--offline-samples</c>) takes one picture per scene in
+/// the JSON file, each with its own display time, camera and layers, saved as <c>&lt;dir&gt;\&lt;name&gt;.png</c>, in one launch.
 /// Unknown arguments are ignored. The older options (snapshot, delay) also ignore a missing or bad value; the newer
 /// ones report it in <see cref="Error"/>, one line per problem.
 /// </summary>
 public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int DelayMs, bool SnapshotRecompose = false,
                                    string? OfflineSamplesDir = null, DateTime? DisplayTimeUtc = null,
                                    GeoPosition? LookAt = null, string? Error = null,
-                                   IReadOnlyList<string>? Layers = null, string? Dialog = null, bool Bench = false)
+                                   IReadOnlyList<string>? Layers = null, string? Dialog = null, bool Bench = false,
+                                   string? SnapshotScenesFile = null, string? SnapshotOutDir = null)
 {
     public const int DefaultDelayMs = 1500;
     public static readonly string[] LayerNames = ["quakes", "cyclones", "alerts", "eonet", "coastlines", "plates", "lightning", "clouds"];
@@ -37,7 +40,7 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
     ];
 
     /// <summary>True when <see cref="Diagnostics.SnapshotDiagnostic"/> has something to do after the first compose.</summary>
-    public bool Any => SnapshotPath != null || FaceSun || LookAt != null || Dialog != null;
+    public bool Any => SnapshotPath != null || SnapshotScenesFile != null || FaceSun || LookAt != null || Dialog != null;
 
     /// <summary>
     /// True for any run that is not a normal user session: a picture, a camera move, offline samples, a dialog or the
@@ -55,6 +58,7 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
         List<string>? layers = null;
         string? dialog = null;
         bool bench = false;
+        string? scenesFile = null, scenesOut = null;
         var errors = new List<string>();
         for (int i = 0; i < args.Count; i++)
         {
@@ -100,6 +104,12 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
                     if (DialogNames.Contains(d.ToLowerInvariant())) dialog = d.ToLowerInvariant();
                     else errors.Add($"--dialog: '{d}' is not a dialog. Use one of {string.Join(", ", DialogNames)}.");
                     break;
+                case "--snapshot-scenes":
+                    if (Value(args, ref i, errors, "a scenes JSON file, such as tests\\SnapshotScenes\\scenes.json") is { } sf) scenesFile = sf;
+                    break;
+                case "--snapshot-out":
+                    if (Value(args, ref i, errors, "a folder for the pictures") is { } so) scenesOut = so;
+                    break;
                 case "--layers":
                     if (Value(args, ref i, errors, "a comma list such as plates, from " + string.Join(", ", LayerNames)) is not { } list) break;
                     var names = list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -111,8 +121,10 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
                     break;
             }
         }
+        if ((scenesFile is null) != (scenesOut is null) && errors.Count == 0)
+            errors.Add("--snapshot-scenes and --snapshot-out go together: give both, or neither.");
         return new LaunchOptions(snapshot, faceSun, delay, recompose, offline, displayTime, lookAt,
-                                 errors.Count == 0 ? null : string.Join(Environment.NewLine, errors), layers, dialog, bench);
+                                 errors.Count == 0 ? null : string.Join(Environment.NewLine, errors), layers, dialog, bench, scenesFile, scenesOut);
     }
 
     private static string? Value(IReadOnlyList<string> args, ref int i, List<string> errors, string what)

@@ -1,0 +1,11 @@
+{
+  "scenes": [
+    { "name": "default",          "displayTimeUtc": "2026-11-11T20:00:00Z", "layers": ["quakes", "cyclones", "alerts", "eonet", "coastlines"] },
+    { "name": "pacific-plates",   "displayTimeUtc": "2026-11-11T20:00:00Z", "lookAt": [10, -165], "layers": ["coastlines", "plates", "quakes"] },
+    { "name": "us-alerts",        "displayTimeUtc": "2026-11-11T20:00:00Z", "lookAt": [38, -97],  "layers": ["alerts", "coastlines"] },
+    { "name": "lightning-clouds", "displayTimeUtc": "2026-11-11T19:10:00Z", "lookAt": [0, -75],   "layers": ["lightning", "clouds", "coastlines"] },
+    { "name": "face-sun",         "displayTimeUtc": "2026-11-11T20:00:00Z", "faceSun": true,      "layers": ["coastlines"] },
+    { "name": "night-asia",       "displayTimeUtc": "2026-11-12T08:00:00Z", "lookAt": [30, 100],  "layers": ["coastlines", "quakes"] },
+    { "name": "dateline-storm",   "displayTimeUtc": "2026-11-11T20:00:00Z", "lookAt": [15, 180],  "layers": ["cyclones", "coastlines"] }
+  ]
+}

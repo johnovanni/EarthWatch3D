@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
+using AstroCore.Earth;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -9,6 +11,12 @@ using EarthWatch3D.Core.Logging;
 using EarthWatch3D.Core.Time;
 
 namespace EarthWatch3D.App.Diagnostics;
+
+/// <summary>
+/// One picture of a <c>--snapshot-scenes</c> run. <paramref name="LookAt"/> null and <paramref name="FaceSun"/> false means
+/// the default home view. Layers not named are off.
+/// </summary>
+public sealed record SnapshotScene(string Name, DateTime DisplayTimeUtc, GeoPosition? LookAt, bool FaceSun, string[] Layers);
 
 /// <summary>
 /// Runs the <see cref="LaunchOptions"/> diagnostics: with offline samples, a wait for the data to be drawn; then an
@@ -26,8 +34,14 @@ public static class SnapshotDiagnostic
     /// downloads are done. Null to take the snapshot without waiting for data.</param>
     public static async Task RunAsync(Window window, SceneController scene, MainViewModel vm, LaunchOptions options,
                                       OffsetClock? offsetClock = null, Func<Task>? waitForData = null, IAppLog? log = null,
-                                      Func<string, Window>? showDialog = null)
+                                      Func<string, Window>? showDialog = null, IReadOnlyList<SnapshotScene>? scenes = null,
+                                      OffsetClock? sceneClock = null)
     {
+        if (scenes is not null && sceneClock is not null && options.SnapshotOutDir is { } outDir)
+        {
+            await RunScenesAsync(window, scene, vm, scenes, sceneClock, outDir, options.DelayMs, waitForData, log ?? new NullLog());
+            return;
+        }
         int exitCode = 0;
         try
         {
@@ -67,6 +81,100 @@ public static class SnapshotDiagnostic
             exitCode = 1;
         }
         if (options.SnapshotPath != null) Application.Current.Shutdown(exitCode);
+    }
+
+    /// <summary>
+    /// The <c>--snapshot-scenes</c> run: for each scene, moves <paramref name="sceneClock"/> (the app's clock, shared with the
+    /// feeds) to its display time, sets exactly its layers and camera, waits as the single --snapshot run does (every feed
+    /// reported once, the scene settled, a compose for that time displayed) and saves the scene's PNG in
+    /// <paramref name="outDir"/>. Exits with 0, or 1 if any scene failed.
+    /// </summary>
+    private static async Task RunScenesAsync(Window window, SceneController scene, MainViewModel vm,
+                                             IReadOnlyList<SnapshotScene> scenes, OffsetClock sceneClock, string outDir,
+                                             int delayMs, Func<Task>? waitForData, IAppLog log)
+    {
+        int exitCode = 0;
+        try
+        {
+            await scene.FirstComposeDisplayed;
+            foreach (var s in scenes)
+            {
+                try
+                {
+                    sceneClock.Offset = s.DisplayTimeUtc - DateTime.UtcNow;
+                    var layers = vm.Layers;
+                    bool On(string n) => s.Layers.Contains(n, StringComparer.OrdinalIgnoreCase);
+                    layers.ShowQuakes = On("quakes"); layers.ShowCyclones = On("cyclones"); layers.ShowAlerts = On("alerts");
+                    layers.ShowEonet = On("eonet"); layers.ShowCoastlines = On("coastlines"); layers.ShowPlates = On("plates");
+                    layers.ShowLightning = On("lightning"); layers.ShowClouds = On("clouds");
+                    vm.Tick();   // the display time follows the clock
+                    if (s.LookAt is { } at) scene.LookAt(at);
+                    else if (s.FaceSun)
+                    {
+                        vm.SunMoon.FaceSunCommand.Execute(null);
+                        while (scene.IsCameraAnimating) await Task.Delay(50);
+                    }
+                    else scene.LookAtHome();
+                    await RecomposeDisplayedAsync(scene, vm.DisplayTimeUtc);
+                    await WaitForDataAsync(scene, waitForData ?? (() => Task.CompletedTask), DataTimeout, log);
+                    await Task.Delay(delayMs);
+                    Save(window, Path.Combine(outDir, s.Name + ".png"));
+                    log.Info($"Diagnostics: saved scene {s.Name}");
+                }
+                catch (OperationCanceledException) { return; }   // the window closed first
+                catch (Exception ex)
+                {
+                    Trace.TraceError($"Scene {s.Name} failed: {ex}");
+                    log.Error($"Diagnostics: scene {s.Name} failed", ex);
+                    exitCode = 1;
+                }
+            }
+        }
+        catch (OperationCanceledException) { return; }
+        Application.Current.Shutdown(exitCode);
+    }
+
+    /// <summary>
+    /// Reads a scenes file: <c>{"scenes":[{"name":"default","displayTimeUtc":"2026-11-11T20:00:00Z","lookAt":[10,-165],
+    /// "faceSun":false,"layers":["quakes","coastlines"]}]}</c>. <c>lookAt</c>, <c>faceSun</c> and <c>layers</c> are optional.
+    /// Throws <see cref="FormatException"/> with a plain message when the file is not usable.
+    /// </summary>
+    public static IReadOnlyList<SnapshotScene> LoadScenes(string path)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            var list = new List<SnapshotScene>();
+            foreach (var e in doc.RootElement.GetProperty("scenes").EnumerateArray())
+            {
+                string name = e.GetProperty("name").GetString() ?? "";
+                if (name.Length == 0 || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                    throw new FormatException($"'{name}' is not usable as a picture name.");
+                if (list.Any(x => x.Name == name)) throw new FormatException($"The scene name '{name}' is used twice.");
+                string time = e.GetProperty("displayTimeUtc").GetString() ?? "";
+                if (!LaunchOptions.TryParseUtc(time, out var utc))
+                    throw new FormatException($"Scene {name}: '{time}' is not a UTC time such as {LaunchOptions.DisplayTimeExample}.");
+                GeoPosition? lookAt = null;
+                if (e.TryGetProperty("lookAt", out var la) && la.ValueKind == JsonValueKind.Array)
+                {
+                    double lat = la[0].GetDouble(), lon = la[1].GetDouble();
+                    if (!(Math.Abs(lat) <= 90) || !(Math.Abs(lon) <= 180)) throw new FormatException($"Scene {name}: lookAt is out of range.");
+                    lookAt = new GeoPosition(lat, lon);
+                }
+                bool faceSun = e.TryGetProperty("faceSun", out var fs) && fs.GetBoolean();
+                var layers = e.TryGetProperty("layers", out var ls)
+                    ? ls.EnumerateArray().Select(x => (x.GetString() ?? "").ToLowerInvariant()).ToArray() : [];
+                if (layers.FirstOrDefault(l => !LaunchOptions.LayerNames.Contains(l)) is { } bad)
+                    throw new FormatException($"Scene {name}: '{bad}' is not a layer. Use any of {string.Join(", ", LaunchOptions.LayerNames)}.");
+                list.Add(new SnapshotScene(name, utc, lookAt, faceSun, layers));
+            }
+            if (list.Count == 0) throw new FormatException("The file has no scenes.");
+            return list;
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or IOException or IndexOutOfRangeException)
+        {
+            throw new FormatException($"--snapshot-scenes: cannot read {path}: {ex.Message}", ex);
+        }
     }
 
     /// <summary>

@@ -803,6 +803,9 @@ public sealed class SceneController
         _overlayDirty = true;
     }
 
+    /// <summary>Turns the camera at once to the home view (the one the window opens with), keeping its distance.</summary>
+    public void LookAtHome() => LookAt(HomeView);
+
     private void OnFaceRequested(object? sender, GeoPosition p)
     {
         if (Camera is not { } camera) return;

@@ -28,6 +28,16 @@ public class LaunchOptionsTests
     }
 
     [Fact]
+    public void ParsesSnapshotScenes()
+    {
+        var o = LaunchOptions.Parse(["--offline-samples", @"tests\Samples", "--snapshot-scenes", "s.json", "--snapshot-out", "out"]);
+        Assert.Equal("s.json", o.SnapshotScenesFile);
+        Assert.Equal("out", o.SnapshotOutDir);
+        Assert.True(o.IsDiagnosticRun);
+        Assert.Null(o.Error);
+    }
+
+    [Fact]
     public void BenchLightningWithACountIsABenchmarkRunToo()
     {
         var o = LaunchOptions.Parse(["--bench-lightning", "30000"]);
