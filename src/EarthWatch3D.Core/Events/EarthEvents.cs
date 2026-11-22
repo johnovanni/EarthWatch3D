@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using AstroCore.Earth;
 using EarthWatch3D.Core.Geo;
 using GlobeCore.Geo;
@@ -13,6 +14,9 @@ public sealed record Earthquake(string Id, DateTime TimeUtc, GeoPosition Locatio
 
 public sealed record WindArea(double ThresholdKmh, GeoPolygon Area);
 
+/// <summary>How a replayed advisory was derived. LaterFixUtc is null when no later fix is known (a GDACS advisory stored later than its own todate fix); the position is then EarlierFix's.</summary>
+public sealed record ReplayInfo(DateTime EarlierFixUtc, DateTime? LaterFixUtc, string HistorySource, bool IntensityKnown);
+
 /// <summary>Id = storm key: "gdacs:&lt;eventid&gt;" or "nhc:&lt;id&gt;". TimeUtc = advisory issue time.</summary>
 public sealed record CycloneAdvisory(EventSource Source, string Id, DateTime TimeUtc, GeoPosition Location, string Title, Uri? Link,
     string Name, double? WindKt, double? PressureHpa, IReadOnlyList<GeoLine> PastTrack, IReadOnlyList<GeoLine> ForecastTrack,
@@ -20,14 +24,20 @@ public sealed record CycloneAdvisory(EventSource Source, string Id, DateTime Tim
 {
     public int Category => SaffirSimpson.Category(WindKt);
 
+    /// <summary>Past fixes with times, oldest first (empty when the feed gave none): at or before the advisory time for NHC, up to the episode's todate for GDACS. Part of equality.</summary>
+    public IReadOnlyList<StormFix> History { get; init; } = [];
+
+    /// <summary>Set only on advisories derived for a replay time; never cached and not part of equality.</summary>
+    [JsonIgnore] public ReplayInfo? Replay { get; init; }
+
     public bool Equals(CycloneAdvisory? o) => o is not null && Source == o.Source && Id == o.Id && TimeUtc == o.TimeUtc
         && Location == o.Location && Title == o.Title && Link == o.Link && Name == o.Name && WindKt == o.WindKt
         && PressureHpa == o.PressureHpa && ListEquality.Equal(PastTrack, o.PastTrack)
         && ListEquality.Equal(ForecastTrack, o.ForecastTrack) && ListEquality.Equal(Cone, o.Cone)
-        && ListEquality.Equal(WindAreas, o.WindAreas);
+        && ListEquality.Equal(WindAreas, o.WindAreas) && ListEquality.Equal(History, o.History);
 
     public override int GetHashCode() => HashCode.Combine(Source, Id, TimeUtc, Name, WindKt,
-        ListEquality.Hash(PastTrack), ListEquality.Hash(ForecastTrack), ListEquality.Hash(Cone));
+        ListEquality.Hash(PastTrack), ListEquality.Hash(ForecastTrack), HashCode.Combine(ListEquality.Hash(Cone), ListEquality.Hash(History)));
 }
 
 /// <summary>Why an alert ended at its <see cref="WeatherAlert.CancelledUtc"/>: a later Update replaced it, or a Cancel ended it.</summary>

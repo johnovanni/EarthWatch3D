@@ -14,7 +14,8 @@ public sealed class NhcFeed(FeedHttp http, EventStore store, IAppLog log) : IFee
 
     private sealed class Cache
     {
-        public string? TrackAdv, ConeAdv;
+        public string? TrackAdv, ConeAdv, BestIssuance;
+        public IReadOnlyList<StormFix> Best = [];
         public IReadOnlyList<GeoLine> Track = [];
         public IReadOnlyList<GeoPolygon> Cone = [];
     }
@@ -43,8 +44,16 @@ public sealed class NhcFeed(FeedHttp http, EventStore store, IAppLog log) : IFee
                 var kmz = await TryReadAsync(s, s.ConeKmz, ct).ConfigureAwait(false);
                 if (kmz is not null) { c.Cone = kmz.Value.Polygons; c.ConeAdv = s.ConeAdv ?? ""; }
             }
+            if (s.BestTrackKmz is not null && c.BestIssuance != (s.BestTrackIssuance ?? ""))
+            {
+                var fixes = await TryReadBestTrackAsync(s, s.BestTrackKmz, ct).ConfigureAwait(false);
+                if (fixes is not null) { c.Best = fixes; c.BestIssuance = s.BestTrackIssuance ?? ""; }
+            }
             advisories.Add(new CycloneAdvisory(EventSource.Nhc, "nhc:" + s.Id, s.LastUpdateUtc, s.Position,
-                $"{s.Classification} {s.Name}", HomeUrl, s.Name, s.WindKt, s.PressureMb, [], c.Track, c.Cone, []));
+                $"{s.Classification} {s.Name}", HomeUrl, s.Name, s.WindKt, s.PressureMb, [], c.Track, c.Cone, [])
+            {
+                History = [.. c.Best.Where(f => f.TimeUtc <= s.LastUpdateUtc)],
+            });
         }
         // Forget storms that are no longer active.
         foreach (var id in _cache.Keys.Where(k => storms.All(s => s.Id != k)).ToList()) _cache.Remove(id);
@@ -69,6 +78,23 @@ public sealed class NhcFeed(FeedHttp http, EventStore store, IAppLog log) : IFee
         catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException or FormatException or ArgumentException)
         {
             log.Warn($"NHC: KMZ for {s.Id} unreadable; will retry", ex);
+            return null;
+        }
+    }
+
+    private async Task<IReadOnlyList<StormFix>?> TryReadBestTrackAsync(NhcStorm s, Uri url, CancellationToken ct)
+    {
+        byte[] data;
+        try { data = await http.GetBytesAsync(url, ct).ConfigureAwait(false); }
+        catch (Exception ex) when (ex is HttpRequestException or TimeoutException)
+        {
+            log.Warn($"NHC: best track for {s.Id} failed; will retry", ex);
+            return null;
+        }
+        try { return BestTrackReader.Read(new MemoryStream(data), log); }
+        catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException or FormatException or ArgumentException)
+        {
+            log.Warn($"NHC: best track for {s.Id} unreadable; will retry", ex);
             return null;
         }
     }

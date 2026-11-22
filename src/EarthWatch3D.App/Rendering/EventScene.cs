@@ -302,7 +302,7 @@ public sealed class EventScene
 
         int n = 0;
         foreach (var c in v.Cyclones)
-            SetBillboard(n++, c.Location, GlyphPx, GlyphMaterial(c.Category, c.Location.LatitudeDeg < 0));
+            SetBillboard(n++, c.Location, GlyphPx, GlyphMaterial(StormStyle.DisplayCategory(c), c.Location.LatitudeDeg < 0));
         foreach (var e in v.Eonet)
             SetBillboard(n++, e.Fix.Position, DotPx, DotMaterial(SaffirSimpson.Category(e.Fix.WindKt)));
         while (_billboards.Count > n)
@@ -421,8 +421,9 @@ public sealed class EventScene
         foreach (var c in v.Cyclones)
         {
             if (string.IsNullOrWhiteSpace(c.Name)) continue;
-            _labels.Add(new Label(StormStyle.Label(c.Name, c.Category), Unit(c.Location), GlyphRadius,
-                StormStyle.CategoryColor(c.Category), 12, GlyphPx / 2 - 4));
+            var cat = StormStyle.DisplayCategory(c);
+            _labels.Add(new Label(StormStyle.Label(c.Name, cat), Unit(c.Location), GlyphRadius,
+                StormStyle.CategoryColor(cat), 12, GlyphPx / 2 - 4));
         }
         foreach (var e in v.Eonet)
         {

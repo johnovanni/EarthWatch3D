@@ -125,6 +125,40 @@ public sealed class StorageTests : IDisposable
     }
 
     [Fact]
+    public void CacheRoundTripsCycloneHistory()
+    {
+        var c = Sample().Cyclones[0] with
+        {
+            History = [new StormFix(U(10, 0), new GeoPosition(1, 2), 40), new StormFix(U(10, 6), new GeoPosition(2, 3), null)],
+        };
+        var cache = new EventCache(_paths, new NullLog());
+        cache.Save(new EventSnapshot([], [c], [], [], 1));
+        var back = cache.Load()!.Cyclones[0];
+        Assert.Equal(2, back.History.Count);
+        Assert.Equal(c, back);
+    }
+
+    [Fact]
+    public void SchemaVersion2CacheIsIgnored()
+    {
+        new EventCache(_paths, new NullLog()).Save(Sample());
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_paths.EventsFile))!.AsObject();
+        json["SchemaVersion"] = 2;
+        File.WriteAllText(_paths.EventsFile, json.ToJsonString());
+        Assert.Null(new EventCache(_paths, new NullLog()).Load());
+        Assert.Equal(3, EventCache.CurrentSchemaVersion);
+    }
+
+    [Fact]
+    public void ReplayIsNotCached()
+    {
+        var c = Sample().Cyclones[0] with { Replay = new ReplayInfo(U(10, 0), U(10, 6), "best track", true) };
+        var cache = new EventCache(_paths, new NullLog());
+        cache.Save(new EventSnapshot([], [c], [], [], 1));
+        Assert.Null(cache.Load()!.Cyclones[0].Replay);
+    }
+
+    [Fact]
     public void SaveWhileDestinationLockedLogsAndDoesNotThrow()
     {
         var log = new ListLog();

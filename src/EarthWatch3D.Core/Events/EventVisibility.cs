@@ -19,8 +19,6 @@ public sealed record VisibleEvents(IReadOnlyList<VisibleQuake> Quakes, IReadOnly
 
 public static class EventVisibility
 {
-    private static readonly TimeSpan CycloneWindow = TimeSpan.FromHours(24);
-
     public static VisibleEvents At(EventSnapshot s, DateTime t, DisplayFilter f)
     {
         var quakes = new List<VisibleQuake>();
@@ -39,9 +37,9 @@ public static class EventVisibility
         if (f.ShowCyclones)
         {
             var latest = s.Cyclones
-                .Where(a => a.TimeUtc <= t && t - a.TimeUtc <= CycloneWindow)
                 .GroupBy(a => a.Id)
-                .Select(g => g.MaxBy(a => a.TimeUtc)!)
+                .Select(g => CycloneReplay.At(g.ToList(), t))
+                .OfType<CycloneAdvisory>()
                 .ToList();
             merged = CycloneMerger.Merge(latest);
         }

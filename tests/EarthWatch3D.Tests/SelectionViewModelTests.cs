@@ -229,4 +229,49 @@ public class SelectionViewModelTests
         vm.CloseCommand.Execute(null);
         Assert.False(vm.IsOpen);
     }
+
+    private static CycloneAdvisory Replayed(DateTime earlier, DateTime? later, bool known = true, double? kt = 50) =>
+        Storm(kt) with { Replay = new ReplayInfo(earlier, later, "NHC best track", known) };
+
+    private static readonly DateTime Noon = new(2026, 11, 12, 12, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public void ReplayedStormStaysSelected()
+    {
+        var vm = Vm();
+        vm.Select(Replayed(Noon.AddHours(-3), Noon.AddHours(3)));
+        var next = Replayed(Noon.AddHours(-2), Noon.AddHours(4));
+        vm.ClearIfNotVisible(new VisibleEvents([], [next], [], []));
+        Assert.True(vm.IsOpen);
+        Assert.Same(next, vm.Selected);
+    }
+
+    [Fact]
+    public void HoverTextSaysBetweenFixes()
+    {
+        var between = Replayed(Noon.AddHours(-3), Noon.AddHours(3), known: false, kt: null);
+        Assert.Equal("PENA · position at 12:00 UTC, between the 09:00 and 15:00 fixes (NHC best track)",
+            SelectionViewModel.HoverText(between, Noon, DistanceUnits.Kilometres));
+        var onFix = Replayed(Noon.AddHours(-3), Noon.AddHours(3), known: false, kt: null);
+        Assert.Equal("PENA · fix at 09:00 UTC (NHC best track)",
+            SelectionViewModel.HoverText(onFix, Noon.AddHours(-3), DistanceUnits.Kilometres));
+        // Known intensity: the category comes first, as in the live tooltip, and the wind last.
+        Assert.Equal("PENA · Tropical storm · position at 12:00 UTC, between the 09:00 and 15:00 fixes (NHC best track) · 50 kt",
+            SelectionViewModel.HoverText(Replayed(Noon.AddHours(-3), Noon.AddHours(3)), Noon, DistanceUnits.Kilometres));
+        // Fixes on different UTC days: dates are shown.
+        var days = new DateTime(2026, 11, 8, 21, 0, 0, DateTimeKind.Utc);
+        Assert.Equal("PENA · position at 9 Nov 00:00 UTC, between the 8 Nov 21:00 and 9 Nov 03:00 fixes (NHC best track)",
+            SelectionViewModel.HoverText(Replayed(days, days.AddHours(6), known: false, kt: null), days.AddHours(3), DistanceUnits.Kilometres));
+    }
+
+    [Fact]
+    public void ReplayDetailsSayPositionAndUnknownIntensity()
+    {
+        var vm = new SelectionViewModel(() => Noon);
+        vm.Select(Replayed(Noon.AddHours(-3), Noon.AddHours(3), known: false, kt: null));
+        Assert.Equal("Intensity unknown", vm.Lines.First(l => l.Label == "Category").Value);
+        Assert.Equal("position at 12:00 UTC, between the 09:00 and 15:00 fixes (NHC best track)",
+            vm.Lines.First(l => l.Label == "Position").Value);
+        Assert.DoesNotContain(vm.Lines, l => l.Label == "Advisory time");
+    }
 }

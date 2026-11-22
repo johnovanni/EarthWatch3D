@@ -12,7 +12,7 @@ namespace EarthWatch3D.Core.Storage;
 public sealed class EventCache(AppPaths paths, IAppLog log)
 {
     /// <summary>Raised whenever the saved shape or meaning of the records changes; an older file is discarded.</summary>
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     private sealed record Dto(int SchemaVersion, List<Earthquake> Earthquakes, List<CycloneAdvisory> Cyclones,
         List<WeatherAlert> Alerts, List<EonetStorm> Eonet, long Version);
@@ -82,6 +82,7 @@ public sealed class EventCache(AppPaths paths, IAppLog log)
     private static string? CycloneProblem(CycloneAdvisory c) =>
         EventProblem(c)
         ?? (c.Name is null ? "Name" : null)
+        ?? (c.History is null || c.History.Contains(null!) ? "History" : null)
         ?? (BadLines(c.PastTrack) ? "PastTrack" : null)
         ?? (BadLines(c.ForecastTrack) ? "ForecastTrack" : null)
         ?? (BadPolygons(c.Cone) ? "Cone" : null)

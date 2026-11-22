@@ -7,7 +7,8 @@ namespace EarthWatch3D.Core.Feeds.Nhc;
 
 /// <summary>One active NHC storm from CurrentStorms.json. Adv/Kmz fields are null when the product is absent.</summary>
 public sealed record NhcStorm(string Id, string Name, string Classification, double? WindKt, double? PressureMb,
-    GeoPosition Position, DateTime LastUpdateUtc, string? TrackAdv, Uri? TrackKmz, string? ConeAdv, Uri? ConeKmz);
+    GeoPosition Position, DateTime LastUpdateUtc, string? TrackAdv, Uri? TrackKmz, string? ConeAdv, Uri? ConeKmz,
+    string? BestTrackIssuance = null, Uri? BestTrackKmz = null);
 
 public static class NhcReader
 {
@@ -44,15 +45,26 @@ public static class NhcReader
         { log.Warn($"NHC: storm {id} has no valid lastUpdate; skipped"); return null; }
         var (trackAdv, trackKmz) = Product(st, "forecastTrack");
         var (coneAdv, coneKmz) = Product(st, "trackCone");
+        var (bestIssuance, bestKmz) = BestTrack(st);
         return new NhcStorm(id, Str(st, "name") ?? "", Str(st, "classification") ?? "", Parse(Str(st, "intensity")),
             Parse(Str(st, "pressure")), new GeoPosition(lat, GeoPosition.NormalizeLongitude(lon)), updated,
-            trackAdv, trackKmz, coneAdv, coneKmz);
+            trackAdv, trackKmz, coneAdv, coneKmz, bestIssuance, bestKmz);
     }
 
     private static (string? Adv, Uri? Kmz) Product(JsonElement st, string name)
     {
         if (!st.TryGetProperty(name, out var p) || p.ValueKind != JsonValueKind.Object) return (null, null);
         return (Str(p, "advNum"), Uri.TryCreate(Str(p, "kmzFile"), UriKind.Absolute, out var u) ? u : null);
+    }
+
+    /// <summary>The best-track KMZ is bestTrackGIS.kmzFile, or zipFile with .zip changed to .kmz.</summary>
+    private static (string? Issuance, Uri? Kmz) BestTrack(JsonElement st)
+    {
+        if (!st.TryGetProperty("bestTrackGIS", out var p) || p.ValueKind != JsonValueKind.Object) return (null, null);
+        var url = Str(p, "kmzFile");
+        if (string.IsNullOrWhiteSpace(url) && Str(p, "zipFile") is { } zip && zip.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            url = zip[..^4] + ".kmz";
+        return (Str(p, "issuance"), Uri.TryCreate(url, UriKind.Absolute, out var u) ? u : null);
     }
 
     private static double? Parse(string? s) =>

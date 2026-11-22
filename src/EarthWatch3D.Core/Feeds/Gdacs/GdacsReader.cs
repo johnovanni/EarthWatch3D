@@ -66,6 +66,8 @@ public static class GdacsReader
         var forecast = new List<GeoLine>();
         var cone = new List<GeoPolygon>();
         var winds = new List<WindArea>();
+        var history = new List<StormFix>();
+        DateTime? episodeTo = null;
         var unknown = new HashSet<string>(StringComparer.Ordinal);
 
         if (doc.RootElement.TryGetProperty("features", out var features) && features.ValueKind == JsonValueKind.Array)
@@ -105,7 +107,19 @@ public static class GdacsReader
                         foreach (var poly in isMulti ? coords.EnumerateArray().ToList() : [coords])
                             foreach (var piece in DateLine.SplitPolygon(Rings(poly))) winds.Add(new WindArea(kmh, piece));
                     }
-                    else if (cls.StartsWith("Point_Polygon_Point_", StringComparison.Ordinal)) { }
+                    else if (cls.StartsWith("Point_Polygon_Point_", StringComparison.Ordinal))
+                    {
+                        var hasToDate = DateTime.TryParse(Str(p, "todate"), CultureInfo.InvariantCulture,
+                            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var td);
+                        var toDate = hasToDate ? td : e.ModifiedUtc;
+                        if (hasToDate && (episodeTo is null || td > episodeTo)) episodeTo = td;
+                        var label = Str(p, "polygonlabel") ?? "";
+                        if (PointTime(label, toDate) is not { } t) { log.Warn($"GDACS: track point label '{label}' of event {e.EventId} not understood; skipped"); continue; }
+                        if (t > toDate) continue;   // a forecast point
+                        var ring = Ring(coords[0]);
+                        if (ring.Count == 0) continue;
+                        history.Add(new StormFix(t, CircleCentre(ring), null));
+                    }
                     else if (unknown.Add(cls)) log.Info($"GDACS: ignoring geometry class '{cls}'");
                 }
                 catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentException or KeyNotFoundException)
@@ -115,9 +129,49 @@ public static class GdacsReader
             }
         }
 
+        // The advisory's own position applies at the episode's todate (not at datemodified): make it History's last fix.
+        if (episodeTo is { } to)
+        {
+            history.RemoveAll(f => f.TimeUtc == to);
+            history.Add(new StormFix(to, location, e.WindKmh / 1.852));
+        }
+
         return new CycloneAdvisory(EventSource.Gdacs, "gdacs:" + e.EventId.ToString(CultureInfo.InvariantCulture), e.ModifiedUtc,
             location, "Tropical cyclone " + e.EventName, e.ReportUrl, e.EventName, e.WindKmh / 1.852, null,
-            past, forecast, cone, winds);
+            past, forecast, cone, winds)
+        {
+            History = [.. history.OrderBy(f => f.TimeUtc).GroupBy(f => f.TimeUtc).Select(g => g.First())],
+        };
+    }
+
+    /// <summary>Parses a track-point label such as "06/11 21:00 UTC"; the year is the one that puts it within 183 days of <paramref name="episodeToUtc"/>.</summary>
+    internal static DateTime? PointTime(string label, DateTime episodeToUtc)
+    {
+        var text = label.Trim();
+        if (!text.EndsWith("UTC", StringComparison.Ordinal)) return null;
+        text = text[..^3].Trim();
+        DateTime? best = null;
+        foreach (var year in new[] { episodeToUtc.Year - 1, episodeToUtc.Year, episodeToUtc.Year + 1 })
+        {
+            if (!DateTime.TryParseExact($"{year:0000}/{text}", "yyyy/dd/MM HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var t)) continue;
+            t = DateTime.SpecifyKind(t, DateTimeKind.Utc);
+            if (Math.Abs((t - episodeToUtc).TotalDays) <= 183 && (best is null || Math.Abs((t - episodeToUtc).Ticks) < Math.Abs((best.Value - episodeToUtc).Ticks))) best = t;
+        }
+        return best;
+    }
+
+    /// <summary>Centre of the circle's bounding box; longitudes are taken relative to the first vertex so a circle over 180 degrees works.</summary>
+    private static GeoPosition CircleCentre(List<(double Lon, double Lat)> ring)
+    {
+        var lon0 = ring[0].Lon;
+        double minD = double.MaxValue, maxD = double.MinValue, minLat = double.MaxValue, maxLat = double.MinValue;
+        foreach (var (lon, lat) in ring)
+        {
+            var d = GeoPosition.NormalizeLongitude(lon - lon0);
+            minD = Math.Min(minD, d); maxD = Math.Max(maxD, d);
+            minLat = Math.Min(minLat, lat); maxLat = Math.Max(maxLat, lat);
+        }
+        return new GeoPosition((minLat + maxLat) / 2, GeoPosition.NormalizeLongitude(lon0 + (minD + maxD) / 2));
     }
 
     private static List<(double Lon, double Lat)> Ring(JsonElement a)
