@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <!-- The one version for every project (also used for the MSIX package). -->
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <!-- One AstroCore copy per build: GlobeCore's projects (external\GlobeCore) use this app's external\AstroCore. -->
     <AstroCoreRoot>$(MSBuildThisFileDirectory)external\AstroCore\</AstroCoreRoot>
     <GlobeCoreRoot>$(MSBuildThisFileDirectory)external\GlobeCore\</GlobeCoreRoot>

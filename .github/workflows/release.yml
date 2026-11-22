@@ -1,0 +1,150 @@
+name: Release
+
+# Builds EarthWatch3D-Setup.exe, a signed installer that puts the app in C:\Program Files\Qapow\EarthWatch3D
+# by default (the user can pick another folder). The installer script is packaging/installer/EarthWatch3D.iss.
+# Pull requests: built unsigned to check the build; uploaded as a workflow artifact.
+# Version tags (v1.0.1): signed and attached to a GitHub Release, which qapow.com links to as
+# releases/latest/download/EarthWatch3D-Setup.exe. The version comes from Directory.Build.props; raise it before tagging.
+#
+# Tag and manual runs sign the app's .exe and its own DLLs, then the installer, with Azure Artifact Signing
+# (account JohnApolloni, profile JohnApolloniPublic), the same setup VoiceCoach uses. They run in the "release"
+# environment and sign in to Azure with GitHub's OIDC token, which needs repository variables AZURE_CLIENT_ID,
+# AZURE_TENANT_ID and AZURE_SUBSCRIPTION_ID, and an Entra app with a federated credential for the "release"
+# environment that holds the "Artifact Signing Certificate Profile Signer" role on the account. With GitHub's
+# immutable OIDC subject, the credential's subject is repo:johnovanni@11181099/EarthWatch3D@1454557228:environment:release.
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths: ['.github/workflows/release.yml', 'packaging/installer/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write # OIDC sign-in to Azure for code signing
+
+env:
+  SETUP: EarthWatch3D-Setup.exe
+  # Pull request builds skip signing, so they never need Azure access.
+  SIGN: ${{ github.event_name != 'pull_request' }}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    # The Azure federated credential trusts this environment, so only runs that use it can sign.
+    environment: ${{ github.event_name != 'pull_request' && 'release' || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Read version
+        shell: pwsh
+        run: |
+          $v = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          if (-not $v) { throw 'No <Version> in Directory.Build.props.' }
+          if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$v") {
+            throw "Tag ${{ github.ref_name }} does not match the version v$v in Directory.Build.props."
+          }
+          "VERSION=$v" >> $env:GITHUB_ENV
+
+      - name: Publish
+        run: dotnet publish src/EarthWatch3D.App -c Release -r win-x64 --self-contained true -p:DebugType=none -p:DebugSymbols=false -o publish
+
+      - name: Sign in to Azure
+        if: env.SIGN == 'true'
+        uses: azure/login@v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Signs only the files we build; third-party DLLs keep their publishers' signatures.
+      - name: Sign app files
+        if: env.SIGN == 'true'
+        uses: Azure/artifact-signing-action@v2.0.0
+        with:
+          endpoint: https://cus.codesigning.azure.net/
+          signing-account-name: JohnApolloni
+          certificate-profile-name: JohnApolloniPublic
+          files: |
+            ${{ github.workspace }}\publish\EarthWatch3D.App.exe
+            ${{ github.workspace }}\publish\EarthWatch3D.App.dll
+            ${{ github.workspace }}\publish\EarthWatch3D.Core.dll
+            ${{ github.workspace }}\publish\AstroCore.dll
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = Get-Command iscc -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            $iscc = Get-Item "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue
+          }
+          if (-not $iscc) {
+            choco install innosetup --no-progress -y | Out-Null
+            $iscc = Get-Item "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc.Source "/DAppVersion=$env:VERSION" "/DPublishDir=$PWD\publish" "/DOutputDir=$PWD\out" packaging\installer\EarthWatch3D.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE." }
+
+      - name: Sign installer
+        if: env.SIGN == 'true'
+        uses: Azure/artifact-signing-action@v2.0.0
+        with:
+          endpoint: https://cus.codesigning.azure.net/
+          signing-account-name: JohnApolloni
+          certificate-profile-name: JohnApolloniPublic
+          files: ${{ github.workspace }}\out\${{ env.SETUP }}
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify signatures
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          $files = 'publish\EarthWatch3D.App.exe', 'publish\EarthWatch3D.App.dll', 'publish\EarthWatch3D.Core.dll', 'publish\AstroCore.dll', "out\$env:SETUP"
+          $bad = $files | ForEach-Object { Get-AuthenticodeSignature $_ } | Where-Object Status -ne 'Valid'
+          if ($bad) { $bad | Format-Table Path, Status, StatusMessage; throw 'Signature check failed.' }
+          (Get-AuthenticodeSignature "out\$env:SETUP").SignerCertificate.Subject
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash "out\$env:SETUP" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $env:SETUP" | Out-File "out\$env:SETUP.sha256" -Encoding ascii -NoNewline
+          Get-Item "out\$env:SETUP" | Select-Object Name, Length
+
+      - name: Upload build
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: EarthWatch3D-Setup${{ env.SIGN != 'true' && '-unsigned' || '' }}
+          path: |
+            out/${{ env.SETUP }}
+            out/${{ env.SETUP }}.sha256
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $files = "out/$env:SETUP", "out/$env:SETUP.sha256"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @files --clobber
+          } else {
+            gh release create $tag @files --title "$tag" --generate-notes
+          }

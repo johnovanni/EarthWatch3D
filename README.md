@@ -59,24 +59,23 @@ A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is
   app keeps running. An error that repeats is logged in full once and then counted (one summary line a minute); if
   errors keep coming (more than 50 in 10 seconds) the app closes rather than hang. Each day's log file is capped at
   20 MB. If the globe image ever fails to compose, the plain Blue Marble is shown until the next try.
-  The log folder is shown in About (Data and logs). Installed: under
-  `%LOCALAPPDATA%\Packages\johnovanni.EarthWatch3D_…\LocalCache\Local\EarthWatch3D\logs`; run from source:
-  `%LOCALAPPDATA%\EarthWatch3D\logs`.
+  The log folder is shown in About (Data and logs): `%LOCALAPPDATA%\EarthWatch3D\logs`.
 
 ## Install
 
-No release has been published yet.
-
 You need Windows 10 (version 1809 or later) or Windows 11 on a 64-bit (x64) PC.
 
-1. Download **`EarthWatch3D.appinstaller`** from the [latest release](https://github.com/johnovanni/EarthWatch3D/releases/latest).
-2. Open it (double-click). Windows' App Installer shows the app and its publisher; choose **Install**.
+1. Download **`EarthWatch3D-Setup.exe`** from the [latest release](https://github.com/johnovanni/EarthWatch3D/releases/latest)
+   or from [qapow.com](https://qapow.com/p/earthwatch3d/).
+2. Run it. It installs to `C:\Program Files\Qapow\EarthWatch3D` unless you pick another folder, and adds
+   EarthWatch3D to the Start menu (under Qapow).
 
-EarthWatch3D then appears in the Start menu. Updates arrive by themselves: Windows looks for a new version in the
-background, and also when the app starts (at most once a day; then it asks before updating). As with any MSIX app, Windows
-keeps the app's data folder across updates and removes it when you uninstall (Settings → Apps → Installed apps).
+To update, run the newer setup; it installs over the old version and keeps your settings. Settings, caches and logs are
+in `%LOCALAPPDATA%\EarthWatch3D`. Uninstall from Settings → Apps → Installed apps.
 
-How the package is built and signed is in [docs/release.md](docs/release.md).
+If you installed the earlier MSIX package (v1.0.0), uninstall it first.
+
+How the installer is built and signed is in [docs/release.md](docs/release.md).
 
 ## Build and run
 
