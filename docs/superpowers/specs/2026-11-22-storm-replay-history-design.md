@@ -70,6 +70,16 @@ The glyph's category and colour come from the wind at t:
 | S3 | Grey "intensity unknown" glyph when no wind is known | Showing a later advisory's category at an earlier time would be invented |
 | S4 | GDACS points after the episode's `todate` are treated as forecast and dropped; `History` stops at `todate`, and its last fix is the advisory's own position (with its wind) at that time, not at `datemodified` | GDACS mixes past and forecast points in one list; `todate` is the time the position applies, `datemodified` only when the record was saved |
 
+### Rulings made while building (2026-11-22)
+
+| # | Ruling | Reason |
+|---|---|---|
+| B1 | NHC best-track fixes are kept only for tropical and subtropical cyclone stages (`stormType` TD, TS, HU, TY, ST, TC, MH, SD, SS). Disturbance, low, wave, extratropical and post-tropical stages (DB, LO, WV, EX, PT) are dropped; an unknown code is kept and logged once | The final review found Pena's 4 days as disturbance "GENESIS033" drawn as "PENA TD". The layer shows tropical cyclones. Cost: an extratropical tail of a storm NHC still advises on is not replayed |
+| B2 | Before a storm's first stored advisory, its pressure is shown as unknown and its title is built from the name only | A later advisory's pressure at an earlier time would be invented (the same reasoning as S3) |
+| B3 | The source in the tooltip is named from where the two neighbouring fixes came from ("NHC best track", "NHC advisories", "NHC advisories and best track", "GDACS track", "GDACS advisories") | The label must describe the positions actually used |
+| B4 | A GDACS advisory's own position counts as a fix at the episode's `todate`, not at `datemodified` | `todate` is when the position applies; `datemodified` is when GDACS edited the event |
+| B5 | Tasks 1–3 were built by one helper and reviewed together; Task 4's review and the whole-branch review were combined into one | The branch is small (6 commits) |
+
 ## Testing
 
 - **GDACS reader:** from the sample, PENA-26 gets the past fixes up to 11/11 15:00 with correct UTC times, plus a
