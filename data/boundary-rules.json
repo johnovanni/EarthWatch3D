@@ -1,0 +1,15 @@
+{
+  "rules": [
+    {
+      "kind": "moveAdmin1",
+      "name": "moveAdmin1 UA-43",
+      "codes": ["UA-43", "UA-40"],
+      "from": "RUS",
+      "to": "UKR",
+      "expectParts": 1,
+      "expectLines": 1,
+      "description": "Crimea shown as part of Ukraine (UN General Assembly resolution 68/262)",
+      "reason": "UN practice (owner's decision Q3, applied to EarthWatch3D by Plan 2b ruling B-7, as in EarthRelief3D): UN General Assembly resolution 68/262 of 27 March 2014, Territorial integrity of Ukraine. Natural Earth's default admin-0 file draws Crimea and Sevastopol in Russia; their admin-1 polygons (UA-43, UA-40) move to Ukraine and the Perekop line, now internal, goes."
+    }
+  ]
+}

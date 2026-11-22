@@ -16,6 +16,8 @@
     <!-- The MIT licences require their notices to ship with the app; About opens this file. -->
     <None Include="..\..\THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\THIRD-PARTY-NOTICES-DOTNET-RUNTIME.txt" Link="THIRD-PARTY-NOTICES-DOTNET-RUNTIME.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The app's boundary rules and probes (Plan 2b), read at every boundary load. -->
+    <None Include="..\..\data\**" Link="data\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

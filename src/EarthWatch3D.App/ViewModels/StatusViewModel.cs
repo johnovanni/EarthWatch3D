@@ -69,6 +69,7 @@ public sealed partial class StatusViewModel(Dispatcher? dispatcher) : Observable
             FeedState.Retrying or FeedState.Failing =>
                 s.Name + (s.State == FeedState.Retrying ? ": retrying" : ": failing") + error +
                 " – next try " + Utc(s.NextRunUtc) + (lastOk.Length > 0 ? "; last updated " + lastOk : ""),
+            FeedState.Attention => s.Name + ": needs attention" + (lastOk.Length > 0 ? "; last updated " + lastOk : ""),
             FeedState.NotSetUp => s.Name + ": not set up",
             FeedState.Paused => s.Name + ": paused",
             FeedState.Idle => s.Name + ": idle" + (lastOk.Length > 0 ? "; last updated " + lastOk : ""),

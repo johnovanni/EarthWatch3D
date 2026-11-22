@@ -15,6 +15,7 @@ using GlobeCore.Earth;
 using GlobeCore.Earth.Clouds;
 using GlobeCore.Imaging;
 using GlobeCore.Logging;
+using GlobeCore.Regions;
 using GlobeCore.Wpf.Camera;
 using GlobeCore.Wpf.Layers;
 using GlobeCore.Wpf.Rendering;
@@ -46,6 +47,8 @@ public sealed class SceneController
     private readonly Window _window;
     private readonly IAppLog _log;
     private readonly ViewState _view;
+    private readonly Task<CurrentBoundaries> _boundaries;
+    private CurrentBoundaries? _watchedBoundaries;   // whose Changed event redraws the borders (from StartHostAsync)
     private readonly CameraAnimator _animator;
     private readonly TaskCompletionSource _firstCompose = new(TaskCreationOptions.RunContinuationsAsynchronously);
     // All WPF drawing off the UI thread (coastlines, plates, alert areas, clouds) runs here, one item at a time. Shut down on Closed.
@@ -72,9 +75,11 @@ public sealed class SceneController
     /// <param name="zones">NWS zone shapes for alerts that name zones only.</param>
     /// <param name="lightning">Where the lightning flashes come from.</param>
     /// <param name="view">Receives the camera's sub-point whenever the camera moves (the lightning feeds read it).</param>
+    /// <param name="boundaries">The country borders, loading in the background; the lines layer follows their updates.</param>
     /// <param name="log">Where compose and load failures are written (none if null).</param>
     public SceneController(HelixViewport3D viewport, Canvas overlay, FrameworkElement card, MainViewModel vm, Window window,
-                           EventStore store, ZoneCache zones, ILightningSource lightning, ViewState view, IAppLog? log = null)
+                           EventStore store, ZoneCache zones, ILightningSource lightning, ViewState view,
+                           Task<CurrentBoundaries> boundaries, IAppLog? log = null)
     {
         _log = log ?? new NullLog();
         // Nothing need await the first compose (only the diagnostics do), so observe a fault here: otherwise it would
@@ -85,6 +90,7 @@ public sealed class SceneController
         Zones = zones ?? throw new ArgumentNullException(nameof(zones));
         ArgumentNullException.ThrowIfNull(lightning);
         _view = view ?? throw new ArgumentNullException(nameof(view));
+        _boundaries = boundaries ?? throw new ArgumentNullException(nameof(boundaries));
         // The camera is put on the home view when the window loads, after the feeds have started: report that view now,
         // so a GLM feed's first run does not skip a satellite the user is about to face (GOES-West from the Americas).
         _view.CameraSubPoint = HomeView;
@@ -161,9 +167,9 @@ public sealed class SceneController
                 SetDefaultView(camera, FitDistanceForViewport(camera));
                 ApplyRotationSensitivity(camera);
             }
-            var (baseImage, lines) = await GlobeLoader.LoadAsync(GlobeImageWidth, _sta);
+            var (baseImage, lines, borders) = await GlobeLoader.LoadAsync(GlobeImageWidth, _sta, _boundaries, _log);
             if (_closed) return;
-            _ = StartHostAsync(baseImage, lines);
+            _ = StartHostAsync(baseImage, lines, borders);
         }
         catch (OperationCanceledException) when (_closed) { }   // closed while loading
         catch (Exception ex)
@@ -177,9 +183,11 @@ public sealed class SceneController
     /// <summary>
     /// Builds the host and the image layers on the loaded globe image, adds every layer, and makes the first compose
     /// (LayerHost's start-up sequence); then the Areas layer and any cloud image that arrived meanwhile. UI thread.
-    /// Completes when the first compose (and any queued behind it) is on the globe.
+    /// Completes when the first compose (and any queued behind it) is on the globe. <paramref name="borders"/> is the
+    /// boundary set <paramref name="coastAndBorders"/> was drawn from (null if the boundaries could not be loaded); from
+    /// here on the lines layer redraws the borders whenever the "Borders" feed adopts a newer set.
     /// </summary>
-    internal Task StartHostAsync(Bgra32Image baseImage, SparseOverlay coastAndBorders)
+    internal Task StartHostAsync(Bgra32Image baseImage, SparseOverlay coastAndBorders, BoundarySet? borders)
     {
         // Before the split, the visible events were worked out on frames while the image loaded; do that now, so the
         // Areas layer below and the first frame see them (the Areas layer does not exist yet, so it is not asked here).
@@ -188,7 +196,7 @@ public sealed class SceneController
         _clouds = new CloudsImageLayer(baseImage, layers, _sta, _log, () => _closed) { IsVisible = layers.ShowClouds };
         _areas = new AreasImageLayer(baseImage.Width, baseImage.Height, () => _events.Visible, () => _vm.CurrentFilter,
                                      Zones, _sta, _log, () => _closed, _window.Dispatcher);
-        _lines = new LinesImageLayer(coastAndBorders, layers.ShowCoastlines, layers.ShowPlates, _sta, _log, () => _closed);
+        _lines = new LinesImageLayer(coastAndBorders, borders, layers.ShowCoastlines, layers.ShowPlates, _sta, _log, () => _closed);
         var host = _host = new LayerHost(_viewport, _overlayCanvas, EarthBody.Instance, baseImage, _log);
         // The hover tip keeps the host's default style: the cards' dark tooltip (GlobeCore.Wpf CardStyles.xaml).
         host.HoverBlockers.Add(_card);
@@ -209,7 +217,44 @@ public sealed class SceneController
         var first = host.RecomposeNowAsync();
         _areas.Request();   // composes again once the Areas layer exists
         if (_cloudImage is not null) _clouds.SetImage(_cloudImage);   // one arrived while the base was loading
+        WatchBoundaries(borders);
         return first;
+    }
+
+    // The Boundaries legend names the set drawn; a set adopted while the globe was loading is drawn now, and later ones
+    // as the feed adopts them.
+    private void WatchBoundaries(BoundarySet? drawn)
+    {
+        if (drawn is null || !_boundaries.IsCompletedSuccessfully)
+        {
+            _vm.Layers.BoundariesLegend = "Borders: could not be loaded (see the log); coastlines only.";
+            return;
+        }
+        _vm.Layers.BoundariesLegend = LayersViewModel.BoundariesLegendFor(drawn);
+        var current = _watchedBoundaries = _boundaries.Result;
+        current.Changed += OnBoundariesChanged;
+        if (!ReferenceEquals(current.Set, drawn)) RedrawBorders(current.Set);
+    }
+
+    // Raised on the feed's thread (inside the swap): the redraw is queued to the UI thread.
+    private void OnBoundariesChanged(object? sender, BoundariesChangedEventArgs e) =>
+        _window.Dispatcher.BeginInvoke(() => RedrawBorders(e.New));
+
+    private async void RedrawBorders(BoundarySet set)
+    {
+        try
+        {
+            if (_closed || _lines is null) return;
+            if (await _lines.ShowBordersAsync(set) && !_closed)
+            {
+                _vm.Layers.BoundariesLegend = LayersViewModel.BoundariesLegendFor(set);
+                _log.Info($"Borders redrawn from {set.Edition}");
+            }
+        }
+        catch (Exception ex)   // async void: nothing may escape to the dispatcher
+        {
+            _log.Error("Borders could not be redrawn", ex);
+        }
     }
 
     private void OnFirstComposeDisplayed(object? sender, EventArgs e) => _firstCompose.TrySetResult();
@@ -389,6 +434,7 @@ public sealed class SceneController
         _vm.SunMoon.FaceRequested -= OnFaceRequested;
         _vm.Layers.PropertyChanged -= OnDisplaySettingChanged;
         _vm.Display.PropertyChanged -= OnDisplaySettingChanged;
+        if (_watchedBoundaries is { } boundaries) boundaries.Changed -= OnBoundariesChanged;
         _arrows.Close(); _markers.Close(); _events.Close(); _lightning.Close(); _areas?.Close();
         // Before the rasterizer: a cancelled build is then seen as "closed", not logged as an error. A disposed host
         // raises no more events.

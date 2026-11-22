@@ -40,6 +40,8 @@ public sealed class StorageTests : IDisposable
         Assert.True(Directory.Exists(_paths.CacheDir));
         Assert.True(Directory.Exists(_paths.ZonesDir));
         Assert.True(Directory.Exists(_paths.LogsDir));
+        Assert.Equal(Path.Combine(_root, "cache", "boundaries"), _paths.BoundariesDir);   // <data>/cache/boundaries (B-5)
+        Assert.True(Directory.Exists(_paths.BoundariesDir));
     }
 
     [Fact]

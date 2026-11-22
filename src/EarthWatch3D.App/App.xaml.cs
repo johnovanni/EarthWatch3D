@@ -21,6 +21,7 @@ using GlobeCore.Earth.Clouds;
 using GlobeCore.Feeds;
 using GlobeCore.Imaging;
 using GlobeCore.Logging;
+using GlobeCore.Regions;
 using GlobeCore.Storage;
 using GlobeCore.Time;
 using GlobeCore.Wpf.Diagnostics;
@@ -134,6 +135,12 @@ public partial class App : Application
         var meter = _meter = new DownloadMeter(wall, TimeZoneInfo.Local, paths.DownloadMeterFile, log);
         meter.LimitBytes = AppSettings.DailyLimitBytes(_settings.Load().DailyLimitMb);   // out of range (hand-edited): no limit
         http.BytesReceived += meter.Add;
+        // The country borders: the bundled Natural Earth set or a newer validated one from the cache, with the app's rules,
+        // loaded on the pool (the countries file is 3 MB) while the window comes up. The globe waits for it; the "Borders"
+        // feed checks once a day for a newer Natural Earth release (offline: the sample says there is none).
+        var boundaries = Task.Run(() => BoundaryData.Load(BoundaryData.InstalledDataDir, paths.BoundariesDir, log));
+        async Task<IFeed> MakeBordersFeed() => (await boundaries.ConfigureAwait(false)).CreateFeed(http, meter, log);
+        async Task<CurrentBoundaries> CurrentBorders() => (await boundaries.ConfigureAwait(false)).Current;
         // The user's own EUMETSAT key and secret: encrypted in the settings file, tested through the app's HTTP client.
         var eumetsat = new EumetsatClient(http, wall, log);
         var credentials = new EumetsatCredentialStore(_settings, new DpapiProtector(EumetsatCredentialStore.ProtectorEntropy));
@@ -210,6 +217,7 @@ public partial class App : Application
             Glm(LightningSensor.GoesWest),
             mtg,
             clouds,
+            new DeferredFeed(BoundaryData.FeedName, BoundaryData.FeedInterval, MakeBordersFeed()),
         ];
         var scheduler = _scheduler = new FeedScheduler(feeds, wall, log, AppInfo.FeedIdleNote);
         foreach (var status in scheduler.Statuses) vm.Status.Apply(status);   // grey dots until each first run
@@ -258,7 +266,7 @@ public partial class App : Application
         UpdateLightningWanted();
         vm.Tick();   // show real values immediately
         // The scene reports the camera's sub-point in the view state, which the GLM feeds read.
-        var window = mainWindow = new MainWindow(vm, store, zones, lightning, view, log);
+        var window = mainWindow = new MainWindow(vm, store, zones, lightning, view, CurrentBorders(), log);
         if (samplesDir is not null) window.Title += " — SAMPLE DATA (offline)";
         // Raised on the feed's thread; the scene is used on the UI thread.
         clouds.ImageReady += (_, image) => Dispatcher.BeginInvoke(() => window.Scene.SetCloudImage(image));

@@ -66,6 +66,18 @@ public class StatusViewModelTests
     }
 
     [Fact]
+    public void AttentionIsAmberWithTheFeedsReason()
+    {
+        // GlobeCore's FeedState.Attention (a rejected boundary release): amber like Retrying, the note says why.
+        const string note = "Rejected v5.2.0: probe Kyiv lands in RUS, not UKR. Using Natural Earth 5.1.2 (2022-05-13); kept (v5.2.0 not adopted)";
+        Assert.Equal("Borders: needs attention; last updated 14:03 UTC" + Environment.NewLine + note,
+            StatusViewModel.TooltipFor(new FeedStatus("Borders", FeedState.Attention, T0, null, 0, T0.AddHours(24), note)));
+        Assert.Equal("Borders: needs attention" + Environment.NewLine + note,
+            StatusViewModel.TooltipFor(new FeedStatus("Borders", FeedState.Attention, null, null, 0, T0.AddHours(24), note)));
+        Assert.Same(FeedStateBrushConverter.Retrying, FeedStateBrushConverter.For(FeedState.Attention));
+    }
+
+    [Fact]
     public void DownloadTextIsObservable()
     {
         var vm = new StatusViewModel(null);

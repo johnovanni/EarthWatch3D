@@ -4,7 +4,7 @@ namespace EarthWatch3D.Core.Storage;
 
 /// <summary>
 /// Folder layout under the app's data root: GlobeCore's <see cref="AppDataRoot"/> (root, cache, logs, settings, download
-/// meter) plus EarthWatch3D's own folders (NWS zones, the event cache and the cloud images).
+/// meter) plus EarthWatch3D's own folders (NWS zones, the event cache, the cloud images and the boundary sets).
 /// </summary>
 public sealed record AppPaths(AppDataRoot Data)
 {
@@ -18,6 +18,8 @@ public sealed record AppPaths(AppDataRoot Data)
     public string SettingsFile => Data.SettingsFile;
     public string EventsFile => Path.Combine(CacheDir, "events.json");
     public string CloudsDir => Path.Combine(CacheDir, "clouds");
+    /// <summary>Newer Natural Earth boundary sets the "Borders" feed has downloaded and validated, one folder per release tag.</summary>
+    public string BoundariesDir => Path.Combine(CacheDir, "boundaries");
     public string DownloadMeterFile => Data.DownloadMeterFile;
 
     public static AppPaths Default => ForUser(
@@ -36,6 +38,8 @@ public sealed record AppPaths(AppDataRoot Data)
         Directory.CreateDirectory(CacheDir);
         Directory.CreateDirectory(ZonesDir);
         Directory.CreateDirectory(CloudsDir);
+        // Made now, not when a set is first stored: GlobeCore's feed tidies a file in it after every check.
+        Directory.CreateDirectory(BoundariesDir);
         Directory.CreateDirectory(LogsDir);
     }
 }

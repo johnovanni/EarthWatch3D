@@ -13,8 +13,11 @@ using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Lightning;
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Earth;
 using GlobeCore.Feeds;
+using GlobeCore.Geo;
 using GlobeCore.Imaging;
+using GlobeCore.Regions;
 using GlobeCore.Storage;
 using GlobeCore.Wpf.Layers;
 using HelixToolkit.Wpf;
@@ -27,7 +30,14 @@ public class LayerWiringTests
 {
     private static readonly DateTime T0 = new(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc);
 
-    private sealed record Rig(SceneController Scene, MainViewModel Vm, HelixViewport3D Viewport, Canvas Overlay);
+    private sealed record Rig(SceneController Scene, MainViewModel Vm, HelixViewport3D Viewport, Canvas Overlay, CurrentBoundaries Boundaries);
+
+    // The bundled boundary set with the app's rules, parsed once (the countries file is 3 MB).
+    private static readonly Lazy<BoundarySet> BundledBorders = new(() =>
+    {
+        using var s = System.IO.File.OpenRead(System.IO.Path.Combine(AppContext.BaseDirectory, "data", "boundary-rules.json"));
+        return NaturalEarthBoundaries.LoadBundled(BoundaryRules.Parse(s));
+    });
 
     /// <summary>
     /// A SceneController in a window that is never shown (laid out by hand at 800x600, the camera facing 0°N 0°E, where
@@ -52,8 +62,10 @@ public class LayerWiringTests
         var window = new Window { Content = grid };
         grid.Measure(new Size(800, 600));
         grid.Arrange(new Rect(0, 0, 800, 600));
-        var scene = new SceneController(viewport, overlay, card, vm, window, store, zones, lightning, new ViewState(), new RecordingLog());
-        return new Rig(scene, vm, viewport, overlay);
+        var boundaries = new CurrentBoundaries(BundledBorders.Value);
+        var scene = new SceneController(viewport, overlay, card, vm, window, store, zones, lightning, new ViewState(),
+                                        Task.FromResult(boundaries), new RecordingLog());
+        return new Rig(scene, vm, viewport, overlay, boundaries);
     }
 
     /// <summary><see cref="NewScene"/>, started on a small base image as OnLoaded does after decoding.</summary>
@@ -66,7 +78,7 @@ public class LayerWiringTests
         Array.Fill(baseImage.Pixels, (byte)200);
         var lineImage = Bgra32Image.Create(w, h);
         for (int x = 0; x < w; x++) lineImage.Pixels[(h / 2 * w + x) * 4 + 3] = 255;   // one opaque row: the "coastline"
-        await scene.StartHostAsync(baseImage, SparseOverlay.FromImage(lineImage));
+        await scene.StartHostAsync(baseImage, SparseOverlay.FromImage(lineImage), rig.Boundaries.Set);
         await StaAsync.WaitUntil(() => !SnapshotDiagnostic.IsBusy(scene));
         return rig;
     }
@@ -146,6 +158,52 @@ public class LayerWiringTests
         Assert.True(host.IsComposeIdle);
         Assert.Equal(1, composes);
         Assert.Null(lines.Current);   // neither coastlines nor plates
+        host.Dispose();
+    });
+
+    [Fact]
+    public void SwapRebuildsLinesLayer() => StaAsync.Run(async () =>
+    {
+        var rig = await StartAsync();
+        var host = rig.Scene.Host!;
+        var lines = host.Layers.OfType<LinesImageLayer>().Single();
+        var old = rig.Boundaries.Set;
+        Assert.Same(old, lines.Borders);
+        Assert.Equal(BoundariesTests.BundledLegend, rig.Vm.Layers.BoundariesLegend);
+        var before = lines.Current;
+        Assert.NotNull(before);
+        int composes = 0;
+        host.Composed += (_, _) => composes++;
+
+        // A newer edition with one more line, along 10°N from 0° to 60°E. The feed swaps it in on its own thread.
+        var next = old with
+        {
+            Edition = "Natural Earth 9.9.9 (2030-01-01)", Tag = "v9.9.9",
+            Lines = [.. old.Lines, new GeoLine([new GeoPosition(10, 0), new GeoPosition(10, 30), new GeoPosition(10, 60)])],
+        };
+        await Task.Run(() => rig.Boundaries.Swap(next));
+
+        // The lines are rasterized again off the UI thread, then the globe is recomposed with them.
+        await StaAsync.WaitUntil(() => lines.Borders == next && composes > 0 && host.IsComposeIdle, 15_000);
+        Assert.NotSame(before, lines.Current);
+        var coast = NaturalEarthLines.Coastlines();
+        int w = lines.CoastAndBorders.Width, h = lines.CoastAndBorders.Height;
+        var expected = LinesImageLayer.RasterizeCoastAndBorders(coast, NaturalEarthLines.LandBoundaries(next), w, h);
+        var withoutTheNewLine = LinesImageLayer.RasterizeCoastAndBorders(coast, NaturalEarthLines.LandBoundaries(old), w, h);
+        Assert.Equal(expected.Count, lines.CoastAndBorders.Count);
+        Assert.True(expected.Count > withoutTheNewLine.Count, "the new line is drawn");
+        Assert.Equal("Borders: Natural Earth 9.9.9 (2030-01-01); Crimea shown as part of Ukraine (UN General Assembly resolution 68/262)",
+            rig.Vm.Layers.BoundariesLegend);
+
+        // Hidden, a swap still rebuilds (so showing it again is current) but needs no compose.
+        rig.Vm.Layers.ShowCoastlines = false;
+        await StaAsync.WaitUntil(() => host.IsComposeIdle);
+        await Task.Delay(400);
+        composes = 0;
+        await Task.Run(() => rig.Boundaries.Swap(old));
+        await StaAsync.WaitUntil(() => lines.Borders == old, 15_000);
+        await Task.Delay(400);
+        Assert.Equal(0, composes);
         host.Dispose();
     });
 
