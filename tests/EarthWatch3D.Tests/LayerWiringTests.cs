@@ -31,9 +31,9 @@ public class LayerWiringTests
 
     /// <summary>
     /// A SceneController in a window that is never shown (laid out by hand at 800x600, the camera facing 0°N 0°E, where
-    /// an M6 quake is), started on a small base image as OnLoaded does after decoding.
+    /// an M6 quake is), not started.
     /// </summary>
-    private static async Task<Rig> StartAsync()
+    private static Rig NewScene()
     {
         var clock = new TestClock(T0);
         var vm = new MainViewModel(clock, new FakeSettingsStore());
@@ -53,7 +53,14 @@ public class LayerWiringTests
         grid.Measure(new Size(800, 600));
         grid.Arrange(new Rect(0, 0, 800, 600));
         var scene = new SceneController(viewport, overlay, card, vm, window, store, zones, lightning, new ViewState(), new RecordingLog());
+        return new Rig(scene, vm, viewport, overlay);
+    }
 
+    /// <summary><see cref="NewScene"/>, started on a small base image as OnLoaded does after decoding.</summary>
+    private static async Task<Rig> StartAsync()
+    {
+        var rig = NewScene();
+        var scene = rig.Scene;
         const int w = 64, h = 32;
         var baseImage = Bgra32Image.Create(w, h);
         Array.Fill(baseImage.Pixels, (byte)200);
@@ -61,7 +68,7 @@ public class LayerWiringTests
         for (int x = 0; x < w; x++) lineImage.Pixels[(h / 2 * w + x) * 4 + 3] = 255;   // one opaque row: the "coastline"
         await scene.StartHostAsync(baseImage, SparseOverlay.FromImage(lineImage));
         await StaAsync.WaitUntil(() => !SnapshotDiagnostic.IsBusy(scene));
-        return new Rig(scene, vm, viewport, overlay);
+        return rig;
     }
 
     private static string Kind(GlobeLayer l) => l switch
@@ -116,6 +123,7 @@ public class LayerWiringTests
             rig.Overlay.Children.Cast<UIElement>().Select(e => e.GetType()));
         var label = (TextBlock)rig.Overlay.Children[6];
         Assert.Equal(("M6.0", Visibility.Visible), (label.Text, label.Visibility));
+        host.Dispose();
     });
 
     [Fact]
@@ -138,5 +146,49 @@ public class LayerWiringTests
         Assert.True(host.IsComposeIdle);
         Assert.Equal(1, composes);
         Assert.Null(lines.Current);   // neither coastlines nor plates
+        host.Dispose();
     });
+
+    [Fact]
+    public void AFaultedFirstComposeIsNotAnUnobservedTaskException()
+    {
+        // A load failure (or a compose fault) faults FirstComposeDisplayed, which nothing awaits in a normal run. If it
+        // went unobserved, the crash handler would show a second message after the "Globe load failed" one.
+        string marker = "first compose fault " + Guid.NewGuid().ToString("N");
+        bool unobserved = false;
+        void OnUnobserved(object? sender, UnobservedTaskExceptionEventArgs e)
+        {
+            if (e.Exception.Flatten().InnerExceptions.Any(x => x.Message == marker)) unobserved = true;
+        }
+        TaskScheduler.UnobservedTaskException += OnUnobserved;
+        try
+        {
+            WeakReference? task = null;
+            Sta.Run(() => task = FaultFirstComposeAndClose(marker));
+            for (int i = 0; i < 50 && task!.IsAlive; i++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                Thread.Sleep(20);
+            }
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            Assert.False(task!.IsAlive, "the faulted task was collected");
+            Assert.False(unobserved, "the fault reached TaskScheduler.UnobservedTaskException");
+        }
+        finally { TaskScheduler.UnobservedTaskException -= OnUnobserved; }
+    }
+
+    // Faults the scene's first-compose Task as a load failure does (OnLoaded's catch), then closes the window's scene,
+    // and keeps only a weak reference, so the Task can be collected.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference FaultFirstComposeAndClose(string marker)
+    {
+        var scene = NewScene().Scene;
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var tcs = (TaskCompletionSource)typeof(SceneController).GetField("_firstCompose", flags)!.GetValue(scene)!;
+        Assert.True(tcs.TrySetException(new InvalidOperationException(marker)));
+        typeof(SceneController).GetMethod("OnClosed", flags)!.Invoke(scene, [null, EventArgs.Empty]);
+        return new WeakReference(scene.FirstComposeDisplayed);
+    }
 }

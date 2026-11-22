@@ -203,7 +203,7 @@ public class CardReadabilityTests
     {
         Sta.Run(() =>
         {
-            var tip = new ToolTip { Style = EarthWatch3D.App.Controllers.SceneController.DarkToolTipStyle(), Content = "Hurricane Pena" };
+            var tip = new ToolTip { Style = GlobeCore.Wpf.Layers.LayerHost.DarkToolTipStyle(), Content = "Hurricane Pena" };
             Assert.Equal(Colors.White, ((SolidColorBrush)tip.Foreground).Color);
             Assert.True(((SolidColorBrush)tip.Background).Color.R < 0x40, "background should be dark");
         });

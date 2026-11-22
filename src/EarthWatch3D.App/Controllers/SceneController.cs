@@ -77,6 +77,10 @@ public sealed class SceneController
                            EventStore store, ZoneCache zones, ILightningSource lightning, ViewState view, IAppLog? log = null)
     {
         _log = log ?? new NullLog();
+        // Nothing need await the first compose (only the diagnostics do), so observe a fault here: otherwise it would
+        // reach TaskScheduler.UnobservedTaskException and the crash handler would show a second message for it.
+        _firstCompose.Task.ContinueWith(static t => _ = t.Exception, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         Store = store ?? throw new ArgumentNullException(nameof(store));
         Zones = zones ?? throw new ArgumentNullException(nameof(zones));
         ArgumentNullException.ThrowIfNull(lightning);
@@ -138,10 +142,6 @@ public sealed class SceneController
     internal PerspectiveCamera? Camera => _viewport.Camera as PerspectiveCamera;
     internal HelixViewport3D Viewport => _viewport;
 
-    /// <summary>The cards' dark tooltip (light text on dark), for the hover tip, instead of the system's light one.</summary>
-    public static Style DarkToolTipStyle() =>
-        (Style)new ResourceDictionary { Source = new Uri("/GlobeCore.Wpf;component/Styles/CardStyles.xaml", UriKind.Relative) }[typeof(ToolTip)];
-
     // ---------------------------------------------------------------- globe image and layers
 
     /// <summary>A daily cloud image has arrived (UI thread): the clouds layer builds it and recomposes the globe.</summary>
@@ -190,7 +190,7 @@ public sealed class SceneController
                                      Zones, _sta, _log, () => _closed, _window.Dispatcher);
         _lines = new LinesImageLayer(coastAndBorders, layers.ShowCoastlines, layers.ShowPlates, _sta, _log, () => _closed);
         var host = _host = new LayerHost(_viewport, _overlayCanvas, EarthBody.Instance, baseImage, _log);
-        host.HoverTip.Style = DarkToolTipStyle();
+        // The hover tip keeps the host's default style: the cards' dark tooltip (GlobeCore.Wpf CardStyles.xaml).
         host.HoverBlockers.Add(_card);
         foreach (var b in HoverBlockers) host.HoverBlockers.Add(b);
         // Scene layers are added in draw order (WPF draws 3D children in order): globe, events, lightning, markers.
