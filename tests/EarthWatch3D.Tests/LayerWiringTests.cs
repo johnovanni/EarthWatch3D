@@ -155,26 +155,30 @@ public class LayerWiringTests
         // A load failure (or a compose fault) faults FirstComposeDisplayed, which nothing awaits in a normal run. If it
         // went unobserved, the crash handler would show a second message after the "Globe load failed" one.
         string marker = "first compose fault " + Guid.NewGuid().ToString("N");
-        bool unobserved = false;
+        int unobserved = 0;   // set on the finalizer thread
         void OnUnobserved(object? sender, UnobservedTaskExceptionEventArgs e)
         {
-            if (e.Exception.Flatten().InnerExceptions.Any(x => x.Message == marker)) unobserved = true;
+            if (e.Exception.Flatten().InnerExceptions.Any(x => x.Message == marker)) Interlocked.Exchange(ref unobserved, 1);
         }
         TaskScheduler.UnobservedTaskException += OnUnobserved;
         try
         {
             WeakReference? task = null;
             Sta.Run(() => task = FaultFirstComposeAndClose(marker));
-            for (int i = 0; i < 50 && task!.IsAlive; i++)
+            // Collect until the Task is gone, not for a fixed number of tries: under a loaded parallel test run a fixed
+            // budget of about one second sometimes ran out first (seen 1 run in 3). A real leak still fails at the limit.
+            var limit = System.Diagnostics.Stopwatch.StartNew();
+            while (task!.IsAlive && limit.Elapsed < TimeSpan.FromSeconds(15))
             {
-                GC.Collect();
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
                 GC.WaitForPendingFinalizers();
                 Thread.Sleep(20);
             }
-            GC.Collect();
+            // One more round so the finalizer that would raise UnobservedTaskException has certainly run.
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
             GC.WaitForPendingFinalizers();
-            Assert.False(task!.IsAlive, "the faulted task was collected");
-            Assert.False(unobserved, "the fault reached TaskScheduler.UnobservedTaskException");
+            Assert.False(task!.IsAlive, $"the faulted task was not collected within {limit.Elapsed.TotalSeconds:0.0} s");
+            Assert.True(Volatile.Read(ref unobserved) == 0, "the fault reached TaskScheduler.UnobservedTaskException");
         }
         finally { TaskScheduler.UnobservedTaskException -= OnUnobserved; }
     }
