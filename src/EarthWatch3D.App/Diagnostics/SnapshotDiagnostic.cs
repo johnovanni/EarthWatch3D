@@ -1,11 +1,12 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
-using AstroCore.Earth;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using AstroCore.Earth;
 using EarthWatch3D.App.Controllers;
+using EarthWatch3D.App.Layers;
 using EarthWatch3D.App.ViewModels;
 using GlobeCore.Logging;
 using GlobeCore.Time;
@@ -132,6 +133,13 @@ public static class SnapshotDiagnostic
             }
         }
         catch (OperationCanceledException) { return; }
+        catch (Exception ex)
+        {
+            // The globe never showed (a load or compose fault): end the run with 1 rather than leave it waiting.
+            Trace.TraceError($"Snapshot scenes failed: {ex}");
+            log.Error("Diagnostics: the snapshot scenes could not be taken", ex);
+            exitCode = 1;
+        }
         Application.Current.Shutdown(exitCode);
     }
 
@@ -172,7 +180,8 @@ public static class SnapshotDiagnostic
             if (list.Count == 0) throw new FormatException("The file has no scenes.");
             return list;
         }
-        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or IOException or IndexOutOfRangeException)
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or IOException
+                                       or UnauthorizedAccessException or IndexOutOfRangeException)
         {
             throw new FormatException($"--snapshot-scenes: cannot read {path}: {ex.Message}", ex);
         }
@@ -180,40 +189,64 @@ public static class SnapshotDiagnostic
 
     /// <summary>
     /// Waits, at most <paramref name="timeout"/> in all, for <paramref name="waitForData"/>, then for the scene to draw
-    /// it: no compose or Areas rebuild running or queued, and the current Areas layer on screen (if anything visible has
-    /// an area: a visible set with no alert, cone or wind area has nothing to wait for). A timeout is
-    /// logged, not thrown, so the snapshot still shows whatever did arrive.
+    /// it: the layer host's compose idle (none running, queued or owed), no cloud or Areas rebuild running or queued, the
+    /// visible events up to date, and the Areas layer's current image on screen (if anything visible has an area: a
+    /// visible set with no alert, cone or wind area has nothing to wait for). A timeout is logged, not thrown, so the
+    /// snapshot still shows whatever did arrive.
     /// </summary>
     public static async Task WaitForDataAsync(SceneController scene, Func<Task> waitForData, TimeSpan timeout, IAppLog log)
     {
         var sw = Stopwatch.StartNew();
         try { await waitForData().WaitAsync(timeout); }
         catch (TimeoutException) { log.Warn($"Diagnostics: not every feed reported OK within {timeout.TotalSeconds:0} s"); }
-        while (scene.IsBusy || !scene.AreasSettled)
+        while (IsBusy(scene) || !AreasSettled(scene))
         {
             if (sw.Elapsed >= timeout)
             {
                 log.Warn($"Diagnostics: the scene did not settle within {timeout.TotalSeconds:0} s " +
-                         $"(busy={scene.IsBusy}, areas settled={scene.AreasSettled})");
+                         $"(busy={IsBusy(scene)}, areas settled={AreasSettled(scene)})");
                 return;
             }
             await Task.Delay(100);
         }
-        log.Info($"Diagnostics: data drawn after {sw.Elapsed.TotalSeconds:F1} s (areas shown={scene.AreasDisplayed})");
+        log.Info($"Diagnostics: data drawn after {sw.Elapsed.TotalSeconds:F1} s (areas shown={AreasDisplayed(scene)})");
     }
 
-    /// <summary>Asks for a recompose and completes when a compose for <paramref name="notBefore"/> or later is on the globe.</summary>
+    /// <summary>
+    /// True until the globe is loaded (the scene has no layer host yet), and while the host's compose is not idle
+    /// (running, queued, or owed by a throttled request), a cloud image or an Areas rebuild is waiting, or a store, zone
+    /// or display-time change has not yet been worked into the visible events.
+    /// </summary>
+    internal static bool IsBusy(SceneController scene) =>
+        scene.Host is not { } host || !host.IsComposeIdle
+        || host.Layers.OfType<CloudsImageLayer>().Any(l => l.IsBuilding)
+        || host.Layers.OfType<AreasImageLayer>().Any(l => l.IsBusy)
+        || host.Layers.OfType<EventsSceneLayer>().Any(l => l.IsEvaluationPending);
+
+    /// <summary>The Areas layer's <see cref="AreasImageLayer.AreasSettled"/> (true before the globe is loaded: nothing to show).</summary>
+    internal static bool AreasSettled(SceneController scene) => AreasLayer(scene)?.AreasSettled ?? true;
+
+    /// <summary>The Areas layer's <see cref="AreasImageLayer.AreasDisplayed"/>.</summary>
+    internal static bool AreasDisplayed(SceneController scene) => AreasLayer(scene)?.AreasDisplayed ?? false;
+
+    private static AreasImageLayer? AreasLayer(SceneController scene) => scene.Host?.Layers.OfType<AreasImageLayer>().SingleOrDefault();
+
+    /// <summary>
+    /// Asks the layer host for a recompose and completes when a compose for <paramref name="notBefore"/> or later is on
+    /// the globe. Called after the first compose, so the host exists.
+    /// </summary>
     private static async Task RecomposeDisplayedAsync(SceneController scene, DateTime notBefore)
     {
+        var host = scene.Host ?? throw new InvalidOperationException("The globe is not loaded yet.");
         var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnDisplayed(object? sender, DateTime utc) { if (utc >= notBefore) shown.TrySetResult(); }
-        scene.ComposeDisplayed += OnDisplayed;
+        void OnComposed(object? sender, EventArgs e) { if (host.ComposedUtc >= notBefore) shown.TrySetResult(); }
+        host.Composed += OnComposed;
         try
         {
-            scene.Recompose();   // if a compose is running, this queues one more, which reads the new time
+            _ = host.RecomposeNowAsync();   // if a compose is running, this queues one more, which reads the new time
             await shown.Task.WaitAsync(TimeSpan.FromSeconds(30));
         }
-        finally { scene.ComposeDisplayed -= OnDisplayed; }
+        finally { host.Composed -= OnComposed; }
     }
 
     /// <summary>Renders the window's client area at the window's DPI and saves it as a PNG.</summary>

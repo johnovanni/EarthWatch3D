@@ -46,4 +46,13 @@ public class SnapshotScenesTests : IDisposable
     [InlineData("not json")]
     public void RejectsABadFile(string json) =>
         Assert.Throws<FormatException>(() => SnapshotDiagnostic.LoadScenes(Write(json)));
+
+    [Fact]
+    public void AFileThatCannotBeOpenedIsAPlainFormatError()
+    {
+        // Reading a folder as a file throws UnauthorizedAccessException, as a file without read access does.
+        var ex = Assert.Throws<FormatException>(() => SnapshotDiagnostic.LoadScenes(_dir));
+        Assert.IsType<UnauthorizedAccessException>(ex.InnerException);
+        Assert.StartsWith("--snapshot-scenes: cannot read ", ex.Message);
+    }
 }

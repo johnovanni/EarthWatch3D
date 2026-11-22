@@ -1,16 +1,11 @@
 using System.ComponentModel;
-using System.Diagnostics;
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using System.Windows.Media.Media3D;
 using AstroCore.Astronomy;
 using AstroCore.Earth;
-using EarthWatch3D.App.Rendering;
+using EarthWatch3D.App.Layers;
 using EarthWatch3D.App.ViewModels;
 using EarthWatch3D.Core.Events;
 using EarthWatch3D.Core.Feeds.Nws;
@@ -18,24 +13,22 @@ using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Lightning;
 using GlobeCore.Earth;
 using GlobeCore.Earth.Clouds;
-using GlobeCore.Geo;
 using GlobeCore.Imaging;
 using GlobeCore.Logging;
 using GlobeCore.Wpf.Camera;
 using GlobeCore.Wpf.Layers;
 using GlobeCore.Wpf.Rendering;
-using GlobeCore.Wpf.Viewport;
 using HelixToolkit.Wpf;
 using Microsoft.Win32;
-#if PERF_LOG
-using EarthWatch3D.App.Diagnostics;
-#endif
 
 namespace EarthWatch3D.App.Controllers;
 
 /// <summary>
-/// Owns the 3D scene: the globe image (load, then a recompose every minute so the day/night line moves),
-/// the events and their labels, the Sun/Moon globe markers and screen overlay, and the camera rules, input and animation.
+/// Owns the 3D scene. Once the globe image is loaded it builds GlobeCore's <see cref="LayerHost"/> (the globe image,
+/// recomposed every minute so the day/night line moves; hover and click picking) with EarthWatch3D's layers: clouds,
+/// areas and lines in the image; events, lightning and the Sun/Moon markers in the scene; event labels and the Sun/Moon
+/// arrows on the overlay. It wires the view model to the host and the layers, and keeps the camera rules, input and
+/// animation, and the window and power events.
 /// </summary>
 public sealed class SceneController
 {
@@ -44,10 +37,6 @@ public sealed class SceneController
     /// about 1.2 GB, mostly WPF's copies of the texture (see docs/perf.md). The 8192 asset is scaled down while decoding.
     /// </summary>
     public const int GlobeImageWidth = 4096;
-    public static readonly TimeSpan RecomposeInterval = TimeSpan.FromMinutes(1);
-
-    private const double EarthRadiusKm = 6371.0;
-    private const double ClickSlopPx = 4;
     private static readonly GeoPosition HomeView = new(20, -40);
 
     private readonly HelixViewport3D _viewport;
@@ -56,77 +45,31 @@ public sealed class SceneController
     private readonly MainViewModel _vm;
     private readonly Window _window;
     private readonly IAppLog _log;
-    private readonly CameraAnimator _animator;
-    private readonly SunMoonOverlay _overlay;
-    private readonly SunMoonGlobeMarkers _markers;
-    private readonly EventScene _events;
-    private readonly LabelOverlay _labels;
-    // Which events are visible is worked out again at most every 250 ms (scrubbing changes the time many times a second).
-    private readonly Throttle _eventThrottle = new(TimeSpan.FromMilliseconds(250));
-    private readonly Stopwatch _clock = Stopwatch.StartNew();
-
-    /// <summary>Diagnostics only (--snapshot-scenes): when set, the pulsing rings are drawn at this fixed time instead of the running stopwatch.</summary>
-    public TimeSpan? FrozenRingTime { get; set; }
-    private readonly ModelVisual3D _globeVisual = new();
-    // Tooltip for the Sun/Moon surface markers (billboards can't carry WPF tooltips, so it is driven by hover tests).
-    // Left button went down at this point and has not moved far (a click, not a drag); null otherwise.
-    private Point? _clickStart;
-    private readonly Throttle _hoverThrottle = new(TimeSpan.FromMilliseconds(33));
-    private readonly System.Windows.Threading.DispatcherTimer _hoverTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
-    private Point _hoverMouse;
-    private readonly ToolTip _markerTip = new() { Placement = PlacementMode.Relative, StaysOpen = true };
-    private readonly RecomposeSchedule _schedule = new(RecomposeInterval);
-    private readonly Throttle _throttle = new(TimeSpan.FromMilliseconds(250));
-    private readonly System.Windows.Threading.DispatcherTimer _trailing = new();
-    private readonly TaskCompletionSource _firstCompose = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    // All WPF drawing off the UI thread (coastlines, plates, alert areas) runs here, one item at a time. Shut down on Closed.
-    private readonly StaWorker _sta = new("EarthWatch3D rasterizer");
-
-    // Kept between composes: the composer holds the base image; the target and bitmap are reused. The base image is
-    // also kept here (no extra copy) as the fallback shown when a compose fails.
-    private GlobeImageComposer? _composer;
-    private Bgra32Image? _plain;
-    private SparseOverlay? _lines;          // coastlines and borders
-    private readonly LazyLayer<SparseOverlay> _plates;   // plate boundaries, rasterized the first time they are shown
-    private SparseOverlay? _linesAndPlates; // the two merged, plates on top
-    private Bgra32Image? _composed;
-    private CloudImage? _cloudImage;        // the newest daily image received (UI thread)
-    private CloudImage? _cloudsTried;       // the image whose layer was last built (or failed to build)
-    private Bgra32Image? _clouds;           // its cloud layer, built against the base once both exist
-    private WriteableBitmap? _bitmap;
-    private bool _composing, _recomposePending, _closed;
-    // The Areas layer (alert zones, cones, wind bands): planned on the UI thread; a new immutable image is rasterized
-    // on the STA worker only when the plan's key changes. The previous image stays alive only while a compose reads it.
-    private Bgra32Image? _areas;
-    private int _areasKey;
-    private bool _areasRunning, _areasPending;
-    private int _zonesChangePending;
-    // A display setting (night strength, day/night line, coastlines) changed since the last compose started.
-    private bool _settingsDirty;
-
-    private bool _overlayDirty = true, _adjustingCamera;
-    // The visible events must be worked out again (display time, store, filter or live mode changed).
-    private bool _eventsDirty = true;
-    // 1 while a store change is waiting to reach the UI thread (Changed fires on feed threads), so they coalesce.
-    private int _storeChangePending;
-    private int _flashChangePending;
-    private readonly ILightningSource _lightningSource;
-    private readonly LightningLayer _lightning;
     private readonly ViewState _view;
-    private VisibleEvents _visible = VisibleEvents.None;
-    private DateTime _visibleAtUtc;
-    // Programmatic camera moves (CameraAnimator) do not always raise CameraChanged, so compare the pose too.
-    private (Point3D, Vector3D, Vector3D, double) _lastPose;
+    private readonly CameraAnimator _animator;
+    private readonly TaskCompletionSource _firstCompose = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    // All WPF drawing off the UI thread (coastlines, plates, alert areas, clouds) runs here, one item at a time. Shut down on Closed.
+    private readonly StaWorker _sta = new("EarthWatch3D rasterizer");
+    // The layers that need no globe image are made with the controller, so they follow the view model from the start
+    // (the Sun/Moon overlay first: its elements go on the canvas now, before any event label). The image layers and the
+    // host are made once the image is loaded (OnLoaded, StartHostAsync).
+    private readonly SunMoonOverlayLayer _arrows;
+    private readonly SunMoonSceneLayer _markers;
+    private readonly EventsSceneLayer _events;
+    private readonly LightningSceneLayer _lightning;
+    private readonly EventLabelsOverlayLayer _labels;
+    private LayerHost? _host;
+    private LinesImageLayer? _lines;
+    private CloudsImageLayer? _clouds;
+    private AreasImageLayer? _areas;
+    private CloudImage? _cloudImage;   // the newest daily image received, kept until the clouds layer exists
+    private bool _closed, _adjustingCamera;
 
-#if PERF_LOG
-    private int _composeCount;
-#endif
-
-    /// <param name="overlay">The canvas over the viewport for the Sun/Moon icons and edge arrows.</param>
+    /// <param name="overlay">The canvas over the viewport for the Sun/Moon icons and edge arrows and the event labels.</param>
     /// <param name="card">The Sun &amp; Moon card, which the edge arrows keep clear of. It and <paramref name="overlay"/> must share a parent.</param>
     /// <param name="window">The window hosting the viewport: its Loaded, Closed, StateChanged and PreviewKeyDown events drive the scene.</param>
     /// <param name="store">The events to draw.</param>
-    /// <param name="zones">NWS zone shapes for alerts that name zones only (used from Task 15 on).</param>
+    /// <param name="zones">NWS zone shapes for alerts that name zones only.</param>
     /// <param name="lightning">Where the lightning flashes come from.</param>
     /// <param name="view">Receives the camera's sub-point whenever the camera moves (the lightning feeds read it).</param>
     /// <param name="log">Where compose and load failures are written (none if null).</param>
@@ -134,13 +77,9 @@ public sealed class SceneController
                            EventStore store, ZoneCache zones, ILightningSource lightning, ViewState view, IAppLog? log = null)
     {
         _log = log ?? new NullLog();
-        // Nothing need await the first compose (only the diagnostics do), so observe a fault here: otherwise it would
-        // reach TaskScheduler.UnobservedTaskException and the crash handler would show a second message for it.
-        _firstCompose.Task.ContinueWith(static t => _ = t.Exception, CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         Store = store ?? throw new ArgumentNullException(nameof(store));
         Zones = zones ?? throw new ArgumentNullException(nameof(zones));
-        _lightningSource = lightning ?? throw new ArgumentNullException(nameof(lightning));
+        ArgumentNullException.ThrowIfNull(lightning);
         _view = view ?? throw new ArgumentNullException(nameof(view));
         // The camera is put on the home view when the window loads, after the feeds have started: report that view now,
         // so a GLM feed's first run does not skip a satellite the user is about to face (GOES-West from the Americas).
@@ -152,14 +91,11 @@ public sealed class SceneController
         _window = window ?? throw new ArgumentNullException(nameof(window));
 
         _animator = new CameraAnimator(() => Camera);
-        _plates = new LazyLayer<SparseOverlay>(BuildPlatesAsync);
-        _overlay = new SunMoonOverlay(overlay);
-        _markers = new SunMoonGlobeMarkers();
-        _viewport.Children.Add(_globeVisual);
-        _events = new EventScene(_viewport);   // after the globe, before the Sun/Moon markers
-        _lightning = new LightningLayer(_viewport);
-        foreach (var v in _markers.Visuals) _viewport.Children.Add(v);
-        _labels = new LabelOverlay(overlay);
+        _arrows = new SunMoonOverlayLayer(overlay, card, vm.SunMoon);
+        _markers = new SunMoonSceneLayer(vm.SunMoon);
+        _events = new EventsSceneLayer(viewport, vm, store, zones, () => _areas?.Request(), window.Dispatcher);
+        _lightning = new LightningSceneLayer(lightning, vm, window.Dispatcher);
+        _labels = new EventLabelsOverlayLayer(_events, overlay);
 
         _window.Loaded += OnLoaded;
         _window.Closed += OnClosed;
@@ -168,55 +104,29 @@ public sealed class SceneController
         _viewport.CameraChanged += OnCameraChanged;
         _viewport.PreviewMouseWheel += OnPreviewMouseWheel;
         _viewport.PreviewMouseDown += OnPreviewMouseDown;
-        _viewport.PreviewMouseUp += OnPreviewMouseUp;
-        _viewport.MouseMove += OnViewportMouseMove;
-        _viewport.MouseLeave += OnViewportMouseLeave;
-        _markerTip.PlacementTarget = _viewport;
-        _markerTip.Style = DarkToolTipStyle();
-        _hoverTimer.Tick += OnHoverTimerTick;
-        _viewport.SizeChanged += OnViewportSizeChanged;
-        _card.SizeChanged += OnViewportSizeChanged;   // collapsing the card changes the area the arrows avoid
         _vm.DisplayTimeChanged += OnDisplayTimeChanged;
-        _vm.FilterChanged += OnFilterChanged;
-        _vm.Timeline.PropertyChanged += OnTimelineChanged;
-        Store.Changed += OnStoreChanged;
-        _lightningSource.FlashesChanged += OnFlashesChanged;
-        _vm.Ticked += OnTicked;
-        _vm.Layers.PropertyChanged += OnLightningSettingChanged;
-        _vm.Display.PropertyChanged += OnLightningSettingChanged;
-        Zones.ZonesLoaded += OnZonesLoaded;
-        _vm.SunMoon.PropertyChanged += OnSunMoonChanged;
         _vm.SunMoon.FaceRequested += OnFaceRequested;
         _vm.Layers.PropertyChanged += OnDisplaySettingChanged;
         _vm.Display.PropertyChanged += OnDisplaySettingChanged;
-        _trailing.Tick += OnTrailingTick;
-        CompositionTarget.Rendering += OnRendering;
         SystemEvents.PowerModeChanged += OnPowerModeChanged;   // static event: unsubscribed in OnClosed
     }
 
     /// <summary>Completes once the first composed globe image is on the globe (cancelled if the window closes first).</summary>
     public Task FirstComposeDisplayed => _firstCompose.Task;
 
-    /// <summary>Raised on the UI thread each time a composed globe image is put on the globe, with the UTC time it shows.</summary>
-    public event EventHandler<DateTime>? ComposeDisplayed;
+    /// <summary>Diagnostics only (--snapshot-scenes): when set, the pulsing rings are drawn at this fixed time instead of the running stopwatch.</summary>
+    public TimeSpan? FrozenRingTime { get => _events.FrozenRingTime; set => _events.FrozenRingTime = value; }
 
     public bool IsCameraAnimating => _animator.IsRunning;
 
-    /// <summary>True when the globe image on screen includes an Areas layer (alert zones, cyclone cones or wind bands).</summary>
-    internal bool AreasDisplayed { get; private set; }
-
     /// <summary>
-    /// True when the globe on screen shows the current Areas layer, or there is none to show (nothing visible has an
-    /// area). With <see cref="IsBusy"/> false, the visible events are fully drawn.
+    /// Other overlay elements (the details panel, the layer strip): no hover picking while the mouse is over them. Add
+    /// them before the window loads (they are handed to the host with the Sun &amp; Moon card when it is built).
     /// </summary>
-    internal bool AreasSettled => _areas is null || AreasDisplayed;
+    public IList<UIElement> HoverBlockers { get; } = [];
 
-    /// <summary>
-    /// True while a compose or an Areas rebuild is running or queued, or a store, zone or display-time change has not
-    /// yet been worked into the visible events. The diagnostics wait for this to clear before a snapshot.
-    /// </summary>
-    internal bool IsBusy => (_cloudImage is not null && !ReferenceEquals(_cloudImage, _cloudsTried)) || _composing || _recomposePending || _areasRunning || _areasPending || _eventsDirty
-                            || Volatile.Read(ref _storeChangePending) != 0 || Volatile.Read(ref _zonesChangePending) != 0;
+    /// <summary>The layer host, with every layer added, once the globe image has loaded (null before).</summary>
+    internal LayerHost? Host => _host;
 
     /// <summary>The event store the scene will draw from.</summary>
     internal EventStore Store { get; }
@@ -224,159 +134,26 @@ public sealed class SceneController
     /// <summary>The NWS zone cache for zone-only alerts.</summary>
     internal ZoneCache Zones { get; }
 
-    /// <summary>Other overlay elements (the details panel, the layer strip): no hover picking while the mouse is over them.</summary>
-    public IList<UIElement> HoverBlockers { get; } = [];
-
     /// <summary>The viewport's camera, or null if something replaced it with a non-perspective camera.</summary>
     internal PerspectiveCamera? Camera => _viewport.Camera as PerspectiveCamera;
     internal HelixViewport3D Viewport => _viewport;
 
-    // ---------------------------------------------------------------- globe image
+    /// <summary>The cards' dark tooltip (light text on dark), for the hover tip, instead of the system's light one.</summary>
+    public static Style DarkToolTipStyle() =>
+        (Style)new ResourceDictionary { Source = new Uri("/GlobeCore.Wpf;component/Styles/CardStyles.xaml", UriKind.Relative) }[typeof(ToolTip)];
 
-    /// <summary>
-    /// Composes the globe image for the display time on a background task and shows it.
-    /// Only one compose runs at a time; requests made meanwhile collapse into one follow-up compose.
-    /// </summary>
-    public void Recompose()
-    {
-        if (_closed || _composer is null) return;   // before load completes, the load itself composes
-        if (_composing) { _recomposePending = true; return; }
-        _ = ComposeLoopAsync();
-    }
+    // ---------------------------------------------------------------- globe image and layers
 
-    private async Task ComposeLoopAsync()
+    /// <summary>A daily cloud image has arrived (UI thread): the clouds layer builds it and recomposes the globe.</summary>
+    public void SetCloudImage(CloudImage image)
     {
-        _composing = true;
-        try
-        {
-            do
-            {
-                _recomposePending = false;
-                _settingsDirty = false;
-                var now = _vm.DisplayTimeUtc;
-                _schedule.MarkComposed(now);
-                var subSolar = SubPoints.SubSolarPoint(now);
-                // The coastlines are rasterized once at load and the plates the first time they are shown;
-                // switching a layer off just leaves it out.
-                var display = _vm.Display;
-                var lineLayer = await GetLinesLayerAsync(_vm.Layers.ShowCoastlines, _vm.Layers.ShowPlates);
-                if (_closed) return;
-                var layers = new GlobeLayers(subSolar, display.NightStrength, Areas: _areas,
-                    SparseLines: lineLayer, DrawTerminator: display.ShowTerminator,
-                    Clouds: _vm.Layers.ShowClouds ? _clouds : null);
-                var composer = _composer!;
-                var target = _composed!;
-                var plain = _plain!;
-                var log = _log;
-#if PERF_LOG
-                var sw = Stopwatch.StartNew();
-#endif
-                bool composed = await Task.Run(() => ComposeOrPlain(composer, layers, target, plain, log));
-#if PERF_LOG
-                long composeMs = sw.ElapsedMilliseconds;
-#endif
-                if (_closed) return;
-                ImageConversions.CopyInto(target, _bitmap!);
-                _globeVisual.Content ??= new GeometryModel3D(BodyMesh.Create(), new DiffuseMaterial(new ImageBrush(_bitmap)));
-                AreasDisplayed = composed && layers.Areas is not null;
-#if PERF_LOG
-                PerfLog.Write(string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                    $"compose #{++_composeCount} utc={now:yyyy-MM-ddTHH:mm:ss.fffZ} subsolar lat={subSolar.LatitudeDeg:F3} lon={subSolar.LongitudeDeg:F3} compose={composeMs} ms total={sw.ElapsedMilliseconds} ms {PerfLog.Memory()}"));
-#endif
-                _firstCompose.TrySetResult();
-                ComposeDisplayed?.Invoke(this, now);
-            } while (_recomposePending && !_closed);
-        }
-        catch (OperationCanceledException) when (_closed) { }   // the rasterizer was shut down by the window closing
-        catch (Exception ex)
-        {
-            // ComposeOrPlain already handles a failed compose; this is anything else (copying to the bitmap, say).
-            _log.Error("Globe image could not be shown", ex);
-            _firstCompose.TrySetException(ex);
-        }
-        finally { _composing = false; }
-    }
-
-    /// <summary>
-    /// Composes <paramref name="layers"/> into <paramref name="target"/>. If that throws (low memory, for example), logs it,
-    /// fills <paramref name="target"/> with <paramref name="plain"/>, the base image with no shading (spec section 11), and
-    /// returns false. The schedule was marked before the compose, so the next scheduled compose (within a minute) retries.
-    /// </summary>
-    public static bool ComposeOrPlain(GlobeImageComposer composer, GlobeLayers layers, Bgra32Image target, Bgra32Image plain, IAppLog log)
-    {
-        try
-        {
-            composer.ComposeInto(layers, target);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            log.Error("Globe compose failed; showing the plain image until the next compose", ex);
-            Buffer.BlockCopy(plain.Pixels, 0, target.Pixels, 0, Math.Min(plain.Pixels.Length, target.Pixels.Length));
-            return false;
-        }
-    }
-
-    private void OnDisplayTimeChanged(object? sender, EventArgs e)
-    {
-        _eventsDirty = true;
-        if (_window.WindowState == WindowState.Minimized) return;   // composed on restore instead
-        if (_schedule.IsDue(_vm.DisplayTimeUtc)) RequestRecompose();
-    }
-
-    private void OnDisplaySettingChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName is not (nameof(LayersViewModel.ShowCoastlines) or nameof(LayersViewModel.ShowPlates)
-                                   or nameof(LayersViewModel.ShowClouds)
-                                   or nameof(DisplayOptionsViewModel.NightStrength)
-                                   or nameof(DisplayOptionsViewModel.ShowTerminator))) return;
-        // Switching plates off is the way to retry a plate load that failed (it is not retried on every compose).
-        if (e.PropertyName == nameof(LayersViewModel.ShowPlates) && !_vm.Layers.ShowPlates) _plates.ForgetFailure();
-        _settingsDirty = true;
-        if (_window.WindowState == WindowState.Minimized) return;   // composed on restore instead
-        RequestRecompose();   // throttled: the night-shade slider changes it many times a second
-    }
-
-    // Scrubbing changes the display time many times a second: compose at most every 250 ms, and let a one-shot
-    // timer make the last request after the gap so the globe ends on the final position.
-    private void RequestRecompose()
-    {
-        if (_closed) return;
-        if (_throttle.TryAcquire(DateTime.UtcNow))
-        {
-            _trailing.Stop();
-            Recompose();
-            return;
-        }
-        var wait = _throttle.NextAllowedUtc - DateTime.UtcNow;
-        _trailing.Interval = wait > TimeSpan.FromMilliseconds(1) ? wait : TimeSpan.FromMilliseconds(1);
-        _trailing.Stop();
-        _trailing.Start();
-    }
-
-    private void OnTrailingTick(object? sender, EventArgs e)
-    {
-        _trailing.Stop();
-        if (_closed || _window.WindowState == WindowState.Minimized) return;
-        if (_settingsDirty || _schedule.IsDue(_vm.DisplayTimeUtc)) RequestRecompose();
-    }
-
-    // SystemEvents calls each handler through the SynchronizationContext that was current when it subscribed (here the
-    // UI thread's, from the constructor), so this normally runs on the UI thread already. The BeginInvoke lets the
-    // resume notification return first, and would also cover a subscription made where there was no context.
-    private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
-    {
-        if (e.Mode != PowerModes.Resume) return;
-        _window.Dispatcher.BeginInvoke(() =>
-        {
-            if (_closed) return;
-            _overlayDirty = true;
-            Recompose();
-        });
+        _cloudImage = image;
+        _clouds?.SetImage(image);   // otherwise StartHostAsync does it once the base exists
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        _window.Loaded -= OnLoaded;   // one load, one host
         try
         {
             if (Camera is { } camera)
@@ -384,36 +161,9 @@ public sealed class SceneController
                 SetDefaultView(camera, FitDistanceForViewport(camera));
                 ApplyRotationSensitivity(camera);
             }
-#if PERF_LOG
-            var load = Stopwatch.StartNew();
-#endif
-            var decodeTask = Task.Run(() => EarthAssets.LoadBlueMarble(GlobeImageWidth));
-            var linesTask = Task.Run(() => (Coast: NaturalEarthLines.Coastlines(),
-                                            Borders: NaturalEarthLines.LandBoundaries()));
-            await Task.WhenAll(decodeTask, linesTask);   // observes both exceptions
-            var baseImage = decodeTask.Result;
-            var (coast, borders) = linesTask.Result;
-            int w = baseImage.Width, h = baseImage.Height;
-#if PERF_LOG
-            PerfLog.Write($"load: decode + GeoJSON {load.ElapsedMilliseconds} ms ({w}x{h}) {PerfLog.Memory()}");
-            load.Restart();
-#endif
-            // Rasterize on the STA worker, and keep only the line pixels: the dense layer would cost 4·w·h bytes.
-            var lines = await _sta.InvokeAsync(() => SparseOverlay.FromImage(LineRasterizer.Rasterize(
-                [(borders, Color.FromArgb(102, 211, 211, 211)), (coast, Color.FromArgb(153, 255, 255, 255))], w, h, 1.0)));
-#if PERF_LOG
-            PerfLog.Write(string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                $"load: rasterize + sparse {load.ElapsedMilliseconds} ms ({lines.Count} line pixels, {100.0 * lines.Count / ((double)w * h):F2}%) {PerfLog.Memory()}"));
-#endif
+            var (baseImage, lines) = await GlobeLoader.LoadAsync(GlobeImageWidth, _sta);
             if (_closed) return;
-            _composer = new GlobeImageComposer(baseImage);
-            _plain = baseImage;
-            _lines = lines;
-            _composed = Bgra32Image.Create(w, h);
-            _bitmap = ImageConversions.CreateBitmap(w, h);
-            Recompose();
-            RequestAreas();   // composes again once the Areas layer exists
-            if (_cloudImage is not null) _ = BuildCloudsAsync();   // one arrived while the base was loading
+            _ = StartHostAsync(baseImage, lines);
         }
         catch (OperationCanceledException) when (_closed) { }   // closed while loading
         catch (Exception ex)
@@ -425,348 +175,88 @@ public sealed class SceneController
     }
 
     /// <summary>
-    /// A daily cloud image has arrived (UI thread). Decoded and keyed against the base on the STA worker, then the globe
-    /// is recomposed. Clouds are drawn only while the layer is on; the built layer is kept for when it is switched on again.
+    /// Builds the host and the image layers on the loaded globe image, adds every layer, and makes the first compose
+    /// (LayerHost's start-up sequence); then the Areas layer and any cloud image that arrived meanwhile. UI thread.
+    /// Completes when the first compose (and any queued behind it) is on the globe.
     /// </summary>
-    public void SetCloudImage(CloudImage image)
+    internal Task StartHostAsync(Bgra32Image baseImage, SparseOverlay coastAndBorders)
     {
-        _cloudImage = image;
-        if (_plain is not null) _ = BuildCloudsAsync();   // otherwise OnLoaded does it once the base exists
+        // Before the split, the visible events were worked out on frames while the image loaded; do that now, so the
+        // Areas layer below and the first frame see them (the Areas layer does not exist yet, so it is not asked here).
+        _events.EvaluateIfDue();
+        var layers = _vm.Layers;
+        _clouds = new CloudsImageLayer(baseImage, layers, _sta, _log, () => _closed) { IsVisible = layers.ShowClouds };
+        _areas = new AreasImageLayer(baseImage.Width, baseImage.Height, () => _events.Visible, () => _vm.CurrentFilter,
+                                     Zones, _sta, _log, () => _closed, _window.Dispatcher);
+        _lines = new LinesImageLayer(coastAndBorders, layers.ShowCoastlines, layers.ShowPlates, _sta, _log, () => _closed);
+        var host = _host = new LayerHost(_viewport, _overlayCanvas, EarthBody.Instance, baseImage, _log);
+        host.HoverTip.Style = DarkToolTipStyle();
+        host.HoverBlockers.Add(_card);
+        foreach (var b in HoverBlockers) host.HoverBlockers.Add(b);
+        // Scene layers are added in draw order (WPF draws 3D children in order): globe, events, lightning, markers.
+        foreach (var layer in new GlobeLayer[] { _clouds, _areas, _lines, _events, _lightning, _markers, _labels, _arrows })
+            host.Add(layer);
+        host.FirstComposeDisplayed += OnFirstComposeDisplayed;
+        host.WhenFirstComposeDisplayed.ContinueWith(t => _firstCompose.TrySetException(t.Exception!.InnerExceptions),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        host.CameraPoseChanged += OnCameraPoseChanged;
+        host.Selected += OnSelected;
+        host.SelectionCleared += OnSelectionCleared;
+        // The light for each compose's time: the sub-solar point and the night settings, read as that compose starts.
+        var display = _vm.Display;
+        host.IlluminationAt = utc => new IlluminationState(SubPoints.SubSolarPoint(utc), display.NightStrength, display.ShowTerminator);
+        host.DisplayTimeUtc = _vm.DisplayTimeUtc;
+        var first = host.RecomposeNowAsync();
+        _areas.Request();   // composes again once the Areas layer exists
+        if (_cloudImage is not null) _clouds.SetImage(_cloudImage);   // one arrived while the base was loading
+        return first;
     }
 
-    private async Task BuildCloudsAsync()
+    private void OnFirstComposeDisplayed(object? sender, EventArgs e) => _firstCompose.TrySetResult();
+
+    // The host composes once the time has moved on by a minute (throttled; on restore if minimized).
+    private void OnDisplayTimeChanged(object? sender, EventArgs e) => _host?.DisplayTimeUtc = _vm.DisplayTimeUtc;
+
+    private void OnDisplaySettingChanged(object? sender, PropertyChangedEventArgs e)
     {
-        var image = _cloudImage;
-        var baseImage = _plain;
-        if (image is null || baseImage is null || _closed) return;
-        try
+        if (_host is null || _lines is null || _clouds is null) return;   // the layers read the settings when they are made
+        switch (e.PropertyName)
         {
-            var clouds = await _sta.InvokeAsync(() =>
-            {
-                using var ms = new MemoryStream(image.Jpeg);
-                return CloudLayer.Build(ImageConversions.DecodeToBgra32(ms, baseImage.Width), baseImage);
-            });
-            if (_closed || !ReferenceEquals(image, _cloudImage)) return;   // closed, or a newer image is on its way
-            _clouds = clouds;
-            _cloudsTried = image;
-            _vm.Layers.CloudsLegend = $"Image of {image.DateUtc:d MMM yyyy} (UTC day), VIIRS NOAA-21.";
-            _settingsDirty = true;
-            Recompose();
+            case nameof(LayersViewModel.ShowCoastlines): _lines.ShowCoastlines = _vm.Layers.ShowCoastlines; break;
+            case nameof(LayersViewModel.ShowPlates): _lines.ShowPlates = _vm.Layers.ShowPlates; break;
+            case nameof(LayersViewModel.ShowClouds): _clouds.IsVisible = _vm.Layers.ShowClouds; break;
+            case nameof(DisplayOptionsViewModel.NightStrength) or nameof(DisplayOptionsViewModel.ShowTerminator):
+                _host.RequestRecompose();   // throttled: the night-shade slider changes it many times a second
+                break;
         }
-        catch (OperationCanceledException) when (_closed) { }
-        catch (Exception ex)
-        {
-            _log.Warn("The cloud image could not be used", ex);   // the layer stays as it was
-            if (ReferenceEquals(image, _cloudImage)) _cloudsTried = image;
-        }
     }
 
-    /// <summary>
-    /// The lines layer for the toggles: coastlines and/or plate boundaries (plates on top), or null for neither.
-    /// The plates are read and rasterized on the STA worker the first time they are wanted, then kept. A failed load
-    /// is logged once and not retried on every compose, only after the user switches plates off and on again.
-    /// </summary>
-    private async Task<SparseOverlay?> GetLinesLayerAsync(bool coastlines, bool plates)
-    {
-        var plateLines = plates && _lines is not null ? await _plates.GetAsync(OnPlatesFailed) : null;
-        if (plateLines is not null)
-        {
-            if (!coastlines || _lines is null) return plateLines;
-            return _linesAndPlates ??= SparseOverlay.Merge(_lines, plateLines);
-        }
-        return coastlines ? _lines : null;
-    }
+    // A click on an event selects it; a click on a Sun/Moon marker does nothing.
+    private void OnSelected(object? sender, PickResult hit) { if (hit.Item is EarthEvent picked) _vm.Selection.Select(picked); }
 
-    private void OnPlatesFailed(Exception ex)
-    {
-        if (_closed && ex is OperationCanceledException) return;   // the rasterizer was shut down by the window closing
-        _log.Error("Plate boundaries could not be drawn; showing coastlines only (switch plates off and on to try again)", ex);
-    }
+    private void OnSelectionCleared(object? sender, EventArgs e) => _vm.Selection.Select(null);
 
-    /// <summary>Reads and rasterizes the PB2002 plate boundaries at the size of the coastlines layer (on the STA worker).</summary>
-    private Task<SparseOverlay> BuildPlatesAsync()
-    {
-        int w = _lines!.Width, h = _lines.Height;
-        return _sta.InvokeAsync(() =>
-        {
-            using var s = EarthAssets.Open(EarthAssets.PlateBoundariesFile);
-            var all = PlateBoundaries.Read(s);
-            IEnumerable<IReadOnlyList<GeoPosition>> Of(PlateBoundaryKind k) => all.Where(b => b.Kind == k).Select(b => b.Line.Points);
-            Color C(uint argb) => Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
-            return SparseOverlay.FromImage(LineRasterizer.Rasterize(
-            [
-                (Of(PlateBoundaryKind.Transform), C(PlateBoundaries.TransformArgb)),
-                (Of(PlateBoundaryKind.Divergent), C(PlateBoundaries.DivergentArgb)),
-                (Of(PlateBoundaryKind.Convergent), C(PlateBoundaries.ConvergentArgb)),
-            ], w, h, 3.0));
-        });
-    }
-
-    // ---------------------------------------------------------------- Sun/Moon markers and overlay
-
-    private void OnViewportSizeChanged(object sender, SizeChangedEventArgs e) => _overlayDirty = true;
-    private void OnSunMoonChanged(object? sender, PropertyChangedEventArgs e) => _overlayDirty = true;
+    // ---------------------------------------------------------------- window and power
 
     private void OnWindowStateChanged(object? sender, EventArgs e)
     {
-        if (_window.WindowState == WindowState.Minimized) { _overlay.HideAll(); return; }
-        _overlayDirty = true;
-        if (_settingsDirty || _schedule.IsDue(_vm.DisplayTimeUtc)) Recompose();
+        if (_window.WindowState == WindowState.Minimized) { _arrows.HideAll(); return; }
+        _host?.RequestSceneUpdate();
+        _host?.RecomposeIfStale();
     }
 
-    private void OnRendering(object? sender, EventArgs e)
+    // SystemEvents calls each handler through the SynchronizationContext that was current when it subscribed (here the
+    // UI thread's, from the constructor), so this normally runs on the UI thread already. The BeginInvoke lets the
+    // resume notification return first, and would also cover a subscription made where there was no context.
+    private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
     {
-        if (_window.WindowState == WindowState.Minimized) { _overlay.HideAll(); _labels.Begin(); _labels.End(); _overlayDirty = true; return; }
-        NoteCameraChange();
-        bool evaluate = _eventsDirty && _eventThrottle.TryAcquire(DateTime.UtcNow);
-        if (evaluate)
-        {
-            _eventsDirty = false;
-            _visibleAtUtc = _vm.DisplayTimeUtc;
-            _visible = EventVisibility.At(Store.Snapshot, _visibleAtUtc, _vm.CurrentFilter);
-            _vm.Selection.ClearIfNotVisible(_visible);
-            _overlayDirty = true;   // the labels
-            RequestAreas();
-        }
-        if (_overlayDirty)
-        {
-            _overlayDirty = false;
-            UpdateSunMoon();
-            UpdateEvents();
-        }
-        if (_events.HasRings) _events.AnimateRings(FrozenRingTime ?? _clock.Elapsed);
-    }
-
-    // ---------------------------------------------------------------- events
-
-    // Called on the feed thread that wrote the store. Only a flag crosses threads; the store is read on the UI thread.
-    private void OnStoreChanged(object? sender, EventArgs e)
-    {
-        if (Interlocked.Exchange(ref _storeChangePending, 1) == 1) return;
+        if (e.Mode != PowerModes.Resume) return;
         _window.Dispatcher.BeginInvoke(() =>
         {
-            Volatile.Write(ref _storeChangePending, 0);
-            _eventsDirty = true;
+            if (_closed || _host is null) return;
+            _host.RequestSceneUpdate();
+            _ = _host.RecomposeNowAsync();
         });
-    }
-
-    // Raised on a background thread when zone shapes arrive; coalesced like store changes.
-    private void OnZonesLoaded(object? sender, EventArgs e)
-    {
-        if (Interlocked.Exchange(ref _zonesChangePending, 1) == 1) return;
-        _window.Dispatcher.BeginInvoke(() =>
-        {
-            Volatile.Write(ref _zonesChangePending, 0);
-            RequestAreas();
-        });
-    }
-
-    // ---------------------------------------------------------------- areas layer
-
-    /// <summary>Re-rasterizes the Areas layer if what it shows changed (one run at a time; requests meanwhile collapse into one).</summary>
-    private void RequestAreas()
-    {
-        if (_closed || _composed is null) return;   // before load completes, the load requests it
-        if (_areasRunning) { _areasPending = true; return; }
-        _ = AreasLoopAsync();
-    }
-
-    private async Task AreasLoopAsync()
-    {
-        _areasRunning = true;
-        try
-        {
-            do
-            {
-                _areasPending = false;
-                try
-                {
-                    // Planned here on the UI thread from memory only; zones not in memory yet are read from disk, or
-                    // downloaded, in the background (so replayed and newly shown alerts get outlines too), and
-                    // ZonesLoaded brings us back with a new key.
-                    var unresolved = new List<string>();
-                    var plan = AreasLayer.Plan(_visible, _vm.CurrentFilter,
-                        id => Zones.TryGetCached(id, out var polys) ? polys : null, unresolved);
-                    if (unresolved.Count > 0) Zones.LoadInBackground(unresolved, downloadMissing: true);
-                    if (plan.Key == _areasKey) continue;   // nothing that shows has changed
-                    int w = _composed!.Width, h = _composed.Height;
-                    var image = plan.Shapes.Count == 0 ? null : await _sta.InvokeAsync(() => AreasLayer.Rasterize(plan, w, h));
-                    if (_closed) return;
-                    _areasKey = plan.Key;
-                    _areas = image;   // null when nothing is to be drawn
-                    Recompose();
-                }
-                catch (OperationCanceledException) when (_closed) { return; }
-                catch (Exception ex)
-                {
-                    // One bad pass must not stop later ones: forget the key so the next trigger rebuilds.
-                    _log.Error("Areas layer failed", ex);
-                    _areasKey = 0;
-                }
-            } while (_areasPending && !_closed);
-        }
-        finally { _areasRunning = false; }
-    }
-
-    private void OnFilterChanged(object? sender, EventArgs e) => _eventsDirty = true;
-
-    // ---------------------------------------------------------------- lightning
-
-    // Raised on a feed thread; coalesced like store changes. The layer itself rebuilds at most once a second.
-    private void OnFlashesChanged(object? sender, EventArgs e)
-    {
-        if (Interlocked.Exchange(ref _flashChangePending, 1) == 1) return;
-        _window.Dispatcher.BeginInvoke(() =>
-        {
-            Volatile.Write(ref _flashChangePending, 0);
-            if (!_closed) UpdateLightning();
-        });
-    }
-
-    private void OnTicked(object? sender, EventArgs e)
-    {
-        if (_closed) return;
-        UpdateLightning();
-        // How old each sensor's newest flash is right now (wall clock), not relative to a replayed display time; and, when
-        // the window holds more flashes than are drawn, how many.
-        _vm.Layers.LightningLegend = LightningLayer.LegendNote(_lightningSource.Coverage, _vm.NowUtc, flashesInWindow: _lightning.FlashCountInWindow);
-    }
-
-    private void OnLightningSettingChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName is nameof(LayersViewModel.ShowLightning) or nameof(DisplayOptionsViewModel.LightningWindowMinutes)) UpdateLightning();
-    }
-
-    private void UpdateLightning()
-    {
-        bool show = LightningLayer.IsShown(_vm.Layers.ShowLightning, _vm.Timeline.IsLive, _lightningSource.SupportsHistory);
-        _lightning.Update(_lightningSource, _vm.DisplayTimeUtc, TimeSpan.FromMinutes(_vm.Display.LightningWindowMinutes), show);
-    }
-
-    private void NoteSubPoint(PerspectiveCamera c) =>
-        _view.CameraSubPoint = GeoPosition.FromVector(new Vector3d(c.Position.X, c.Position.Y, c.Position.Z));
-
-    private void OnTimelineChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName != nameof(TimelineViewModel.IsLive)) return;
-        _eventsDirty = true;   // rings only while live
-        if (!_closed) UpdateLightning();   // lightning is live only: hide or show it now, not at the next tick
-    }
-
-    /// <summary>Hands the visible events to the scene (cheap if nothing changed) and places their labels.</summary>
-    private void UpdateEvents()
-    {
-        if (_viewport.Camera is not PerspectiveCamera camera) return;
-        var projector = new Projector(camera, _viewport.ActualWidth, _viewport.ActualHeight);
-        _events.Update(_visible, _visibleAtUtc, _vm.Timeline.IsLive, projector, ((Vector3D)camera.Position).Length);
-        _events.DrawLabels(_labels, projector);
-    }
-
-    private void NoteCameraChange()
-    {
-        if (_viewport.Camera is not PerspectiveCamera c) return;
-        var pose = (c.Position, c.LookDirection, c.UpDirection, c.FieldOfView);
-        if (pose == _lastPose) return;
-        _lastPose = pose;
-        NoteSubPoint(c);
-        _overlayDirty = true;
-    }
-
-    private void UpdateSunMoon()
-    {
-        if (_viewport.Camera is not PerspectiveCamera camera) return;
-        var sm = _vm.SunMoon;
-        double fraction = sm.MoonIlluminatedPercent / 100.0;
-        _markers.Update(sm.SubSolar, sm.SubLunar, fraction, sm.MoonWaxing);
-        var projector = new Projector(camera, _viewport.ActualWidth, _viewport.ActualHeight);
-        var sun = sm.SubSolar.ToUnitVector();
-        var moon = sm.SubLunar.ToUnitVector();
-        double moonR = sm.MoonDistanceKm / EarthRadiusKm;
-        _overlay.Update(projector, new Vector3D(sun.X, sun.Y, sun.Z),
-            new Point3D(moon.X * moonR, moon.Y * moonR, moon.Z * moonR), fraction, sm.MoonWaxing, CardBounds());
-    }
-
-    // ---------------------------------------------------------------- marker tooltips
-
-    private void OnViewportMouseMove(object sender, MouseEventArgs e)
-    {
-        _hoverTimer.Stop();
-        if (e.LeftButton == MouseButtonState.Pressed || IsOverOverlayElement()) { HideMarkerTip(); return; }
-        _hoverMouse = e.GetPosition(_viewport);
-        // About 30 Hz, with a trailing pick so the last position is always handled.
-        if (_hoverThrottle.TryAcquire(DateTime.UtcNow)) UpdateHover(_hoverMouse);
-        else _hoverTimer.Start();
-    }
-
-    private void OnHoverTimerTick(object? sender, EventArgs e)
-    {
-        _hoverTimer.Stop();
-        _hoverThrottle.TryAcquire(DateTime.UtcNow);
-        if (!IsOverOverlayElement()) UpdateHover(_hoverMouse);
-    }
-
-    private bool IsOverOverlayElement()
-    {
-        if (_card.IsMouseOver) return true;
-        foreach (var b in HoverBlockers) if (b.IsMouseOver) return true;
-        return false;
-    }
-
-    /// <summary>The cards' dark tooltip (light text on dark), for the hover tip, instead of the system's light one.</summary>
-    public static Style DarkToolTipStyle() =>
-        (Style)new ResourceDictionary { Source = new Uri("/GlobeCore.Wpf;component/Styles/CardStyles.xaml", UriKind.Relative) }[typeof(ToolTip)];
-
-    private void UpdateHover(Point mouse)
-    {
-        if (Camera is not { } camera || Mouse.LeftButton == MouseButtonState.Pressed) { HideMarkerTip(); return; }
-        var projector = new Projector(camera, _viewport.ActualWidth, _viewport.ActualHeight);
-        var sm = _vm.SunMoon;
-        string? text = MarkerHover.Hits(mouse, projector, sm.SubSolar) ? MarkerHover.SunText(sm.SubSolar)
-                     : MarkerHover.Hits(mouse, projector, sm.SubLunar) ? MarkerHover.MoonText(sm.SubLunar)
-                     : null;
-        if (text is null && PickEvent(mouse, projector, hover: true) is { } hovered)
-            text = SelectionViewModel.HoverText(hovered, _vm.DisplayTimeUtc, _vm.Units);
-        if (text is null) { HideMarkerTip(); return; }
-        if (!Equals(_markerTip.Content, text)) _markerTip.Content = text;
-        _markerTip.HorizontalOffset = mouse.X + 16;
-        _markerTip.VerticalOffset = mouse.Y + 16;
-        _markerTip.IsOpen = true;
-    }
-
-    /// <summary>The event under the mouse: point events first, then (needing a surface hit test) alert areas.</summary>
-    private EarthEvent? PickEvent(Point mouse, Projector projector, bool hover = false)
-    {
-        var visible = _visible;
-        var hit = EventPicker.Pick(mouse, projector, visible, null);
-        if (hit is not null || visible.Alerts.Count == 0) return hit;
-        // Analytic ray/sphere hit: cheap enough for 30 Hz hover (a Viewport3D hit test walks every mesh in the scene).
-        GeoPosition? surface = null;
-        if (projector.TryHitUnitSphere(mouse, out Point3D p))
-            surface = GeoPosition.FromVector(new Vector3d(p.X, p.Y, p.Z));
-        return EventPicker.Pick(mouse, projector, visible, surface,
-            // Hover must not touch the disk (it runs at 30 Hz); a click may.
-            id => (hover ? Zones.TryGetCached(id, out var polys) : Zones.TryGet(id, out polys)) ? polys : null);
-    }
-
-    private void OnViewportMouseLeave(object sender, MouseEventArgs e)
-    {
-        // A trailing hover tick still queued from the last move would otherwise reopen the tooltip after the mouse left.
-        _hoverTimer.Stop();
-        HideMarkerTip();
-    }
-
-    private void HideMarkerTip()
-    {
-        if (_markerTip.IsOpen) _markerTip.IsOpen = false;
-    }
-
-    /// <summary>The card's rectangle in overlay coordinates, or Rect.Empty if it is not shown. Allocation-free.</summary>
-    private Rect CardBounds()
-    {
-        if (!_card.IsVisible || _card.ActualWidth <= 0 || _card.ActualHeight <= 0) return Rect.Empty;
-        // Both are children of the same grid, so the difference of their offsets in it is the card's offset in the overlay.
-        var o = VisualTreeHelper.GetOffset(_card) - VisualTreeHelper.GetOffset(_overlayCanvas);
-        return new Rect(o.X, o.Y, _card.ActualWidth, _card.ActualHeight);
     }
 
     // ---------------------------------------------------------------- camera
@@ -786,6 +276,15 @@ public sealed class SceneController
     private void ApplyRotationSensitivity(PerspectiveCamera camera) =>
         _viewport.RotationSensitivity = CameraRules.RotationSensitivity(((Vector3D)camera.Position).Length);
 
+    private void NoteSubPoint(PerspectiveCamera c) =>
+        _view.CameraSubPoint = GeoPosition.FromVector(new Vector3d(c.Position.X, c.Position.Y, c.Position.Z));
+
+    // Programmatic camera moves (CameraAnimator) do not always raise CameraChanged; the host compares the pose each frame.
+    private void OnCameraPoseChanged(object? sender, EventArgs e)
+    {
+        if (Camera is { } camera) NoteSubPoint(camera);
+    }
+
     /// <summary>Turns the camera at once (no animation) to look straight down on <paramref name="p"/>, keeping its distance.</summary>
     public void LookAt(GeoPosition p)
     {
@@ -793,7 +292,7 @@ public sealed class SceneController
         _animator.Cancel();
         var (pos, look, up) = CameraRules.LookDownOn(p, ((Vector3D)camera.Position).Length);
         camera.Position = pos; camera.LookDirection = look; camera.UpDirection = up;
-        _overlayDirty = true;
+        _host?.RequestSceneUpdate();
     }
 
     /// <summary>Turns the camera at once to the home view (the one the window opens with), keeping its distance.</summary>
@@ -808,8 +307,7 @@ public sealed class SceneController
 
     private void OnCameraChanged(object? sender, RoutedEventArgs e)
     {
-        _overlayDirty = true;
-        if (_adjustingCamera || Camera is not { } camera) return;
+        if (_adjustingCamera || Camera is not { } camera) return;   // the host redraws the scene layers
         NoteSubPoint(camera);
         _adjustingCamera = true;
         try
@@ -860,9 +358,9 @@ public sealed class SceneController
         _animator.AnimateTo(CameraRules.LookDownOn(HomeView, FitDistanceForViewport(camera)).Position);
     }
 
+    /// <summary>A double-click flies to the point under it (a single click is the host's: it selects).</summary>
     private void OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton == MouseButton.Left) _clickStart = e.ClickCount == 1 ? e.GetPosition(_viewport) : null;
         if (e.ChangedButton != MouseButton.Left || e.ClickCount != 2) return;
         e.Handled = true;   // keep Helix's own double-click (look-at) out of it
         if (Camera is not { } camera) return;
@@ -873,19 +371,6 @@ public sealed class SceneController
         _animator.AnimateTo(CameraRules.LookDownOn(geo, distance).Position);
     }
 
-    /// <summary>A left click (released within 4 px of where it went down) selects the event under it, or clears the selection.</summary>
-    private void OnPreviewMouseUp(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ChangedButton != MouseButton.Left || _clickStart is not { } start) return;
-        _clickStart = null;
-        var end = e.GetPosition(_viewport);
-        if ((end - start).Length >= ClickSlopPx || Camera is not { } camera) return;
-        var projector = new Projector(camera, _viewport.ActualWidth, _viewport.ActualHeight);
-        var sm = _vm.SunMoon;   // a Sun/Moon marker under the mouse wins: the click does nothing
-        if (MarkerHover.Hits(end, projector, sm.SubSolar) || MarkerHover.Hits(end, projector, sm.SubLunar)) return;
-        _vm.Selection.Select(PickEvent(end, projector));
-    }
-
     // ---------------------------------------------------------------- lifetime
 
     private void OnClosed(object? sender, EventArgs e)
@@ -893,7 +378,6 @@ public sealed class SceneController
         _closed = true;
         _animator.Cancel();
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
-        CompositionTarget.Rendering -= OnRendering;
         _window.Loaded -= OnLoaded;
         _window.Closed -= OnClosed;
         _window.StateChanged -= OnWindowStateChanged;
@@ -901,30 +385,15 @@ public sealed class SceneController
         _viewport.CameraChanged -= OnCameraChanged;
         _viewport.PreviewMouseWheel -= OnPreviewMouseWheel;
         _viewport.PreviewMouseDown -= OnPreviewMouseDown;
-        _viewport.PreviewMouseUp -= OnPreviewMouseUp;
-        _viewport.MouseMove -= OnViewportMouseMove;
-        _viewport.MouseLeave -= OnViewportMouseLeave;
-        _hoverTimer.Stop();
-        _hoverTimer.Tick -= OnHoverTimerTick;
-        HideMarkerTip();
-        _viewport.SizeChanged -= OnViewportSizeChanged;
-        _card.SizeChanged -= OnViewportSizeChanged;
         _vm.DisplayTimeChanged -= OnDisplayTimeChanged;
-        _vm.FilterChanged -= OnFilterChanged;
-        _vm.Timeline.PropertyChanged -= OnTimelineChanged;
-        Store.Changed -= OnStoreChanged;
-        _lightningSource.FlashesChanged -= OnFlashesChanged;
-        _vm.Ticked -= OnTicked;
-        _vm.Layers.PropertyChanged -= OnLightningSettingChanged;
-        _vm.Display.PropertyChanged -= OnLightningSettingChanged;
-        Zones.ZonesLoaded -= OnZonesLoaded;
-        _trailing.Stop();
-        _trailing.Tick -= OnTrailingTick;
-        _vm.SunMoon.PropertyChanged -= OnSunMoonChanged;
         _vm.SunMoon.FaceRequested -= OnFaceRequested;
         _vm.Layers.PropertyChanged -= OnDisplaySettingChanged;
         _vm.Display.PropertyChanged -= OnDisplaySettingChanged;
-        _sta.Dispose();   // queued rasterizing is cancelled; the awaiting loops see _closed and stop
+        _arrows.Close(); _markers.Close(); _events.Close(); _lightning.Close(); _areas?.Close();
+        // Before the rasterizer: a cancelled build is then seen as "closed", not logged as an error. A disposed host
+        // raises no more events.
+        _host?.Dispose();
+        _sta.Dispose();   // queued rasterizing is cancelled; the awaiting loops see the window closed and stop
         _firstCompose.TrySetCanceled();
     }
 }

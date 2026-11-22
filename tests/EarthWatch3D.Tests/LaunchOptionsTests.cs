@@ -37,6 +37,15 @@ public class LaunchOptionsTests
         Assert.Null(o.Error);
     }
 
+    [Theory]
+    [InlineData("--snapshot-scenes", "s.json")]
+    [InlineData("--snapshot-out", "out")]
+    public void SnapshotScenesAndSnapshotOutAreRejectedAlone(string option, string value)
+    {
+        var o = LaunchOptions.Parse(["--offline-samples", @"tests\Samples", option, value]);
+        Assert.Equal("--snapshot-scenes and --snapshot-out go together: give both, or neither.", o.Error);
+    }
+
     [Fact]
     public void BenchLightningWithACountIsABenchmarkRunToo()
     {

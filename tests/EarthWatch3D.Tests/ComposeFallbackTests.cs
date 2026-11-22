@@ -1,11 +1,14 @@
 using AstroCore.Earth;
-using EarthWatch3D.App.Controllers;
 using GlobeCore.Imaging;
+using GlobeCore.Wpf.Layers;
 
 namespace EarthWatch3D.Tests;
 
+/// <summary>The scene's compose fallback, now LayerHost.ComposeOrPlain (GlobeCore), with EarthWatch3D's light and an Areas-style layer.</summary>
 public class ComposeFallbackTests
 {
+    private static readonly IlluminationState Light = new(new GeoPosition(0, 0), 1.0, true);
+
     private static Bgra32Image Pattern(int w, int h)
     {
         var img = Bgra32Image.Create(w, h);
@@ -21,9 +24,9 @@ public class ComposeFallbackTests
         Array.Fill(target.Pixels, (byte)0x55);   // half-written garbage from the failed compose
         var log = new RecordingLog();
         // An Areas layer of the wrong size makes ComposeInto throw.
-        var layers = new GlobeLayers(new GeoPosition(0, 0), 1.0, Areas: Bgra32Image.Create(2, 2));
+        IImageLayer[] layers = [new BitmapBlendLayer(Bgra32Image.Create(2, 2), ImagePass.Surface, 20)];
 
-        bool ok = SceneController.ComposeOrPlain(new GlobeImageComposer(plain), layers, target, plain, log);
+        bool ok = LayerHost.ComposeOrPlain(new GlobeImageComposer(plain), layers, Light, target, plain, log);
 
         Assert.False(ok);
         Assert.Equal(plain.Pixels, target.Pixels);
@@ -36,9 +39,7 @@ public class ComposeFallbackTests
         var plain = Pattern(8, 4);
         var target = Bgra32Image.Create(8, 4);
         var log = new RecordingLog();
-        var layers = new GlobeLayers(new GeoPosition(0, 0), 1.0);
-
-        Assert.True(SceneController.ComposeOrPlain(new GlobeImageComposer(plain), layers, target, plain, log));
+        Assert.True(LayerHost.ComposeOrPlain(new GlobeImageComposer(plain), [], Light, target, plain, log));
         Assert.Empty(log.Errors);
         Assert.NotEqual(plain.Pixels, target.Pixels);   // half the image is night-shaded
     }

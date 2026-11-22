@@ -58,13 +58,17 @@ public sealed class LightningLayer
     private DateTime _builtAtUtc;
     private bool _built;
 
-    public LightningLayer(HelixViewport3D viewport)
+    public LightningLayer(HelixViewport3D viewport) : this((viewport ?? throw new ArgumentNullException(nameof(viewport))).Children) { }
+
+    /// <summary>Puts the point visuals in <paramref name="parent"/> instead of a viewport (a layer's root).</summary>
+    public LightningLayer(ModelVisual3D parent) : this((parent ?? throw new ArgumentNullException(nameof(parent))).Children) { }
+
+    private LightningLayer(Visual3DCollection children)
     {
-        ArgumentNullException.ThrowIfNull(viewport);
         for (int i = 0; i < _visuals.Length; i++)
         {
             _visuals[i] = new PointsVisual3D { Color = BucketColors[i], Size = BucketSizes[i] };
-            viewport.Children.Add(_visuals[i]);
+            children.Add(_visuals[i]);
         }
     }
 

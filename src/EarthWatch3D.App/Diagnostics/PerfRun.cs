@@ -14,7 +14,7 @@ namespace EarthWatch3D.App.Diagnostics;
 /// <summary>
 /// PERF_LOG builds only. After load (and, with offline samples, once their events are drawn): working set at 10 s, the optional <c>--bench</c> rotation (360° about +Z over 5 s,
 /// average FPS from CompositionTarget.Rendering frames) and a forced-GC experiment.
-/// Every compose is logged by the SceneController, and every event cache save by the App. Once a minute for the whole
+/// Every compose is logged by GlobeCore's LayerHost (to its own %TEMP%\GlobeCore-perf.log), and every event cache save by the App. Once a minute for the whole
 /// run: memory, thread count, events.json size, alert count and how many of the alerts' zones are loaded.
 /// </summary>
 internal static class PerfRun
@@ -70,7 +70,7 @@ internal static class PerfRun
             if (waitForData is not null)
             {
                 await SnapshotDiagnostic.WaitForDataAsync(scene, waitForData, SnapshotDiagnostic.DataTimeout, new GlobeCore.Logging.NullLog());
-                PerfLog.Write($"offline data drawn (areas shown={scene.AreasDisplayed}): " + PerfLog.Memory());
+                PerfLog.Write($"offline data drawn (areas shown={SnapshotDiagnostic.AreasDisplayed(scene)}): " + PerfLog.Memory());
             }
             await Task.Delay(10_000);
             PerfLog.Write("10 s after load: " + PerfLog.Memory());

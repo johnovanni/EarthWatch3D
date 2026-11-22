@@ -68,7 +68,11 @@ public sealed class EventScene
     private readonly record struct Label(string Text, Vector3D Unit, double Radius, Color Color, double FontSize, double OffsetPx);
     private readonly record struct Ring(Point3D Centre, Vector3D E1, Vector3D E2, double Radius);
 
-    public EventScene(HelixViewport3D viewport)
+    public EventScene(HelixViewport3D viewport) : this(viewport, attachToViewport: true) { }
+
+    /// <param name="attachToViewport">False to leave <see cref="Root"/> out of the viewport, for a caller that places it
+    /// (a layer host).</param>
+    public EventScene(HelixViewport3D viewport, bool attachToViewport)
     {
         _viewport = viewport ?? throw new ArgumentNullException(nameof(viewport));
         var discs = new Model3DGroup();
@@ -85,8 +89,11 @@ public sealed class EventScene
         _root.Children.Add(_forecastTracks);
         _root.Children.Add(_rings);
         _root.Children.Add(_billboardRoot);
-        _viewport.Children.Add(_root);
+        if (attachToViewport) _viewport.Children.Add(_root);
     }
+
+    /// <summary>The visual holding everything the scene draws.</summary>
+    public ModelVisual3D Root => _root;
 
     /// <summary>True while pulsing rings are shown; <see cref="AnimateRings"/> need only be called then.</summary>
     public bool HasRings => _ringSpecs.Count > 0;
