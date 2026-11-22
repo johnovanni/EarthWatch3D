@@ -5,6 +5,11 @@
 > pushed. It installs to `C:\Program Files\Qapow\EarthWatch3D` by default. To release: raise `<Version>` in
 > `Directory.Build.props`, merge, then tag `v<version>` (the workflow checks they match).
 >
+> The build needs the `external/AstroCore` and `external/GlobeCore` submodules. While GlobeCore is a private repo,
+> the workflow reads it with the repository secret `SUBMODULES_TOKEN`: a fine-grained personal access token with
+> read-only **Contents** access to `johnovanni/GlobeCore`. Once GlobeCore is public the secret can be deleted. The app's
+> own DLLs that the workflow signs now include `GlobeCore.dll`, `GlobeCore.Wpf.dll` and `GlobeCore.Earth.dll`.
+>
 > The MSIX packaging below (`tools/build-release.ps1`) is no longer used for releases. It is kept for reference.
 
 EarthWatch3D ships as one self-contained x64 MSIX package (`EarthWatch3D.msix`) plus an App Installer file

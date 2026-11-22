@@ -12,6 +12,11 @@ name: Release
 # AZURE_TENANT_ID and AZURE_SUBSCRIPTION_ID, and an Entra app with a federated credential for the "release"
 # environment that holds the "Artifact Signing Certificate Profile Signer" role on the account. With GitHub's
 # immutable OIDC subject, the credential's subject is repo:johnovanni@11181099/EarthWatch3D@1454557228:environment:release.
+#
+# Submodules: external/AstroCore (public) and external/GlobeCore (private for now). GitHub's built-in token can't read
+# another private repo, so checkout uses the repository secret SUBMODULES_TOKEN when it is set: a fine-grained personal
+# access token with read-only "Contents" access to johnovanni/GlobeCore. Without the secret (once GlobeCore is public)
+# the built-in token is used.
 
 on:
   push:
@@ -40,6 +45,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.SUBMODULES_TOKEN || github.token }}
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -79,6 +85,9 @@ jobs:
             ${{ github.workspace }}\publish\EarthWatch3D.App.dll
             ${{ github.workspace }}\publish\EarthWatch3D.Core.dll
             ${{ github.workspace }}\publish\AstroCore.dll
+            ${{ github.workspace }}\publish\GlobeCore.dll
+            ${{ github.workspace }}\publish\GlobeCore.Wpf.dll
+            ${{ github.workspace }}\publish\GlobeCore.Earth.dll
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
@@ -113,7 +122,8 @@ jobs:
         if: env.SIGN == 'true'
         shell: pwsh
         run: |
-          $files = 'publish\EarthWatch3D.App.exe', 'publish\EarthWatch3D.App.dll', 'publish\EarthWatch3D.Core.dll', 'publish\AstroCore.dll', "out\$env:SETUP"
+          $files = 'publish\EarthWatch3D.App.exe', 'publish\EarthWatch3D.App.dll', 'publish\EarthWatch3D.Core.dll', 'publish\AstroCore.dll',
+                   'publish\GlobeCore.dll', 'publish\GlobeCore.Wpf.dll', 'publish\GlobeCore.Earth.dll', "out\$env:SETUP"
           $bad = $files | ForEach-Object { Get-AuthenticodeSignature $_ } | Where-Object Status -ne 'Valid'
           if ($bad) { $bad | Format-Table Path, Status, StatusMessage; throw 'Signature check failed.' }
           (Get-AuthenticodeSignature "out\$env:SETUP").SignerCertificate.Subject
