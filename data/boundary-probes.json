@@ -1,0 +1,10 @@
+{
+  "probes": [
+    {"name": "Khartoum", "lat": 15.5007, "lon": 32.5599, "expect": "SDN"},
+    {"name": "Kyiv", "lat": 50.4501, "lon": 30.5234, "expect": "UKR"},
+    {"name": "Crimea", "lat": 45.0, "lon": 34.1, "expect": "UKR"},
+    {"name": "Sevastopol", "lat": 44.6, "lon": 33.5, "expect": "UKR"},
+    {"name": "Fiji west of 180", "lat": -16.93, "lon": 179.95, "expect": "FJI"},
+    {"name": "Fiji east of 180", "lat": -16.85, "lon": -179.95, "expect": "FJI"}
+  ]
+}

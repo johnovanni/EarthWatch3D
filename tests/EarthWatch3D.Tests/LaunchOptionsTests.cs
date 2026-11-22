@@ -170,12 +170,17 @@ public class LaunchOptionsOfflineTests
         Assert.Equal(["plates", "coastlines"], o.Layers);
         Assert.Equal(["lightning"], LaunchOptions.Parse(["--layers", "Lightning"]).Layers);
         Assert.Equal(["clouds"], LaunchOptions.Parse(["--layers", "clouds"]).Layers);
+        Assert.Equal(["coastlines"], LaunchOptions.Parse(["--layers", "boundaries"]).Layers);   // the button's name (EW-002)
         Assert.Null(LaunchOptions.Parse([]).Layers);
     }
 
     [Fact]
-    public void UnknownLayerIsAnError() =>
-        Assert.Contains("--layers", LaunchOptions.Parse(["--layers", "plates,mystery"]).Error);
+    public void UnknownLayerIsAnError()
+    {
+        var error = LaunchOptions.Parse(["--layers", "plates,mystery"]).Error;
+        Assert.Contains("--layers", error);
+        Assert.Contains("boundaries", error);   // the help names the alias too
+    }
 
     [Theory]
     [InlineData("about")]

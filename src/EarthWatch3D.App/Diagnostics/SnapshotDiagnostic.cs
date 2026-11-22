@@ -172,10 +172,10 @@ public static class SnapshotDiagnostic
                     lookAt = new GeoPosition(lat, lon);
                 }
                 bool faceSun = e.TryGetProperty("faceSun", out var fs) && fs.GetBoolean();
-                var layers = e.TryGetProperty("layers", out var ls)
-                    ? ls.EnumerateArray().Select(x => (x.GetString() ?? "").ToLowerInvariant()).ToArray() : [];
-                if (layers.FirstOrDefault(l => !LaunchOptions.LayerNames.Contains(l)) is { } bad)
-                    throw new FormatException($"Scene {name}: '{bad}' is not a layer. Use any of {string.Join(", ", LaunchOptions.LayerNames)}.");
+                var given = e.TryGetProperty("layers", out var ls) ? ls.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : [];
+                if (given.FirstOrDefault(l => LaunchOptions.CanonicalLayer(l) is null) is { } bad)
+                    throw new FormatException($"Scene {name}: '{bad}' is not a layer. Use any of {LaunchOptions.LayerNamesText}.");
+                string[] layers = [.. given.Select(l => LaunchOptions.CanonicalLayer(l)!).Distinct()];
                 list.Add(new SnapshotScene(name, utc, lookAt, faceSun, layers));
             }
             if (list.Count == 0) throw new FormatException("The file has no scenes.");

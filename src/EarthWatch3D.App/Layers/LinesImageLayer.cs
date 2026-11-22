@@ -3,23 +3,25 @@ using AstroCore.Earth;
 using GlobeCore.Earth;
 using GlobeCore.Imaging;
 using GlobeCore.Logging;
+using GlobeCore.Regions;
 using GlobeCore.Wpf.Layers;
 using GlobeCore.Wpf.Rendering;
 
 namespace EarthWatch3D.App.Layers;
 
 /// <summary>
-/// The lines drawn over the night shade, as one sparse layer: coastlines and country borders (rasterized once at load)
-/// and/or the PB2002 plate boundaries, plates on top. The plates are read and rasterized on the STA worker the first
-/// time they are shown, then kept. A failed load is logged once and not retried on every compose, only after the user
-/// switches plates off and on again. (Moved from SceneController: GetLinesLayerAsync, BuildPlatesAsync, OnPlatesFailed.)
+/// The lines drawn over the night shade, as one sparse layer: coastlines and country borders (rasterized at load, and
+/// again off the UI thread when a newer boundary set is adopted, <see cref="ShowBordersAsync"/>) and/or the PB2002 plate
+/// boundaries, plates on top. The plates are read and rasterized on the STA worker the first time they are shown, then
+/// kept. A failed load is logged once and not retried on every compose, only after the user switches plates off and on
+/// again. (Moved from SceneController: GetLinesLayerAsync, BuildPlatesAsync, OnPlatesFailed.)
 /// </summary>
 public sealed class LinesImageLayer : ImageLayer
 {
     public const string LayerId = "lines";
     public const int Order = 10;
 
-    private readonly SparseOverlay _lines;               // coastlines and borders
+    private SparseOverlay _lines;                        // coastlines and borders (replaced when the borders are redrawn)
     private readonly LazyLayer<SparseOverlay> _plates;   // plate boundaries, rasterized the first time they are shown
     private readonly StaWorker _sta;
     private readonly IAppLog _log;
@@ -27,14 +29,18 @@ public sealed class LinesImageLayer : ImageLayer
     private SparseOverlay? _linesAndPlates;              // the two merged, plates on top
     private IImageLayer? _linesLayer, _platesLayer, _mergedLayer, _current;
     private bool _showCoastlines, _showPlates;
+    private BoundarySet? _wantedBorders;                  // the newest set asked for (a rebuild for an older one is dropped)
 
     /// <param name="coastAndBorders">The coastlines and borders at the globe image's size (<see cref="RasterizeCoastAndBorders"/>).</param>
-    /// <param name="sta">Where the plates are rasterized.</param>
+    /// <param name="borders">The boundary set those borders were drawn from (null when the borders could not be loaded).</param>
+    /// <param name="sta">Where the plates, and borders after an update, are rasterized.</param>
     /// <param name="isClosed">True once the window has closed (a cancelled plate build is then not an error).</param>
-    public LinesImageLayer(SparseOverlay coastAndBorders, bool showCoastlines, bool showPlates, StaWorker sta, IAppLog log, Func<bool> isClosed)
+    public LinesImageLayer(SparseOverlay coastAndBorders, BoundarySet? borders, bool showCoastlines, bool showPlates, StaWorker sta,
+                           IAppLog log, Func<bool> isClosed)
         : base(LayerId, "Coastlines, borders and plate boundaries", Order)
     {
         _lines = coastAndBorders ?? throw new ArgumentNullException(nameof(coastAndBorders));
+        Borders = _wantedBorders = borders;
         _sta = sta ?? throw new ArgumentNullException(nameof(sta));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _isClosed = isClosed ?? throw new ArgumentNullException(nameof(isClosed));
@@ -75,6 +81,46 @@ public sealed class LinesImageLayer : ImageLayer
 
     /// <summary>What the last compose chose to blend (null for neither coastlines nor plates); set at the start of each compose.</summary>
     public override IImageLayer? Current => _current;
+
+    /// <summary>The boundary set the borders now drawn come from (null if the borders could not be loaded). UI thread.</summary>
+    public BoundarySet? Borders { get; private set; }
+
+    /// <summary>The coastlines and borders now drawn, as line pixels (for tests).</summary>
+    internal SparseOverlay CoastAndBorders => _lines;
+
+    /// <summary>
+    /// Draws the borders of <paramref name="set"/> (a newer set adopted by the "Borders" feed): reads the coastlines and
+    /// rasterizes them with the set's lines at the same size, off the UI thread (the coastlines and the set's lines on the
+    /// pool, the raster on the STA worker, as the plates are built), then swaps them in and asks for a compose if the layer is shown. Call on
+    /// the UI thread. True once the set's borders are drawn; false if a newer set was asked for meanwhile, the window
+    /// closed, or the raster failed (logged; the borders drawn before stay).
+    /// </summary>
+    public async Task<bool> ShowBordersAsync(BoundarySet set)
+    {
+        ArgumentNullException.ThrowIfNull(set);
+        _wantedBorders = set;   // a rebuild still running for another set is dropped when it ends
+        if (ReferenceEquals(set, Borders)) return true;
+        int w = _lines.Width, h = _lines.Height;
+        SparseOverlay lines;
+        try
+        {
+            var (coast, borders) = await Task.Run(() => (NaturalEarthLines.Coastlines(), NaturalEarthLines.LandBoundaries(set)));
+            lines = await _sta.InvokeAsync(() => RasterizeCoastAndBorders(coast, borders, w, h));
+        }
+        catch (Exception ex)
+        {
+            if (!_isClosed())   // closing shuts the rasterizer down: not an error
+                _log.Error($"Borders of {set.Edition} could not be drawn; still showing {Borders?.Edition ?? "the borders drawn before"}", ex);
+            return false;
+        }
+        if (_isClosed() || !ReferenceEquals(set, _wantedBorders)) return false;
+        _lines = lines;
+        _linesLayer = _mergedLayer = null;   // rebuilt from the new lines at the next compose
+        _linesAndPlates = null;
+        Borders = set;
+        if (_showCoastlines) InvalidateNow();   // built in the background: compose now (while hidden, no compose is needed)
+        return true;
+    }
 
     /// <summary>The coastlines and borders, rasterized at the globe image's size and kept as line pixels only (UI or STA thread).</summary>
     public static SparseOverlay RasterizeCoastAndBorders(IEnumerable<IReadOnlyList<GeoPosition>> coast,

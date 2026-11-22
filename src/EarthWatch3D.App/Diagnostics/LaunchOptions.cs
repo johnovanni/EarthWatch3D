@@ -14,7 +14,8 @@ namespace EarthWatch3D.App.Diagnostics;
 /// cache and settings; <c>--display-time &lt;ISO UTC&gt;</c> starts in replay at that time;
 /// <c>--look-at &lt;lat,lon&gt;</c> turns the camera to that point once the globe is shown;
 /// <c>--layers &lt;list&gt;</c> switches the named layers on for this run only, without saving (comma list of
-/// quakes, cyclones, alerts, eonet, coastlines, plates, lightning, clouds; for example <c>--layers plates</c>).
+/// quakes, cyclones, alerts, eonet, coastlines, plates, lightning, clouds; for example <c>--layers plates</c>; <c>boundaries</c>,
+/// the name on the layer's button, is the same as <c>coastlines</c>).
 /// <c>--dialog about|welcome</c> opens that dialog once the globe is shown; with <c>--snapshot</c> the picture is of the
 /// dialog alone (not the main window).
 /// <c>--snapshot-scenes &lt;json&gt; --snapshot-out &lt;dir&gt;</c> (with <c>--offline-samples</c>) takes one picture per scene in
@@ -30,6 +31,24 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
 {
     public const int DefaultDelayMs = 1500;
     public static readonly string[] LayerNames = ["quakes", "cyclones", "alerts", "eonet", "coastlines", "plates", "lightning", "clouds"];
+
+    /// <summary>
+    /// Other names a layer is known by: the coastlines layer's button reads "Boundaries" (EW-002), while the saved setting
+    /// (<c>ShowCoastlines</c>) and the name <c>coastlines</c> stay as they were, so existing commands and scenes keep working.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> LayerAliases = new Dictionary<string, string> { ["boundaries"] = "coastlines" };
+
+    /// <summary>The help text listing the layer names, with the aliases.</summary>
+    public static string LayerNamesText =>
+        string.Join(", ", LayerNames) + string.Concat(LayerAliases.Select(a => $" ({a.Key} is the same as {a.Value})"));
+
+    /// <summary>The layer's name in <see cref="LayerNames"/> (any case, or an alias), or null if it is not a layer.</summary>
+    public static string? CanonicalLayer(string name)
+    {
+        var n = (name ?? "").Trim().ToLowerInvariant();
+        if (LayerAliases.TryGetValue(n, out var real)) return real;
+        return LayerNames.Contains(n) ? n : null;
+    }
     public static readonly string[] DialogNames = ["about", "welcome"];
     public const string DisplayTimeExample = "2026-11-11T20:00:00Z";
 
@@ -111,13 +130,12 @@ public sealed record LaunchOptions(string? SnapshotPath, bool FaceSun, int Delay
                     if (Value(args, ref i, errors, "a folder for the pictures") is { } so) scenesOut = so;
                     break;
                 case "--layers":
-                    if (Value(args, ref i, errors, "a comma list such as plates, from " + string.Join(", ", LayerNames)) is not { } list) break;
-                    var names = list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                    .Select(n => n.ToLowerInvariant()).ToList();
-                    var bad = names.Where(n => !LayerNames.Contains(n)).ToList();
-                    if (names.Count == 0 || bad.Count > 0)
-                        errors.Add($"--layers: '{(bad.Count > 0 ? string.Join(", ", bad) : list)}' is not a layer. Use any of {string.Join(", ", LayerNames)}.");
-                    else layers = names;
+                    if (Value(args, ref i, errors, "a comma list such as plates, from " + LayerNamesText) is not { } list) break;
+                    var given = list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var bad = given.Where(n => CanonicalLayer(n) is null).ToList();
+                    if (given.Length == 0 || bad.Count > 0)
+                        errors.Add($"--layers: '{(bad.Count > 0 ? string.Join(", ", bad) : list)}' is not a layer. Use any of {LayerNamesText}.");
+                    else layers = given.Select(n => CanonicalLayer(n)!).Distinct().ToList();
                     break;
             }
         }

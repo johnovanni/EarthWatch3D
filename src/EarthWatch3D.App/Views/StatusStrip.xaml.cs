@@ -27,7 +27,7 @@ public partial class StatusStrip : UserControl
     }
 }
 
-/// <summary>Ok green, Retrying amber, Failing red, Paused blue, NotSetUp / NotStarted grey.</summary>
+/// <summary>Ok green, Retrying and Attention amber, Failing red, Paused blue, NotSetUp / NotStarted / Idle grey.</summary>
 public sealed class FeedStateBrushConverter : IValueConverter
 {
     public static readonly FeedStateBrushConverter Instance = new();
@@ -41,6 +41,7 @@ public sealed class FeedStateBrushConverter : IValueConverter
     {
         FeedState.Ok => Ok,
         FeedState.Retrying => Retrying,
+        FeedState.Attention => Retrying,   // ran and kept its data, but the user should look (a rejected boundary release)
         FeedState.Failing => Failing,
         FeedState.Paused => Paused,
         _ => Idle,   // NotStarted, NotSetUp and Idle (not polled right now) are grey

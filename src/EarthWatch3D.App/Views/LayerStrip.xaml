@@ -210,14 +210,16 @@
                 </ToggleButton.ToolTip>
             </ToggleButton>
 
-            <ToggleButton Style="{StaticResource LayerButton}" Tag="〰" Content="Coastlines"
+            <!-- EW-002: "Boundaries" (the owner's choice); the saved setting and the command-line layer name stay "coastlines". -->
+            <ToggleButton x:Name="BoundariesButton" Style="{StaticResource LayerButton}" Tag="〰" Content="Boundaries"
                           IsChecked="{Binding Layers.ShowCoastlines}">
                 <ToggleButton.ToolTip>
                     <StackPanel>
-                        <TextBlock Style="{StaticResource LegendTitle}" Text="Coastlines and borders"/>
+                        <TextBlock Style="{StaticResource LegendTitle}" Text="Boundaries"/>
                         <StackPanel Style="{StaticResource Row}"><Rectangle Width="12" Height="2" Fill="#99FFFFFF" Margin="0,6,6,6"/><TextBlock Text="coastlines"/></StackPanel>
                         <StackPanel Style="{StaticResource Row}"><Rectangle Width="12" Height="2" Fill="#66D3D3D3" Margin="0,6,6,6"/><TextBlock Text="country borders"/></StackPanel>
-                        <TextBlock Style="{StaticResource LegendNote}" Text="Natural Earth 1:50m."/>
+                        <TextBlock Style="{StaticResource LegendNote}" Text="Natural Earth 1:50m. Coastlines are bundled with the app; the borders are checked for a newer Natural Earth release once a day."/>
+                        <TextBlock Style="{StaticResource LegendNote}" Text="{Binding Layers.BoundariesLegend}"/>
                     </StackPanel>
                 </ToggleButton.ToolTip>
             </ToggleButton>

@@ -2,6 +2,7 @@ using System.IO;
 using EarthWatch3D.Core.Feeds;
 using EarthWatch3D.Core.Lightning.Glm;
 using EarthWatch3D.Core.Lightning.Mtg;
+using GlobeCore.Earth;
 using GlobeCore.Earth.Clouds;
 using GlobeCore.Feeds;
 using GlobeCore.Logging;
@@ -26,7 +27,7 @@ public static class OfflineSamples
         "usgs_all_week.geojson", "usgs_all_hour.geojson", "gdacs_events_tc.json", "gdacs_geometry.json",
         "nhc_CurrentStorms.json", "nhc_track.kmz", "nhc_cone.kmz", "nhc_best_track.kmz", "nws_active.json", "nws_zone.json", "eonet_storms.json",
         "gibs_viirs_noaa21_truecolor_4096.jpg", "glm_g19_listing.xml", "glm_g19_sample.nc", "glm_g18_sample.nc",
-        "eumetsat_token.json", "mtg_search.json", "mtg_lfl_sample.zip",
+        "eumetsat_token.json", "mtg_search.json", "mtg_lfl_sample.zip", "naturalearth_latest_release.json",
     ];
 
     /// <summary>
@@ -131,6 +132,12 @@ public static class OfflineSamples
         Map("https://api.eumetsat.int/token", "eumetsat_token.json");
         Map("https://api.eumetsat.int/data/search-products/1.0.0/os", "mtg_search.json");
         Map("https://api.eumetsat.int/data/download/1.0.0/collections/", "mtg_lfl_sample.zip");
+
+        // Borders: GitHub's latest Natural Earth release is v5.1.2, the bundled edition, so the feed reports "no newer
+        // release" and downloads nothing. The sample keeps only a few fields of GitHub's answer; its time of day is not
+        // the real one (the feed reads only the tag and the date). The release files themselves are not mapped: a request
+        // for them would 404 rather than reach the network.
+        Map(NaturalEarthBoundarySource.LatestReleaseUrl.ToString(), "naturalearth_latest_release.json");
         return h;
     }
 }

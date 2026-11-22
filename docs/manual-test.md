@@ -28,8 +28,13 @@ today, use the offline samples instead (see [Offline samples](#offline-samples) 
 
 ## Layers and display options
 
-- [ ] **Layer strip** (top left): each button (Earthquakes, Cyclones, US alerts, EONET storms, Coastlines) hides and
-      shows its layer at once. Coastlines also hides the country borders.
+- [ ] **Layer strip** (top left): each button (Earthquakes, Cyclones, US alerts, EONET storms, Boundaries) hides and
+      shows its layer at once. Boundaries hides the coastlines and the country borders together. With the strip
+      expanded (☰) its label reads **Boundaries** (not Coastlines).
+- [ ] **Boundaries tooltip:** hover over the Boundaries button. The legend is titled **Boundaries** and its last line
+      reads "Borders: Natural Earth 5.1.2 (2022-05-13); Crimea shown as part of Ukraine (UN General Assembly
+      resolution 68/262)". Crimea has no border line between it and the rest of Ukraine (the Perekop isthmus, about
+      46.1° N, 33.7° E).
 - [ ] The **☰** button expands the strip to show the labels, and the choice is remembered after a restart.
 - [ ] **Display flyout** (**⋯** or **Display ▸**):
   - [ ] Minimum magnitude: choosing 5 leaves only the larger quake discs; "All" shows the most.
@@ -73,10 +78,15 @@ today, use the offline samples instead (see [Offline samples](#offline-samples) 
 
 ## Status dots and the network
 
-The five dots at the bottom right are the data sources (USGS, GDACS, NHC, NWS, EONET). Hover over one for its
-last update time or its error.
+The dots at the bottom right are the data sources (USGS, GDACS, NHC, NWS, EONET, then the lightning, clouds and
+**Borders** dots). Hover over one for its last update time or its error.
 
-- [ ] With the network on, all five turn green within a minute of starting.
+- [ ] **Borders:** within a minute of starting with the network on, the last dot, **Borders**, turns green. Its
+      tooltip reads "Borders: updated …" and "Using Natural Earth 5.1.2 (2022-05-13); no newer release" (until
+      Natural Earth publishes a newer release). It asks GitHub once a day, a few KB. If a newer release is ever
+      rejected by the app's checks, the dot turns **amber** with "needs attention" and the reason, and the borders
+      stay as they were. The daily download limit turns it **blue** (paused) like lightning.
+- [ ] With the network on, the five event dots turn green within a minute of starting.
 - [ ] **Unplug the network** (or turn Wi-Fi off) and wait. Each dot turns **amber** at its next failed update and
       **red** after three failures in a row. USGS and NWS do this within about 2–4 minutes; GDACS and NHC update every
       15 minutes and EONET every 30, so they can take up to about half an hour to turn amber. Events already on the

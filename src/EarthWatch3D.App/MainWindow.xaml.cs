@@ -6,16 +6,18 @@ using EarthWatch3D.Core.Feeds.Nws;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Lightning;
 using GlobeCore.Logging;
+using GlobeCore.Regions;
 
 namespace EarthWatch3D.App;
 
 public partial class MainWindow : Window
 {
-    public MainWindow(MainViewModel vm, EventStore store, ZoneCache zones, ILightningSource lightning, ViewState view, IAppLog? log = null)
+    public MainWindow(MainViewModel vm, EventStore store, ZoneCache zones, ILightningSource lightning, ViewState view,
+                      Task<CurrentBoundaries> boundaries, IAppLog? log = null)
     {
         InitializeComponent();
         DataContext = vm;
-        Scene = new SceneController(Viewport, Overlay, Card, vm, this, store, zones, lightning, view, log);
+        Scene = new SceneController(Viewport, Overlay, Card, vm, this, store, zones, lightning, view, boundaries, log);
         Scene.HoverBlockers.Add(Details);
         Scene.HoverBlockers.Add(Strip);
         Card.SizeChanged += (_, _) => PlaceDetails();

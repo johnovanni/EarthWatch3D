@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using EarthWatch3D.Core.Storage;
+using GlobeCore.Regions;
 using GlobeCore.Storage;
 
 namespace EarthWatch3D.App.ViewModels;
@@ -13,12 +14,18 @@ public partial class LayersViewModel : ObservableObject
     [ObservableProperty] private bool _showCyclones;
     [ObservableProperty] private bool _showAlerts;
     [ObservableProperty] private bool _showEonet;
+    /// <summary>The "Boundaries" layer: coastlines and country borders (the setting keeps its first name, ShowCoastlines).</summary>
     [ObservableProperty] private bool _showCoastlines;
     [ObservableProperty] private bool _showPlates;
     [ObservableProperty] private bool _showLightning;
     [ObservableProperty] private bool _showClouds;
     /// <summary>The clouds legend's line saying which day the image is from; set by the scene.</summary>
     [ObservableProperty] private string _cloudsLegend = "No image yet.";
+    /// <summary>
+    /// The Boundaries legend's line naming the boundary edition drawn and the rules applied (ruling B-6); set by the scene
+    /// once the borders are drawn and again after each update (<see cref="BoundariesLegendFor"/>).
+    /// </summary>
+    [ObservableProperty] private string _boundariesLegend = "Borders: loading.";
     /// <summary>The lightning legend's per-sensor lines; refreshed by the scene every second.</summary>
     [ObservableProperty] private string _lightningLegend = "";
     /// <summary>The strip shows text labels beside its icons.</summary>
@@ -39,6 +46,13 @@ public partial class LayersViewModel : ObservableObject
         _isExpanded = s.LayerStripExpanded;
     }
 
+    /// <summary>"Borders: Natural Earth 5.1.2 (2022-05-13); Crimea shown as part of Ukraine (UN General Assembly resolution 68/262)".</summary>
+    public static string BoundariesLegendFor(BoundarySet set)
+    {
+        ArgumentNullException.ThrowIfNull(set);
+        return "Borders: " + set.Describe();
+    }
+
     partial void OnShowQuakesChanged(bool value) => Save("quakes");
     partial void OnShowCyclonesChanged(bool value) => Save("cyclones");
     partial void OnShowAlertsChanged(bool value) => Save("alerts");
@@ -55,7 +69,8 @@ public partial class LayersViewModel : ObservableObject
 
     /// <summary>
     /// Switches the named layers on for this run only (the <c>--layers</c> diagnostic): their saved values are kept, so nothing
-    /// persists unless the user toggles that layer. Names: quakes, cyclones, alerts, eonet, coastlines, plates, lightning, clouds.
+    /// persists unless the user toggles that layer. Names: quakes, cyclones, alerts, eonet, coastlines, plates, lightning, clouds
+    /// (as <see cref="Diagnostics.LaunchOptions.CanonicalLayer"/> gives them: --layers boundaries arrives here as coastlines).
     /// </summary>
     public void TurnOnForThisRun(IEnumerable<string> names)
     {
