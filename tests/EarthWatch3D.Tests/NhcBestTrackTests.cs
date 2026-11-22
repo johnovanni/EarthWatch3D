@@ -41,11 +41,11 @@ public sealed class NhcBestTrackTests
     }
 
     [Fact]
-    public void FeedHistoryStartsAtFirstTropicalFix()
+    public async Task FeedHistoryStartsAtFirstTropicalFix()
     {
         var handler = Offline();
         var (feed, store, _) = MakeFeed(handler);
-        feed.RunOnceAsync(CancellationToken.None).GetAwaiter().GetResult();
+        await feed.RunOnceAsync(CancellationToken.None);
         Assert.Equal(U(6, 18), Assert.Single(store.Snapshot.Cyclones).History[0].TimeUtc);
     }
 
