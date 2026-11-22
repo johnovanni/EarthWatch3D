@@ -24,7 +24,7 @@ public static class OfflineSamples
     public static IReadOnlyList<string> Files { get; } =
     [
         "usgs_all_week.geojson", "usgs_all_hour.geojson", "gdacs_events_tc.json", "gdacs_geometry.json",
-        "nhc_CurrentStorms.json", "nhc_track.kmz", "nhc_cone.kmz", "nws_active.json", "nws_zone.json", "eonet_storms.json",
+        "nhc_CurrentStorms.json", "nhc_track.kmz", "nhc_cone.kmz", "nhc_best_track.kmz", "nws_active.json", "nws_zone.json", "eonet_storms.json",
         "gibs_viirs_noaa21_truecolor_4096.jpg", "glm_g19_listing.xml", "glm_g19_sample.nc", "glm_g18_sample.nc",
         "eumetsat_token.json", "mtg_search.json", "mtg_lfl_sample.zip",
     ];
@@ -102,6 +102,7 @@ public static class OfflineSamples
         Map("https://www.nhc.noaa.gov/CurrentStorms.json", "nhc_CurrentStorms.json");
         Map("https://www.nhc.noaa.gov/storm_graphics/api/CP042026_020adv_TRACK.kmz", "nhc_track.kmz");
         Map("https://www.nhc.noaa.gov/storm_graphics/api/CP042026_020adv_CONE.kmz", "nhc_cone.kmz");
+        Map("https://www.nhc.noaa.gov/gis/best_track/cp042026_best_track.kmz", "nhc_best_track.kmz");
 
         Map("https://api.weather.gov/alerts/active", "nws_active.json");
         h.MapText("https://api.weather.gov/alerts?start=", EmptyFeatureCollection);   // the 24 h history: none
