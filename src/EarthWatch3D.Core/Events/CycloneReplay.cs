@@ -23,18 +23,21 @@ public static class CycloneReplay
         if (latestAdv is not null && latestAdv.TimeUtc == newest.TimeUtc)
             return t - latestAdv.TimeUtc <= Window ? latestAdv : null;
 
-        // Known fixes, oldest advisory first so that for a duplicate time the newest advisory's value stays.
-        var byTime = new SortedDictionary<DateTime, StormFix>();
+        // Known fixes, oldest advisory first so that for a duplicate time the newest advisory's value stays. A GDACS
+        // advisory's own position applies at the episode's todate, which its History already ends with, so GDACS
+        // advisories with a History add no fix at their (later) TimeUtc.
+        var byTime = new SortedDictionary<DateTime, (StormFix Fix, bool FromAdvisory)>();
         foreach (var a in storm.OrderBy(a => a.TimeUtc))
         {
-            foreach (var h in a.History) byTime[h.TimeUtc] = h;
-            byTime[a.TimeUtc] = new StormFix(a.TimeUtc, a.Location, a.WindKt);
+            foreach (var h in a.History) byTime[h.TimeUtc] = (h, false);
+            if (!(a.Source == EventSource.Gdacs && a.History.Count > 0))
+                byTime[a.TimeUtc] = (new StormFix(a.TimeUtc, a.Location, a.WindKt), true);
         }
-        var fixes = byTime.Values.ToList();
+        var fixes = byTime.Values.Select(v => v.Fix).ToList();
 
         var e = fixes.LastOrDefault(f => f.TimeUtc <= t);
         if (e is null || t - e.TimeUtc > Window) return null;
-        var l = fixes.FirstOrDefault(f => f.TimeUtc > t);
+        var l = fixes.FirstOrDefault(f => f.TimeUtc > t);   // null only when a GDACS advisory is stored later than its todate fix
 
         var position = l is null ? e.Position : Slerp(e.Position, l.Position, (t - e.TimeUtc) / (l.TimeUtc - e.TimeUtc));
 
@@ -48,14 +51,26 @@ public static class CycloneReplay
         var pastTrack = DateLine.SplitLine(past.Select(p => (p.LongitudeDeg, p.LatitudeDeg)).ToList())
             .Where(line => line.Points.Any(q => q != line.Points[0])).ToList();
 
+        // Before the first stored advisory there is no pressure, and the title must not borrow a later classification.
         var basis = latestAdv ?? storm.MinBy(a => a.TimeUtc)!;
-        return new CycloneAdvisory(basis.Source, basis.Id, e.TimeUtc, position, basis.Title, basis.Link, basis.Name, wind,
-            basis.PressureHpa, pastTrack,
+        var title = latestAdv is not null ? basis.Title
+            : ("Tropical cyclone " + CycloneMerger.NormalizeName(basis.Name)).Trim();
+        return new CycloneAdvisory(basis.Source, basis.Id, e.TimeUtc, position, title, basis.Link, basis.Name, wind,
+            latestAdv?.PressureHpa, pastTrack,
             latestAdv?.ForecastTrack ?? [], latestAdv?.Cone ?? [], latestAdv?.WindAreas ?? [])
         {
             History = fixes.Where(f => f.TimeUtc <= t).ToList(),
-            Replay = new ReplayInfo(e.TimeUtc, l?.TimeUtc, basis.Source == EventSource.Nhc ? "NHC best track" : "GDACS track", known),
+            Replay = new ReplayInfo(e.TimeUtc, l?.TimeUtc, SourceLabel(basis.Source, byTime[e.TimeUtc].FromAdvisory, byTime[(l ?? e).TimeUtc].FromAdvisory), known),
         };
+    }
+
+    /// <summary>Where the two neighbouring fixes came from, e.g. "NHC best track" or "NHC advisories and best track".</summary>
+    private static string SourceLabel(EventSource source, bool earlierFromAdvisory, bool laterFromAdvisory)
+    {
+        if (source == EventSource.Nhc)
+            return earlierFromAdvisory && laterFromAdvisory ? "NHC advisories"
+                : earlierFromAdvisory || laterFromAdvisory ? "NHC advisories and best track" : "NHC best track";
+        return earlierFromAdvisory && laterFromAdvisory ? "GDACS advisories" : "GDACS track";
     }
 
     /// <summary>Point a fraction of the way along the great circle from a to b.</summary>

@@ -14,7 +14,7 @@ public sealed record Earthquake(string Id, DateTime TimeUtc, GeoPosition Locatio
 
 public sealed record WindArea(double ThresholdKmh, GeoPolygon Area);
 
-/// <summary>How a replayed advisory was derived. LaterFixUtc is null when the position is the newest fix itself.</summary>
+/// <summary>How a replayed advisory was derived. LaterFixUtc is null when no later fix is known (a GDACS advisory stored later than its own todate fix); the position is then EarlierFix's.</summary>
 public sealed record ReplayInfo(DateTime EarlierFixUtc, DateTime? LaterFixUtc, string HistorySource, bool IntensityKnown);
 
 /// <summary>Id = storm key: "gdacs:&lt;eventid&gt;" or "nhc:&lt;id&gt;". TimeUtc = advisory issue time.</summary>
@@ -24,7 +24,7 @@ public sealed record CycloneAdvisory(EventSource Source, string Id, DateTime Tim
 {
     public int Category => SaffirSimpson.Category(WindKt);
 
-    /// <summary>Past fixes with times, oldest first (empty when the feed gave none). Part of equality.</summary>
+    /// <summary>Past fixes with times, oldest first (empty when the feed gave none): at or before the advisory time for NHC, up to the episode's todate for GDACS. Part of equality.</summary>
     public IReadOnlyList<StormFix> History { get; init; } = [];
 
     /// <summary>Set only on advisories derived for a replay time; never cached and not part of equality.</summary>

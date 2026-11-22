@@ -39,7 +39,7 @@ public sealed class CycloneReplayTests
         Assert.Equal(H(0), r.TimeUtc);
         Assert.Equal(H(0), r.Replay!.EarlierFixUtc);
         Assert.Equal(H(6), r.Replay.LaterFixUtc);
-        Assert.Equal("NHC best track", r.Replay.HistorySource);
+        Assert.Equal("NHC advisories", r.Replay.HistorySource);
     }
 
     [Fact]
@@ -121,5 +121,73 @@ public sealed class CycloneReplayTests
         Assert.Equal(-148, pts[0].LongitudeDeg, 6);
         Assert.Equal(-150, pts[1].LongitudeDeg, 6);
         Assert.Equal(r.Location, pts[2]);
+    }
+
+    [Fact]
+    public void SourceLabelIsBestTrackBetweenTwoBestTrackFixes()
+    {
+        var a = Adv(0, new(10, -150), 40, EventSource.Nhc, Fix(1, new(10, -150.5), 38), Fix(3, new(10, -151), 38));
+        Assert.Equal("NHC best track", CycloneReplay.At([a, Adv(9, new(10, -156), 60)], H(2))!.Replay!.HistorySource);
+    }
+
+    [Fact]
+    public void SourceLabelMixesAdvisoryAndBestTrack()
+    {
+        var a = Adv(0, new(10, -150), 40, EventSource.Nhc, Fix(3, new(10, -151), 38));
+        var b = Adv(9, new(10, -156), 60);
+        Assert.Equal("NHC advisories and best track", CycloneReplay.At([a, b], H(1))!.Replay!.HistorySource);
+        Assert.Equal("NHC advisories and best track", CycloneReplay.At([a, b], H(4))!.Replay!.HistorySource);
+        var gd = Adv(12, new(11, -155), 45, EventSource.Gdacs, Fix(0, new(10, -150)), Fix(6, new(10.5, -152)));
+        Assert.Equal("GDACS track", CycloneReplay.At([gd], H(3))!.Replay!.HistorySource);
+        var g1 = Adv(0, new(10, -150), 45, EventSource.Gdacs);
+        var g2 = Adv(6, new(10, -152), 45, EventSource.Gdacs);
+        Assert.Equal("GDACS advisories", CycloneReplay.At([g1, g2], H(3))!.Replay!.HistorySource);
+    }
+
+    [Fact]
+    public void GdacsAdvisoryFixIsAtItsHistoryEnd()
+    {
+        // The advisory is stored at 09:00 but its position applies at the todate fix (06:00, last in History).
+        var gd = Adv(9, new(10, -152), 45, EventSource.Gdacs, Fix(0, new(10, -150)), Fix(6, new(10, -152), 45));
+        var r = CycloneReplay.At([gd], H(3))!;
+        Assert.Equal(H(0), r.Replay!.EarlierFixUtc);
+        Assert.Equal(H(6), r.Replay.LaterFixUtc);
+    }
+
+    [Fact]
+    public void PressureAndTitleDoNotComeFromALaterAdvisory()
+    {
+        var first = Adv(12, new(11, -155), 45, EventSource.Gdacs, Fix(0, new(10, -150)), Fix(6, new(10.5, -152))) with { Title = "Tropical Storm Pena", PressureHpa = 995 };
+        var before = CycloneReplay.At([first], H(3))!;
+        Assert.Null(before.PressureHpa);
+        Assert.Equal("Tropical cyclone PENA", before.Title);
+        var after = CycloneReplay.At([first, Adv(18, new(11, -158), 45, EventSource.Gdacs)], H(14))!;
+        Assert.Equal(995, after.PressureHpa);
+        Assert.Equal("Tropical Storm Pena", after.Title);
+    }
+
+    [Fact]
+    public void WindFallsBackToTheAdvisoryWhenOnlyOneNeighbourHasWind()
+    {
+        // e (03:00) has no wind, l (06:00) has: use the advisory's (40 kt), not l's 60.
+        var a = Adv(0, new(10, -150), 40, EventSource.Nhc, Fix(3, new(10, -151), null));
+        var r = CycloneReplay.At([a, Adv(6, new(10, -152), 60)], H(4))!;
+        Assert.Equal(40, r.WindKt!.Value, 6);
+        Assert.True(r.Replay!.IntensityKnown);
+        // e has wind, l has none: again the advisory's.
+        var b = Adv(0, new(10, -150), 40, EventSource.Nhc, Fix(3, new(10, -151), 45), Fix(5, new(10, -151.5), null));
+        var r2 = CycloneReplay.At([b, Adv(6, new(10, -152), 60)], H(4))!;
+        Assert.Equal(40, r2.WindKt!.Value, 6);
+    }
+
+    [Fact]
+    public void PastTrackIsSplitAtTheDateLine()
+    {
+        var r = CycloneReplay.At([Adv(0, new(10, 179), 40), Adv(6, new(10, -179), 40)], H(5))!;
+        Assert.Equal(2, r.PastTrack.Count);
+        var all = r.PastTrack.SelectMany(l => l.Points).ToList();
+        Assert.Contains(all, p => p.LongitudeDeg == 180);
+        Assert.Contains(all, p => p.LongitudeDeg == -180);
+        Assert.All(r.PastTrack, l => Assert.All(l.Points.Zip(l.Points.Skip(1)), q => Assert.True(Math.Abs(q.First.LongitudeDeg - q.Second.LongitudeDeg) < 180)));
     }
 }

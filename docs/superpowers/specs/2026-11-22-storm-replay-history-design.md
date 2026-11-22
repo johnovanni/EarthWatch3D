@@ -68,7 +68,7 @@ The glyph's category and colour come from the wind at t:
 | S1 | Live and "at or after the newest advisory" stay exactly as today | Keeps EarthWatch3D's 7 snapshot scenes pixel-identical, and the newest advisory is what was published |
 | S2 | Great-circle interpolation by time between fixes, never extrapolation | Fixes are 3–6 h apart, and storms move fairly steadily between them. Extrapolating would be a forecast |
 | S3 | Grey "intensity unknown" glyph when no wind is known | Showing a later advisory's category at an earlier time would be invented |
-| S4 | GDACS points after the advisory time are treated as forecast and dropped | GDACS mixes past and forecast points in one list; the advisory time is the boundary |
+| S4 | GDACS points after the episode's `todate` are treated as forecast and dropped; `History` stops at `todate`, and its last fix is the advisory's own position (with its wind) at that time, not at `datemodified` | GDACS mixes past and forecast points in one list; `todate` is the time the position applies, `datemodified` only when the record was saved |
 
 ## Testing
 

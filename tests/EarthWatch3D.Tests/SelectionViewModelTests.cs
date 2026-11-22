@@ -249,13 +249,19 @@ public class SelectionViewModelTests
     [Fact]
     public void HoverTextSaysBetweenFixes()
     {
-        var between = Replayed(Noon.AddHours(-3), Noon.AddHours(3), kt: null);
+        var between = Replayed(Noon.AddHours(-3), Noon.AddHours(3), known: false, kt: null);
         Assert.Equal("PENA · position at 12:00 UTC, between the 09:00 and 15:00 fixes (NHC best track)",
             SelectionViewModel.HoverText(between, Noon, DistanceUnits.Kilometres));
-        var onFix = Replayed(Noon.AddHours(-3), Noon.AddHours(3), kt: null);
+        var onFix = Replayed(Noon.AddHours(-3), Noon.AddHours(3), known: false, kt: null);
         Assert.Equal("PENA · fix at 09:00 UTC (NHC best track)",
             SelectionViewModel.HoverText(onFix, Noon.AddHours(-3), DistanceUnits.Kilometres));
-        Assert.EndsWith(" · 50 kt", SelectionViewModel.HoverText(Replayed(Noon.AddHours(-3), Noon.AddHours(3)), Noon, DistanceUnits.Kilometres));
+        // Known intensity: the category comes first, as in the live tooltip, and the wind last.
+        Assert.Equal("PENA · Tropical storm · position at 12:00 UTC, between the 09:00 and 15:00 fixes (NHC best track) · 50 kt",
+            SelectionViewModel.HoverText(Replayed(Noon.AddHours(-3), Noon.AddHours(3)), Noon, DistanceUnits.Kilometres));
+        // Fixes on different UTC days: dates are shown.
+        var days = new DateTime(2026, 11, 8, 21, 0, 0, DateTimeKind.Utc);
+        Assert.Equal("PENA · position at 9 Nov 00:00 UTC, between the 8 Nov 21:00 and 9 Nov 03:00 fixes (NHC best track)",
+            SelectionViewModel.HoverText(Replayed(days, days.AddHours(6), known: false, kt: null), days.AddHours(3), DistanceUnits.Kilometres));
     }
 
     [Fact]

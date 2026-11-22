@@ -25,7 +25,10 @@ public sealed class GdacsHistoryTests
         Assert.Equal(-150.10, a.History[0].Position.LongitudeDeg, 2);
         Assert.True(a.History[^1].TimeUtc <= U(2026, 11, 11, 15));
         Assert.Equal(U(2026, 11, 11, 15), a.History[^1].TimeUtc);
-        Assert.All(a.History, f => Assert.Null(f.WindKt));
+        Assert.All(a.History.SkipLast(1), f => Assert.Null(f.WindKt));
+        // The last fix is the advisory's own position and wind at the episode's todate (15:00), not at datemodified.
+        Assert.Equal(a.Location, a.History[^1].Position);
+        Assert.NotNull(a.History[^1].WindKt);
         for (var i = 1; i < a.History.Count; i++) Assert.True(a.History[i].TimeUtc > a.History[i - 1].TimeUtc);
     }
 
@@ -51,8 +54,7 @@ public sealed class GdacsHistoryTests
         var json = "{\"features\":[" + Feature("soon", -150) + "," + Feature("10/11 03:00 UTC", -151) + "]}";
         var log = new RecordingLog();
         var a = GdacsReader.ReadGeometry(new MemoryStream(Encoding.UTF8.GetBytes(json)), Event(U(2026, 11, 11, 15)), log);
-        Assert.Single(a.History);
-        Assert.Equal(U(2026, 11, 10, 3), a.History[0].TimeUtc);
+        Assert.Equal([U(2026, 11, 10, 3), U(2026, 11, 11, 15)], a.History.Select(f => f.TimeUtc));   // the track point and the todate fix
         Assert.Single(log.Warnings);
         Assert.Null(GdacsReader.PointTime("soon", U(2026, 11, 11, 15)));
     }

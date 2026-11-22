@@ -126,7 +126,7 @@ public sealed class EventsSceneLayer : SceneLayer, IPickable
 
     public PickResult? HitTest(Point screen, Projector projector, bool hover) =>
         PickEvent(screen, projector, hover) is { } hit
-            ? new PickResult(LayerId, hit, SelectionViewModel.HoverText(hit, _vm.DisplayTimeUtc, _vm.Units))
+            ? new PickResult(LayerId, hit, SelectionViewModel.HoverText(hit, _visibleAtUtc, _vm.Units))
             : null;
 
     /// <summary>The event under the mouse: point events first, then (needing a surface hit test) alert areas.</summary>

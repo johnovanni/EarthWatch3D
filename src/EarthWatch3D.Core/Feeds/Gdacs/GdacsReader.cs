@@ -67,6 +67,7 @@ public static class GdacsReader
         var cone = new List<GeoPolygon>();
         var winds = new List<WindArea>();
         var history = new List<StormFix>();
+        DateTime? episodeTo = null;
         var unknown = new HashSet<string>(StringComparer.Ordinal);
 
         if (doc.RootElement.TryGetProperty("features", out var features) && features.ValueKind == JsonValueKind.Array)
@@ -108,8 +109,10 @@ public static class GdacsReader
                     }
                     else if (cls.StartsWith("Point_Polygon_Point_", StringComparison.Ordinal))
                     {
-                        var toDate = DateTime.TryParse(Str(p, "todate"), CultureInfo.InvariantCulture,
-                            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var td) ? td : e.ModifiedUtc;
+                        var hasToDate = DateTime.TryParse(Str(p, "todate"), CultureInfo.InvariantCulture,
+                            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var td);
+                        var toDate = hasToDate ? td : e.ModifiedUtc;
+                        if (hasToDate && (episodeTo is null || td > episodeTo)) episodeTo = td;
                         var label = Str(p, "polygonlabel") ?? "";
                         if (PointTime(label, toDate) is not { } t) { log.Warn($"GDACS: track point label '{label}' of event {e.EventId} not understood; skipped"); continue; }
                         if (t > toDate) continue;   // a forecast point
@@ -124,6 +127,13 @@ public static class GdacsReader
                     log.Warn($"GDACS: geometry feature of event {e.EventId} malformed; skipped", ex);
                 }
             }
+        }
+
+        // The advisory's own position applies at the episode's todate (not at datemodified): make it History's last fix.
+        if (episodeTo is { } to)
+        {
+            history.RemoveAll(f => f.TimeUtc == to);
+            history.Add(new StormFix(to, location, e.WindKmh / 1.852));
         }
 
         return new CycloneAdvisory(EventSource.Gdacs, "gdacs:" + e.EventId.ToString(CultureInfo.InvariantCulture), e.ModifiedUtc,

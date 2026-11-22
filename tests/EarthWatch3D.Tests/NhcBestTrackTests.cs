@@ -22,15 +22,42 @@ public sealed class NhcBestTrackTests
     {
         using var s = File.OpenRead(Sample("nhc_best_track.kmz"));
         var fixes = BestTrackReader.Read(s, new RecordingLog());
-        Assert.Equal(41, fixes.Count);
-        Assert.Equal(U(2, 12), fixes[0].TimeUtc);
-        Assert.Equal(new GeoPosition(7.7, -129.8), fixes[0].Position);
-        Assert.Equal(20, fixes[0].WindKt);
-        Assert.Equal(U(12, 12), fixes[^1].TimeUtc);
-        Assert.Equal(9.8, fixes[^1].Position.LatitudeDeg, 6);
-        Assert.Equal(-173.2, fixes[^1].Position.LongitudeDeg, 6);
+        // 41 placemarks; the 17 disturbance (DB) fixes before genesis and the DB fix at the end are dropped.
+        Assert.Equal(23, fixes.Count);
+        Assert.Equal(U(6, 18), fixes[0].TimeUtc);
+        Assert.Equal(40, fixes[0].WindKt);
+        Assert.Equal(U(12, 6), fixes[^1].TimeUtc);   // the TD fix; the DB fix at 12:00 is dropped
         Assert.Equal(30, fixes[^1].WindKt);
         for (var i = 1; i < fixes.Count; i++) Assert.True(fixes[i].TimeUtc > fixes[i - 1].TimeUtc);
+    }
+
+    [Fact]
+    public void DisturbanceFixesAreNotInTheHistory()
+    {
+        using var s = File.OpenRead(Sample("nhc_best_track.kmz"));
+        var fixes = BestTrackReader.Read(s, new RecordingLog());
+        Assert.DoesNotContain(fixes, f => f.TimeUtc < U(6, 18));
+        Assert.DoesNotContain(fixes, f => f.TimeUtc == U(12, 12));
+    }
+
+    [Fact]
+    public void FeedHistoryStartsAtFirstTropicalFix()
+    {
+        var handler = Offline();
+        var (feed, store, _) = MakeFeed(handler);
+        feed.RunOnceAsync(CancellationToken.None).GetAwaiter().GetResult();
+        Assert.Equal(U(6, 18), Assert.Single(store.Snapshot.Cyclones).History[0].TimeUtc);
+    }
+
+    [Fact]
+    public void UnknownStormTypeIsKeptAndLoggedOnce()
+    {
+        var log = new RecordingLog();
+        var fixes = BestTrackReader.Read(Kmz(
+            ("2026110900", "10", "-150", "30", "XX"), ("2026110906", "10", "-151", "30", "XX"),
+            ("2026110912", "10", "-152", "30", "EX"), ("2026110918", "10", "-153", "30", "TS")), log);
+        Assert.Equal(3, fixes.Count);
+        Assert.Single(log.Infos, i => i.Contains("XX"));
     }
 
     private static (NhcFeed Feed, EventStore Store, RecordingLog Log) MakeFeed(HttpMessageHandler handler)
@@ -105,11 +132,11 @@ public sealed class NhcBestTrackTests
         Assert.Equal("2026-11-11T15:00:00.000Z", s.BestTrackIssuance);
     }
 
-    private static MemoryStream Kmz(params (string Dtg, string Lat, string Lon, string Intensity)[] rows)
+    private static MemoryStream Kmz(params (string Dtg, string Lat, string Lon, string Intensity, string Type)[] rows)
     {
         var xml = new StringBuilder("<kml><Document>");
         foreach (var r in rows)
-            xml.Append($"<Placemark><atcfdtg>{r.Dtg}</atcfdtg><lat>{r.Lat}</lat><lon>{r.Lon}</lon><intensity>{r.Intensity}</intensity></Placemark>");
+            xml.Append($"<Placemark><atcfdtg>{r.Dtg}</atcfdtg><lat>{r.Lat}</lat><lon>{r.Lon}</lon><intensity>{r.Intensity}</intensity><stormType>{r.Type}</stormType></Placemark>");
         xml.Append("</Document></kml>");
         var ms = new MemoryStream();
         using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
@@ -124,12 +151,12 @@ public sealed class NhcBestTrackTests
     {
         var log = new RecordingLog();
         var fixes = BestTrackReader.Read(Kmz(
-            ("2026110900", "NaN", "-150", "30"),
-            ("2026110906", "10", "Infinity", "30"),
-            ("2026110912", "10", "-150", "0"),
-            ("2026110918", "10", "-151", "-99"),
-            ("2026111000", "10", "-152", "NaN"),
-            ("2026111006", "10", "-153", "35")), log);
+            ("2026110900", "NaN", "-150", "30", "TS"),
+            ("2026110906", "10", "Infinity", "30", "TS"),
+            ("2026110912", "10", "-150", "0", "TS"),
+            ("2026110918", "10", "-151", "-99", "TS"),
+            ("2026111000", "10", "-152", "NaN", "TS"),
+            ("2026111006", "10", "-153", "35", "TS")), log);
         Assert.Equal(4, fixes.Count);
         Assert.Equal(2, log.Warnings.Count);
         Assert.Null(fixes[0].WindKt);
