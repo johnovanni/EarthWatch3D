@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using EarthWatch3D.Core.Geo;
+using GlobeCore.Earth;
 using GlobeCore.Geo;
 
 namespace EarthWatch3D.Core.Events;
@@ -37,7 +37,7 @@ public static partial class CycloneMerger
             if (a.Source != EventSource.Nhc) continue;
             var match = gdacs.FirstOrDefault(g => !dropped.Contains(g)
                 && NormalizeName(g.Name) == NormalizeName(a.Name)
-                && GeoMath.DistanceKm(g.Location, a.Location, EarthSphere.RadiusKm) <= SameStormKm);
+                && GeoMath.DistanceKm(g.Location, a.Location, EarthBody.RadiusKm) <= SameStormKm);
             if (match is not null)
             {
                 dropped.Add(match);

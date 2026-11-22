@@ -1,4 +1,4 @@
-using EarthWatch3D.Core.Geo;
+using GlobeCore.Earth;
 using GlobeCore.Geo;
 
 namespace EarthWatch3D.Core.Events;
@@ -61,7 +61,7 @@ public static class EventVisibility
             {
                 if (e.ClosedUtc is { } closed && closed < t) continue;
                 if (FixAt(e, t) is not { } fix) continue;
-                if (merged.Any(c => GeoMath.DistanceKm(c.Location, fix.Position, EarthSphere.RadiusKm) <= CycloneMerger.SameStormKm)) continue;
+                if (merged.Any(c => GeoMath.DistanceKm(c.Location, fix.Position, EarthBody.RadiusKm) <= CycloneMerger.SameStormKm)) continue;
                 eonet.Add(new VisibleEonet(e, fix));
             }
 

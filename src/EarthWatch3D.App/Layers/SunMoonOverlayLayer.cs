@@ -6,7 +6,7 @@ using System.Windows.Media.Media3D;
 using AstroCore.Earth;
 using EarthWatch3D.App.Rendering;
 using EarthWatch3D.App.ViewModels;
-using EarthWatch3D.Core.Geo;
+using GlobeCore.Earth;
 using GlobeCore.Wpf.Layers;
 using GlobeCore.Wpf.Rendering;
 
@@ -45,7 +45,7 @@ public sealed class SunMoonOverlayLayer : OverlayLayer
         double fraction = sm.MoonIlluminatedPercent / 100.0;
         var sun = sm.SubSolar.ToUnitVector();
         var moon = sm.SubLunar.ToUnitVector();
-        double moonR = sm.MoonDistanceKm / EarthSphere.RadiusKm;
+        double moonR = sm.MoonDistanceKm / EarthBody.RadiusKm;
         _overlay.Update(projector, new Vector3D(sun.X, sun.Y, sun.Z),
             new Point3D(moon.X * moonR, moon.Y * moonR, moon.Z * moonR), fraction, sm.MoonWaxing, CardBounds());
     }

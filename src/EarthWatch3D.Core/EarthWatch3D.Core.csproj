@@ -3,6 +3,8 @@
   <ItemGroup>
     <ProjectReference Include="$(AstroCoreRoot)src\AstroCore\AstroCore.csproj" />
     <ProjectReference Include="$(GlobeCoreRoot)src\GlobeCore\GlobeCore.csproj" />
+    <!-- The Earth pack (no UI): EarthBody.RadiusKm and the embedded assets. -->
+    <ProjectReference Include="$(GlobeCoreRoot)src\GlobeCore.Earth\GlobeCore.Earth.csproj" />
   </ItemGroup>
 
   <ItemGroup>

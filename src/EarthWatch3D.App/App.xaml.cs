@@ -51,6 +51,9 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+#if PERF_LOG
+        Diagnostics.PerfLog.Configure();   // GlobeCore's compose timings too go to %TEMP%\EarthWatch3D-perf.log
+#endif
         // The log comes first (it always uses the real time and the usual folder), so even a bad command line is logged.
         string logsDir = AppPaths.Default.LogsDir;
         var log = _log = new FileLog(logsDir, new SystemClock(), AppInfo.LogFilePrefix);
@@ -233,7 +236,7 @@ public partial class App : Application
         _cacheWriter = new EventCacheWriter(store, s =>
         {
             bool ok = cache.Save(s);
-            PerfLog.Write($"event cache save #{Interlocked.Increment(ref cacheSaves)} ok={ok}: {s.Earthquakes.Count} quakes, {s.Alerts.Count} alerts");
+            Diagnostics.PerfLog.Write($"event cache save #{Interlocked.Increment(ref cacheSaves)} ok={ok}: {s.Earthquakes.Count} quakes, {s.Alerts.Count} alerts");
         }, log: log);
 #else
         _cacheWriter = new EventCacheWriter(store, s => cache.Save(s), log: log);

@@ -160,8 +160,9 @@ dotnet build src/EarthWatch3D.App -c Release "-p:DefineConstants=TRACE%3BRELEASE
 `%3B` is an escaped `;`. Setting `DefineConstants` replaces the SDK's own list, so the command repeats `TRACE` and
 `RELEASE` (the .NET SDK has no `ExtraDefineConstants` property to add to the list instead).
 
-That build appends load timings and memory use to `%TEMP%\EarthWatch3D-perf.log`, and the compose timings (written by
-GlobeCore's layer host) to `%TEMP%\GlobeCore-perf.log`. It accepts `--bench`, which spins the globe once (360° over 5 s) and logs the frame rate. With `--offline-samples`, the bench
+That build appends load timings, memory use and the compose timings to `%TEMP%\EarthWatch3D-perf.log` (the compose
+lines are written by GlobeCore's layer host, whose log the app names after itself at start-up). It accepts `--bench`,
+which spins the globe once (360° over 5 s) and logs the frame rate. With `--offline-samples`, the bench
 waits until the sample events are drawn, so it measures the globe with events on it. Rebuild normally afterwards. The
 measured numbers are in [docs/perf.md](docs/perf.md).
 

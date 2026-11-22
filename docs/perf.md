@@ -14,8 +14,9 @@ On a PC with a separate graphics card the working set would be lower.
 - **Working set:** `Get-Process` `WorkingSet64` from outside the app, and, in the `PERF_LOG` build, the app's own
   `Process.WorkingSet64` 10 s after the first globe image is shown.
 - **Compose time:** the `PERF_LOG` build times every compose (`GlobeImageComposer.ComposeInto` on a background
-  task) and logs it with the UTC time and sub-solar point. GlobeCore's layer host writes these lines, to
-  `%TEMP%\GlobeCore-perf.log`; the rest of the app's log is `%TEMP%\EarthWatch3D-perf.log`.
+  task) and logs it with the UTC time and sub-solar point. GlobeCore's layer host writes these lines through
+  GlobeCore's `PerfLog`, which the app names after itself at start-up (`PerfLog.Configure("EarthWatch3D")`), so they
+  are in `%TEMP%\EarthWatch3D-perf.log` with the rest of the app's log (one file, one writer).
 - **Frames per second:** the `PERF_LOG` build's `--bench` option spins the camera 360° about +Z over 5 s and counts
   distinct `CompositionTarget.Rendering` frames.
 
@@ -23,7 +24,6 @@ On a PC with a separate graphics card the working set would be lower.
 dotnet build src/EarthWatch3D.App -c Release "-p:DefineConstants=TRACE%3BRELEASE%3BPERF_LOG"
 src\EarthWatch3D.App\bin\Release\net10.0-windows\EarthWatch3D.App.exe --bench
 type %TEMP%\EarthWatch3D-perf.log
-type %TEMP%\GlobeCore-perf.log
 ```
 
 ## Results

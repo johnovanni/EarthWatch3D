@@ -10,6 +10,7 @@ using EarthWatch3D.App.Layers;
 using EarthWatch3D.App.ViewModels;
 using GlobeCore.Logging;
 using GlobeCore.Time;
+using GlobeCore.Wpf.Diagnostics;
 
 namespace EarthWatch3D.App.Diagnostics;
 
@@ -249,20 +250,13 @@ public static class SnapshotDiagnostic
         finally { host.Composed -= OnComposed; }
     }
 
-    /// <summary>Renders the window's client area at the window's DPI and saves it as a PNG.</summary>
+    /// <summary>
+    /// Renders the window's client area at the window's DPI and saves it as a PNG (GlobeCore's
+    /// <see cref="SnapshotRenderer.SavePng"/>). Nothing to render (no content, or not laid out yet) is a failure.
+    /// </summary>
     public static void Save(Window window, string path)
     {
-        var content = (FrameworkElement)window.Content;
-        var dpi = VisualTreeHelper.GetDpi(window);
-        int pw = (int)Math.Ceiling(content.ActualWidth * dpi.DpiScaleX);
-        int ph = (int)Math.Ceiling(content.ActualHeight * dpi.DpiScaleY);
-        var rtb = new RenderTargetBitmap(pw, ph, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-        rtb.Render(window);
-        var encoder = new PngBitmapEncoder();
-        encoder.Frames.Add(BitmapFrame.Create(rtb));
-        string full = Path.GetFullPath(path);
-        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-        using var stream = File.Create(full);
-        encoder.Save(stream);
+        if (!SnapshotRenderer.SavePng(window, path))
+            throw new InvalidOperationException($"Nothing to render for the snapshot {path}: the window has no laid-out content.");
     }
 }

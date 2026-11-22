@@ -21,7 +21,11 @@ internal static class GlobeLoader
 #if PERF_LOG
         var load = Stopwatch.StartNew();
 #endif
-        var decodeTask = Task.Run(() => EarthAssets.LoadBlueMarble(width));
+        var decodeTask = Task.Run(() =>
+        {
+            using var s = EarthAssets.Open(EarthAssets.BlueMarbleFile);
+            return ImageConversions.DecodeToBgra32(s, width);   // scales while decoding
+        });
         var linesTask = Task.Run(() => (Coast: NaturalEarthLines.Coastlines(),
                                         Borders: NaturalEarthLines.LandBoundaries()));
         await Task.WhenAll(decodeTask, linesTask);   // observes both exceptions

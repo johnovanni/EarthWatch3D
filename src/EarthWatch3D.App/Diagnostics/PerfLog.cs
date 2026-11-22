@@ -1,27 +1,22 @@
 #if PERF_LOG
-using System.Diagnostics;
-using System.Globalization;
-using System.IO;
+using EarthWatch3D.Core;
 
 namespace EarthWatch3D.App.Diagnostics;
 
-/// <summary>PERF_LOG builds only: appends timestamped lines to %TEMP%\EarthWatch3D-perf.log.</summary>
+/// <summary>
+/// PERF_LOG builds only: appends timestamped lines to %TEMP%\EarthWatch3D-perf.log. It writes through GlobeCore's
+/// <see cref="GlobeCore.Wpf.Diagnostics.PerfLog"/>, which <see cref="Configure"/> names after the app at start-up, so the
+/// app's lines and GlobeCore's (the layer host's compose timings) go to the one file through one writer and one lock.
+/// </summary>
 internal static class PerfLog
 {
-    public static readonly string FilePath = Path.Combine(Path.GetTempPath(), "EarthWatch3D-perf.log");
-    private static readonly object Gate = new();
+    /// <summary>Points GlobeCore's log at %TEMP%\EarthWatch3D-perf.log. Called first thing at start-up.</summary>
+    public static void Configure() => GlobeCore.Wpf.Diagnostics.PerfLog.Configure(AppInfo.Name);
 
-    public static void Write(string message)
-    {
-        string line = string.Create(CultureInfo.InvariantCulture, $"{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ} {message}{Environment.NewLine}");
-        lock (Gate) File.AppendAllText(FilePath, line);
-    }
+    public static string FilePath => GlobeCore.Wpf.Diagnostics.PerfLog.FilePath;
 
-    public static string Memory()
-    {
-        using var p = Process.GetCurrentProcess();
-        return string.Create(CultureInfo.InvariantCulture,
-            $"ws={p.WorkingSet64 / 1048576.0:F0} MB private={p.PrivateMemorySize64 / 1048576.0:F0} MB managed={GC.GetTotalMemory(false) / 1048576.0:F0} MB");
-    }
+    public static void Write(string message) => GlobeCore.Wpf.Diagnostics.PerfLog.Write(message);
+
+    public static string Memory() => GlobeCore.Wpf.Diagnostics.PerfLog.Memory();
 }
 #endif

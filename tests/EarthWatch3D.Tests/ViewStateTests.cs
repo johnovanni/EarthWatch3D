@@ -1,19 +1,11 @@
 using AstroCore.Earth;
 using EarthWatch3D.Core.Geo;
 using EarthWatch3D.Core.Lightning;
-using GlobeCore.Earth;
 
 namespace EarthWatch3D.Tests;
 
 public class ViewStateTests
 {
-    [Fact]
-    public void EarthRadiusMatchesTheEarthPack()
-    {
-        Assert.Equal(6371.0, EarthSphere.RadiusKm);
-        Assert.Equal(EarthBody.RadiusKm, EarthSphere.RadiusKm);
-    }
-
     [Fact]
     public void FacesUsesTheGreatCircleAngle()
     {
