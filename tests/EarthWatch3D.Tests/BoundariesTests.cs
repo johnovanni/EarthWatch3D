@@ -10,6 +10,7 @@ using EarthWatch3D.Core;
 using EarthWatch3D.Core.Storage;
 using GlobeCore.Earth;
 using GlobeCore.Feeds;
+using GlobeCore.Geo;
 using GlobeCore.Regions;
 using GlobeCore.Storage;
 
@@ -86,8 +87,9 @@ public class BoundariesTests
         Assert.True(data.Validator.Validate(set).IsValid, data.Validator.Validate(set).Reason);
         using var s = File.OpenRead(Path.Combine(DataDir, BoundaryData.ProbesFile));
         var probes = BoundaryValidator.ReadProbes(s);
-        Assert.Equal(["SDN", "UKR", "UKR", "FJI", "FJI"], probes.Select(p => p.ExpectedId));
+        Assert.Equal(["SDN", "UKR", "UKR", "UKR", "FJI", "FJI"], probes.Select(p => p.ExpectedId));
         Assert.Contains(probes, p => p.Point.LatitudeDeg == 45.0 && p.Point.LongitudeDeg == 34.1);   // Crimea
+        Assert.Contains(probes, p => p.Point.LatitudeDeg == 44.6 && p.Point.LongitudeDeg == 33.5 && p.ExpectedId == "UKR");   // Sevastopol, as in EarthRelief3D
         Assert.Contains(probes, p => p.ExpectedId == "FJI" && p.Point.LongitudeDeg > 0);
         Assert.Contains(probes, p => p.ExpectedId == "FJI" && p.Point.LongitudeDeg < 0);
         Assert.Equal("UKR", set.Regions.Find(new(44.95, 34.10))?.Id);   // Simferopol
@@ -95,14 +97,32 @@ public class BoundariesTests
     }
 
     [Fact]
-    public void BordersAreTheLinesDrawnBefore()
+    public void BordersLeaveOutThePerekopLineAndKeepTheKerchStraitLine()
     {
-        // The globe draws exactly the lines it drew before the boundary sets (GlobeCore's transitional default had the same
-        // rule), so the snapshots stay pixel-identical: the Perekop line is still left out.
-        var before = NaturalEarthLines.LandBoundaries();
+        // Natural Earth's own lines, as bundled, against the lines the app's set draws (the Crimea rule, B-7).
+        List<IReadOnlyList<AstroCore.Earth.GeoPosition>> raw;
+        using (var s = EarthAssets.Open(EarthAssets.LandBoundariesFile)) raw = [.. GeoJsonLines.Read(s)];
         var now = NaturalEarthLines.LandBoundaries(Bundled.Value.Current.Set);
-        Assert.Equal(before.Count, now.Count);
-        for (int i = 0; i < before.Count; i++) Assert.Equal(before[i], now[i]);
+
+        // One line fewer: the Perekop isthmus line, between Crimea and the rest of Ukraine (45.73-46.22° N, 33.59-35.00° E),
+        // which lies wholly in a box around Crimea. The box stops at 36.5° E: the Kerch Strait line (36.51-36.69° E) runs
+        // along Crimea's eastern edge and must stay.
+        static bool InCrimea(IReadOnlyList<AstroCore.Earth.GeoPosition> line) =>
+            line.All(p => p.LatitudeDeg is >= 44.0 and <= 46.3 && p.LongitudeDeg is >= 32.4 and <= 36.5);
+        Assert.Equal(raw.Count - 1, now.Count);
+        Assert.Single(raw, InCrimea);
+        Assert.DoesNotContain(now, InCrimea);
+
+        // The Kerch Strait line (Ukraine-Russia, near 45.3° N 36.5° E) stays.
+        Assert.Contains(now, l => l.Any(p => p.LatitudeDeg is > 44.9 and < 45.7 && p.LongitudeDeg is > 36.4 and < 36.8));
+    }
+
+    [Fact]
+    public void TheRejectionFingerprintIsOfTheShippedRulesAndProbes()
+    {
+        var expected = BoundaryUpdateFeed.Fingerprint(File.ReadAllBytes(Path.Combine(DataDir, BoundaryData.RulesFile)),
+            File.ReadAllBytes(Path.Combine(DataDir, BoundaryData.ProbesFile)));
+        Assert.Equal(expected, Bundled.Value.Fingerprint);
     }
 
     [Fact]

@@ -176,7 +176,10 @@ measured numbers are in [docs/perf.md](docs/perf.md).
   test points such as Kyiv, Khartoum and Fiji must land in the right country); a rejected release changes nothing
   and turns the **Borders** status dot amber. Crimea and Sevastopol are shown as part of
   Ukraine, as on UN maps (UN General Assembly resolution 68/262); that rule is in `data\boundary-rules.json` and is
-  applied to every edition. The Boundaries button's tooltip names the edition in use and the rule.
+  applied to every edition. The Boundaries button's tooltip names the edition in use and the rule. Adopting a new
+  release downloads about 6.2 MB (countries 3.08 MB, lines 0.76 MB, admin-1 2.33 MB), once per release, counted by
+  the daily download limit; the daily check is a few KB. A rejected release is not downloaded again, and after a
+  failed download the next try waits 6 hours.
 - **Plate boundaries:** Peter Bird (2003), An updated digital model of plate boundaries, G³ 4(3):1027; GIS data by Hugo Ahlenius, Nordpil (ODC-By 1.0, https://opendatacommons.org/licenses/by/1-0/).
 - **Globe:** GlobeCore, the shared globe library (the globe mesh, layers, camera, feeds and the Earth assets) that was
   taken out of this app (included as a git submodule).

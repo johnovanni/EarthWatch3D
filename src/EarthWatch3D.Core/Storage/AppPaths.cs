@@ -38,7 +38,7 @@ public sealed record AppPaths(AppDataRoot Data)
         Directory.CreateDirectory(CacheDir);
         Directory.CreateDirectory(ZonesDir);
         Directory.CreateDirectory(CloudsDir);
-        // Made now, not when a set is first stored: GlobeCore's feed tidies a file in it after every check.
+        // The boundary store's folder: the sets the "Borders" feed adopts, and any remembered rejection (rejected.json).
         Directory.CreateDirectory(BoundariesDir);
         Directory.CreateDirectory(LogsDir);
     }

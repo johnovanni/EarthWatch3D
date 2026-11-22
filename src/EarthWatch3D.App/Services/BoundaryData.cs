@@ -26,15 +26,22 @@ public sealed class BoundaryData
     /// <summary>The installed <c>data</c> folder next to the app.</summary>
     public static string InstalledDataDir => Path.Combine(AppContext.BaseDirectory, "data");
 
-    private BoundaryData(BoundaryRules rules, BoundaryValidator validator, BoundaryStore store, CurrentBoundaries current)
+    private BoundaryData(BoundaryRules rules, BoundaryValidator validator, BoundaryStore store, CurrentBoundaries current, string fingerprint)
     {
         Rules = rules;
         Validator = validator;
         Store = store;
         Current = current;
+        Fingerprint = fingerprint;
     }
 
     public BoundaryRules Rules { get; }
+
+    /// <summary>
+    /// The fingerprint GlobeCore keeps with a remembered rejection (<see cref="BoundaryUpdateFeed.Fingerprint"/>): of the
+    /// rules and probes files' bytes and GlobeCore's version. An app update that changes either file forgets the rejection.
+    /// </summary>
+    public string Fingerprint { get; }
     public BoundaryValidator Validator { get; }
     public BoundaryStore Store { get; }
 
@@ -51,10 +58,11 @@ public sealed class BoundaryData
     public static BoundaryData Load(string dataDir, string cacheDir, IAppLog log)
     {
         ArgumentNullException.ThrowIfNull(log);
-        BoundaryRules rules;
-        using (var s = File.OpenRead(Path.Combine(dataDir, RulesFile))) rules = BoundaryRules.Parse(s);
-        IReadOnlyList<(AstroCore.Earth.GeoPosition Point, string ExpectedId)> probes;
-        using (var s = File.OpenRead(Path.Combine(dataDir, ProbesFile))) probes = BoundaryValidator.ReadProbes(s);
+        // Read as bytes once: parsed here, and fingerprinted for the update feed's remembered rejection.
+        var rulesBytes = File.ReadAllBytes(Path.Combine(dataDir, RulesFile));
+        var probesBytes = File.ReadAllBytes(Path.Combine(dataDir, ProbesFile));
+        var rules = BoundaryRules.Parse(new MemoryStream(rulesBytes, writable: false));
+        var probes = BoundaryValidator.ReadProbes(new MemoryStream(probesBytes, writable: false));
 
         // As NaturalEarthBoundaries.Load, but the bundled set is read once: it also gives the validator its region count.
         var bundled = NaturalEarthBoundaries.LoadBundled(rules);
@@ -68,13 +76,14 @@ public sealed class BoundaryData
             log.Info($"Boundaries: {stored.Edition} from {store.CacheDir}");
         }
         else log.Info($"Boundaries: bundled {bundled.Edition} ({reason})");
-        return new BoundaryData(rules, validator, store, new CurrentBoundaries(set, log));
+        return new BoundaryData(rules, validator, store, new CurrentBoundaries(set, log), BoundaryUpdateFeed.Fingerprint(rulesBytes, probesBytes));
     }
 
     /// <summary>
     /// The daily update check on the app's shared HTTP client (its User-Agent; its byte count goes to the download meter),
-    /// paused while the meter's daily limit is reached.
+    /// paused while the meter's daily limit is reached. A rejected release is remembered with <see cref="Fingerprint"/>;
+    /// after a failed download the feed waits 6 hours before downloading again (ruling R5).
     /// </summary>
     public BoundaryUpdateFeed CreateFeed(FeedHttp http, DownloadMeter meter, IAppLog log) =>
-        new(new NaturalEarthBoundarySource(http), Rules, Validator, Store, Current, log, meter);
+        new(new NaturalEarthBoundarySource(http), Rules, Validator, Store, Current, log, Fingerprint, meter);
 }

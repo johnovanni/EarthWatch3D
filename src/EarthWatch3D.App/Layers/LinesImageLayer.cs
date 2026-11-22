@@ -90,8 +90,8 @@ public sealed class LinesImageLayer : ImageLayer
 
     /// <summary>
     /// Draws the borders of <paramref name="set"/> (a newer set adopted by the "Borders" feed): reads the coastlines and
-    /// rasterizes them with the set's lines at the same size, off the UI thread (the coastlines on the pool, the raster on
-    /// the STA worker, as the plates are built), then swaps them in and asks for a compose if the layer is shown. Call on
+    /// rasterizes them with the set's lines at the same size, off the UI thread (the coastlines and the set's lines on the
+    /// pool, the raster on the STA worker, as the plates are built), then swaps them in and asks for a compose if the layer is shown. Call on
     /// the UI thread. True once the set's borders are drawn; false if a newer set was asked for meanwhile, the window
     /// closed, or the raster failed (logged; the borders drawn before stay).
     /// </summary>
@@ -104,8 +104,7 @@ public sealed class LinesImageLayer : ImageLayer
         SparseOverlay lines;
         try
         {
-            var coast = await Task.Run(() => NaturalEarthLines.Coastlines());
-            var borders = NaturalEarthLines.LandBoundaries(set);
+            var (coast, borders) = await Task.Run(() => (NaturalEarthLines.Coastlines(), NaturalEarthLines.LandBoundaries(set)));
             lines = await _sta.InvokeAsync(() => RasterizeCoastAndBorders(coast, borders, w, h));
         }
         catch (Exception ex)
