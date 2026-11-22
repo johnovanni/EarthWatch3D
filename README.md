@@ -187,3 +187,8 @@ measured numbers are in [docs/perf.md](docs/perf.md).
 
 The data sources, their URLs and how often they are read are listed in [docs/data-sources.md](docs/data-sources.md).
 The events are shown for interest, not for safety decisions: follow your local weather service and authorities.
+
+## Licence
+
+EarthWatch3D's own code is under the MIT licence: see [LICENSE](LICENSE). The data and libraries credited above keep
+their own terms (`THIRD-PARTY-NOTICES.txt`).
