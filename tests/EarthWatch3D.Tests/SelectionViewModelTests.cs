@@ -229,4 +229,43 @@ public class SelectionViewModelTests
         vm.CloseCommand.Execute(null);
         Assert.False(vm.IsOpen);
     }
+
+    private static CycloneAdvisory Replayed(DateTime earlier, DateTime? later, bool known = true, double? kt = 50) =>
+        Storm(kt) with { Replay = new ReplayInfo(earlier, later, "NHC best track", known) };
+
+    private static readonly DateTime Noon = new(2026, 11, 12, 12, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public void ReplayedStormStaysSelected()
+    {
+        var vm = Vm();
+        vm.Select(Replayed(Noon.AddHours(-3), Noon.AddHours(3)));
+        var next = Replayed(Noon.AddHours(-2), Noon.AddHours(4));
+        vm.ClearIfNotVisible(new VisibleEvents([], [next], [], []));
+        Assert.True(vm.IsOpen);
+        Assert.Same(next, vm.Selected);
+    }
+
+    [Fact]
+    public void HoverTextSaysBetweenFixes()
+    {
+        var between = Replayed(Noon.AddHours(-3), Noon.AddHours(3), kt: null);
+        Assert.Equal("PENA · position at 12:00 UTC, between the 09:00 and 15:00 fixes (NHC best track)",
+            SelectionViewModel.HoverText(between, Noon, DistanceUnits.Kilometres));
+        var onFix = Replayed(Noon.AddHours(-3), Noon.AddHours(3), kt: null);
+        Assert.Equal("PENA · fix at 09:00 UTC (NHC best track)",
+            SelectionViewModel.HoverText(onFix, Noon.AddHours(-3), DistanceUnits.Kilometres));
+        Assert.EndsWith(" · 50 kt", SelectionViewModel.HoverText(Replayed(Noon.AddHours(-3), Noon.AddHours(3)), Noon, DistanceUnits.Kilometres));
+    }
+
+    [Fact]
+    public void ReplayDetailsSayPositionAndUnknownIntensity()
+    {
+        var vm = new SelectionViewModel(() => Noon);
+        vm.Select(Replayed(Noon.AddHours(-3), Noon.AddHours(3), known: false, kt: null));
+        Assert.Equal("Intensity unknown", vm.Lines.First(l => l.Label == "Category").Value);
+        Assert.Equal("position at 12:00 UTC, between the 09:00 and 15:00 fixes (NHC best track)",
+            vm.Lines.First(l => l.Label == "Position").Value);
+        Assert.DoesNotContain(vm.Lines, l => l.Label == "Advisory time");
+    }
 }

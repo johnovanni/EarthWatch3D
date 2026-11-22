@@ -1,7 +1,7 @@
 # Storm replay history (EW-003) — Design
 
 **Date:** 2026-11-22
-**Status:** Approved by the owner 2026-11-22
+**Status:** Built
 **Issue:** EW-003 in `private/EarthWatch3D-issues.xlsx`: "Tropical storms don't move during time-bar playback"
 (Severity Major, Priority High). Found by the owner on 2026-11-22.
 

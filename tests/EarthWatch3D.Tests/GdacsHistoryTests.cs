@@ -54,10 +54,8 @@ public sealed class GdacsHistoryTests
         Assert.Single(a.History);
         Assert.Equal(U(2026, 11, 10, 3), a.History[0].TimeUtc);
         Assert.Single(log.Warnings);
-        Assert.Equal(PointTimeNull(), GdacsReader.PointTime("soon", U(2026, 11, 11, 15)));
+        Assert.Null(GdacsReader.PointTime("soon", U(2026, 11, 11, 15)));
     }
-
-    private static DateTime? PointTimeNull() => null;
 
     [Fact]
     public void CircleOverDateLineIsCentredCorrectly()
@@ -65,5 +63,18 @@ public sealed class GdacsHistoryTests
         var json = "{\"features\":[" + Feature("10/11 03:00 UTC", 179.99) + "]}";
         var a = GdacsReader.ReadGeometry(new MemoryStream(Encoding.UTF8.GetBytes(json)), Event(U(2026, 11, 11, 15)), new RecordingLog());
         Assert.Equal(179.99, a.History[0].Position.LongitudeDeg, 2);
+    }
+
+    [Fact]
+    public void CircleCentreWithWrappedRing()
+    {
+        // The ring is written the wrapped way: vertices at 179.98 and -179.98, never beyond 180.
+        string C(double x, double y) => FormattableString.Invariant($"[{x},{y}]");
+        var ring = string.Join(",", C(179.98, 10.0), C(-179.99, 10.03), C(-179.98, 10.06), C(179.99, 10.09), C(179.98, 10.0));
+        var json = "{\"features\":[{\"type\":\"Feature\",\"properties\":{\"Class\":\"Point_Polygon_Point_0\",\"polygonlabel\":\"10/11 03:00 UTC\","
+            + "\"todate\":\"2026-11-11T15:00:00\"},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[" + ring + "]]}}]}";
+        var a = GdacsReader.ReadGeometry(new MemoryStream(Encoding.UTF8.GetBytes(json)), Event(U(2026, 11, 11, 15)), new RecordingLog());
+        Assert.Equal(180, Math.Abs(a.History[0].Position.LongitudeDeg), 2);
+        Assert.Equal(10.045, a.History[0].Position.LatitudeDeg, 3);
     }
 }

@@ -134,6 +134,7 @@
                         <StackPanel Style="{StaticResource Row}"><Rectangle Style="{StaticResource Swatch}" Fill="#FFC140"/><TextBlock Text="Category 3"/></StackPanel>
                         <StackPanel Style="{StaticResource Row}"><Rectangle Style="{StaticResource Swatch}" Fill="#FF8F20"/><TextBlock Text="Category 4"/></StackPanel>
                         <StackPanel Style="{StaticResource Row}"><Rectangle Style="{StaticResource Swatch}" Fill="#FF6060"/><TextBlock Text="Category 5"/></StackPanel>
+                        <StackPanel Style="{StaticResource Row}"><Rectangle Style="{StaticResource Swatch}" Fill="#9AA0A6"/><TextBlock Text="Intensity unknown (replay)"/></StackPanel>
                         <TextBlock Style="{StaticResource LegendNote}" Text="Track and forecast cone in white. Wind areas:"/>
                         <StackPanel Style="{StaticResource Row}" Margin="0,2,0,0">
                             <Rectangle Style="{StaticResource Swatch}" Fill="#34C759"/><TextBlock Text="60 km/h  " />

@@ -24,6 +24,8 @@ A Windows desktop app (C#, WPF, HelixToolkit) that shows a 3D Earth with what is
 - **Tropical cyclones** (NHC every 15 min, GDACS every 15 min): a glyph coloured by category, the past track as a
   solid white line, the forecast track dashed, the forecast cone in white and the GDACS wind areas, all drawn
   correctly across the date line. When NHC and GDACS report the same storm it is shown once, from NHC.
+  In replay a storm moves along its observed track (NHC best track, GDACS track points), never along the forecast; a
+  grey glyph means its strength at that time isn't known.
 - **US weather alerts** (NWS, every 2 min): the alert areas drawn on the globe in the standard NWS colours. Alerts that
   name forecast zones instead of giving an outline are drawn once the zone outlines have downloaded (kept on disk for
   30 days). Warnings are shown by default; watches, advisories and statements can be added.

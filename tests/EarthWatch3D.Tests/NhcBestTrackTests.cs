@@ -104,4 +104,37 @@ public sealed class NhcBestTrackTests
         Assert.Equal(BestUrl, s.BestTrackKmz?.ToString());
         Assert.Equal("2026-11-11T15:00:00.000Z", s.BestTrackIssuance);
     }
+
+    private static MemoryStream Kmz(params (string Dtg, string Lat, string Lon, string Intensity)[] rows)
+    {
+        var xml = new StringBuilder("<kml><Document>");
+        foreach (var r in rows)
+            xml.Append($"<Placemark><atcfdtg>{r.Dtg}</atcfdtg><lat>{r.Lat}</lat><lon>{r.Lon}</lon><intensity>{r.Intensity}</intensity></Placemark>");
+        xml.Append("</Document></kml>");
+        var ms = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        using (var w = new StreamWriter(zip.CreateEntry("x.kml").Open(), new UTF8Encoding(false)))
+            w.Write(xml.ToString());
+        ms.Position = 0;
+        return ms;
+    }
+
+    [Fact]
+    public void NonFiniteCoordinatesAreRejectedAndNoValueIntensityIsUnknown()
+    {
+        var log = new RecordingLog();
+        var fixes = BestTrackReader.Read(Kmz(
+            ("2026110900", "NaN", "-150", "30"),
+            ("2026110906", "10", "Infinity", "30"),
+            ("2026110912", "10", "-150", "0"),
+            ("2026110918", "10", "-151", "-99"),
+            ("2026111000", "10", "-152", "NaN"),
+            ("2026111006", "10", "-153", "35")), log);
+        Assert.Equal(4, fixes.Count);
+        Assert.Equal(2, log.Warnings.Count);
+        Assert.Null(fixes[0].WindKt);
+        Assert.Null(fixes[1].WindKt);
+        Assert.Null(fixes[2].WindKt);
+        Assert.Equal(35, fixes[3].WindKt);
+    }
 }

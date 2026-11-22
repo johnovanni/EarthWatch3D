@@ -34,9 +34,10 @@ public static class BestTrackReader
             if (!DateTime.TryParseExact(dtg, "yyyyMMddHH", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var t)
                 || !double.TryParse(Child("lat"), NumberStyles.Float, CultureInfo.InvariantCulture, out var lat)
                 || !double.TryParse(Child("lon"), NumberStyles.Float, CultureInfo.InvariantCulture, out var lon)
-                || lat is < -90 or > 90)
+                || !double.IsFinite(lat) || !double.IsFinite(lon) || lat is < -90 or > 90)
             { log.Warn($"Best track: fix '{dtg}' malformed; skipped"); continue; }
-            double? wind = double.TryParse(Child("intensity"), NumberStyles.Float, CultureInfo.InvariantCulture, out var w) ? w : null;
+            // NHC writes 0 or -99 where it has no wind value.
+            double? wind = double.TryParse(Child("intensity"), NumberStyles.Float, CultureInfo.InvariantCulture, out var w) && double.IsFinite(w) && w > 0 ? w : null;
             fixes.Add(new StormFix(t, new GeoPosition(lat, GeoPosition.NormalizeLongitude(lon)), wind));
         }
         return [.. fixes.OrderBy(f => f.TimeUtc).GroupBy(f => f.TimeUtc).Select(g => g.First())];

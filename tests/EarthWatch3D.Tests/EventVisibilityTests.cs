@@ -1,5 +1,14 @@
+using System.IO;
 using AstroCore.Earth;
+using EarthWatch3D.App.Diagnostics;
+using EarthWatch3D.Core;
 using EarthWatch3D.Core.Events;
+using EarthWatch3D.Core.Feeds;
+using EarthWatch3D.Core.Feeds.Gdacs;
+using EarthWatch3D.Core.Feeds.Nhc;
+using GlobeCore.Earth;
+using GlobeCore.Feeds;
+using GlobeCore.Geo;
 
 namespace EarthWatch3D.Tests;
 
@@ -146,5 +155,35 @@ public class EventVisibilityTests
     {
         var s = Snap(c: [Adv("gdacs:1", T.AddHours(-1), src: EventSource.Gdacs, name: "PENA-26")]);
         Assert.Equal("gdacs:1", Assert.Single(EventVisibility.At(s, T, DisplayFilter.Default).Cyclones).Id);
+    }
+
+    [Fact]
+    public async Task SampleStormMovesInReplay()
+    {
+        var clock = new TestClock(new DateTime(2026, 11, 11, 20, 0, 0, DateTimeKind.Utc));
+        var store = new EventStore(clock);
+        var log = new RecordingLog();
+        using var http = new FeedHttp(AppInfo.UserAgent, OfflineSamples.CreateHandler(Path.Combine(AppContext.BaseDirectory, "Samples")));
+        await new NhcFeed(http, store, log).RunOnceAsync(CancellationToken.None);
+        await new GdacsFeed(http, store, clock, log).RunOnceAsync(CancellationToken.None);
+        var s = store.Snapshot;
+
+        CycloneAdvisory Pena(DateTime t) => Assert.Single(EventVisibility.At(s, t, DisplayFilter.Default).Cyclones, c => c.Name.Contains("Pena", StringComparison.OrdinalIgnoreCase));
+        var t1 = new DateTime(2026, 11, 9, 0, 0, 0, DateTimeKind.Utc);
+        var t2 = new DateTime(2026, 11, 10, 0, 0, 0, DateTimeKind.Utc);
+        var p1 = Pena(t1);
+        var p2 = Pena(t2);
+        Assert.True(GeoMath.DistanceKm(p1.Location, p2.Location, EarthBody.RadiusKm) > 100);
+        foreach (var (p, t) in new[] { (p1, t1), (p2, t2) })
+        {
+            Assert.NotNull(p.Replay);
+            Assert.True(p.Replay!.EarlierFixUtc <= t && t < p.Replay.LaterFixUtc);
+            var nhcFixes = s.Cyclones.Where(c => c.Id.StartsWith("nhc:")).SelectMany(c => c.History).ToList();
+            var before = nhcFixes.Where(f => f.TimeUtc == p.Replay.EarlierFixUtc).Select(f => f.Position).First();
+            var after = nhcFixes.Where(f => f.TimeUtc == p.Replay.LaterFixUtc).Select(f => f.Position).First();
+            var leg = GeoMath.DistanceKm(before, after, EarthBody.RadiusKm);
+            Assert.True(GeoMath.DistanceKm(before, p.Location, EarthBody.RadiusKm) <= leg + 1);
+            Assert.True(GeoMath.DistanceKm(p.Location, after, EarthBody.RadiusKm) <= leg + 1);
+        }
     }
 }

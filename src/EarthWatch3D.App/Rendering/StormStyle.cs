@@ -13,9 +13,18 @@ public static class StormStyle
         "Hurricane", "Typhoon", "Cyclone",
     ];
 
+    /// <summary>Category value for "strength at this time is not known" (replay, before any advisory): drawn grey.</summary>
+    public const int UnknownCategory = -99;
+
+    public static readonly Color UnknownIntensityColor = Color.FromRgb(0x9A, 0xA0, 0xA6);
+
+    /// <summary>The category to draw: <see cref="UnknownCategory"/> for a replayed storm whose wind is not known, else its own.</summary>
+    public static int DisplayCategory(CycloneAdvisory c) => c.Replay is { IntensityKnown: false } ? UnknownCategory : c.Category;
+
     /// <param name="category">−1 = tropical depression, 0 = tropical storm, 1–5 = hurricane category (<see cref="SaffirSimpson"/>).</param>
     public static Color CategoryColor(int category) => category switch
     {
+        UnknownCategory => UnknownIntensityColor,
         <= -1 => Color.FromRgb(0x5E, 0xBA, 0xFF),
         0 => Color.FromRgb(0x00, 0xFA, 0xF4),
         1 => Color.FromRgb(0xFF, 0xFF, 0xCC),
@@ -34,7 +43,8 @@ public static class StormStyle
     };
 
     /// <summary>The storm name (upper case, without GDACS's "-YY") and category: "PENA TS", "CEMPAKA C2".</summary>
-    public static string Label(string name, int category) => CycloneMerger.NormalizeName(name) + " " + CategoryText(category);
+    public static string Label(string name, int category) =>
+        CycloneMerger.NormalizeName(name) + (category == UnknownCategory ? "" : " " + CategoryText(category));
 
     /// <summary>An EONET title without the storm-type words, upper case: "Typhoon Cempaka" → "CEMPAKA".</summary>
     public static string EonetName(string title)

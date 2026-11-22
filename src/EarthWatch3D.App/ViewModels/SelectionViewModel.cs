@@ -31,7 +31,9 @@ public sealed partial class SelectionViewModel : ObservableObject
 
     public void Select(EarthEvent? e)
     {
-        Selected = e;
+        // A replayed storm compares equal to its previous instance (Replay is not part of equality); keep the newest.
+        if (e is not null && Selected is not null && !ReferenceEquals(Selected, e) && Equals(Selected, e)) _selected = e;
+        else Selected = e;
         IsOpen = e is not null;
         Title = e is null ? "" : TitleFor(e);
         Lines = e is null ? NoLines : LinesFor(e, _nowUtc(), _units());
@@ -86,10 +88,10 @@ public sealed partial class SelectionViewModel : ObservableObject
             case CycloneAdvisory c:
                 return
                 [
-                    ("Category", StormNames.CategoryText(c.Category, c.Location)),
+                    ("Category", c.Replay is { IntensityKnown: false } ? "Intensity unknown" : StormNames.CategoryText(c.Category, c.Location)),
                     ("Wind", Wind(c.WindKt, units)),
                     ("Pressure", c.PressureHpa is { } p ? Num(p, 0) + " hPa" : "unknown"),
-                    ("Advisory time", TimeWithAge(c.TimeUtc, nowUtc)),
+                    c.Replay is { } r ? ("Position", ReplayPosition(r, nowUtc)) : ("Advisory time", TimeWithAge(c.TimeUtc, nowUtc)),
                     ("Source", SourceName(c.Source)),
                 ];
             case WeatherAlert a:
@@ -122,6 +124,8 @@ public sealed partial class SelectionViewModel : ObservableObject
             case Earthquake q:
                 return $"{Magnitude(q)} · {UnitFormat.Distance(q.DepthKm, units)} deep · {Age(q.TimeUtc, nowUtc)}";
             case CycloneAdvisory c:
+                if (c.Replay is { } rp)
+                    return $"{TitleFor(c)} · {ReplayPosition(rp, nowUtc)}" + (c.WindKt is { } rw ? $" · {Num(rw, 0)} kt" : "");
                 return $"{TitleFor(c)} · {StormNames.CategoryText(c.Category, c.Location)}" + (c.WindKt is { } w ? $" · {Num(w, 0)} kt" : "");
             case WeatherAlert a:
                 var end = EndOf(a);
@@ -143,6 +147,15 @@ public sealed partial class SelectionViewModel : ObservableObject
         a.CancelledUtc is { } c && c < a.EndsUtc
             ? a.EndReason == AlertEndReason.Cancelled ? " (cancelled)" : " (superseded)"
             : "";
+
+    /// <summary>"position at 12:00 UTC, between the 09:00 and 15:00 fixes (NHC best track)", or "fix at 09:00 UTC (NHC best track)" on a fix.</summary>
+    private static string ReplayPosition(ReplayInfo r, DateTime t)
+    {
+        static string Hm(DateTime d) => d.ToUniversalTime().ToString("HH:mm", CultureInfo.InvariantCulture);
+        return r.LaterFixUtc is { } later && t > r.EarlierFixUtc
+            ? $"position at {Hm(t)} UTC, between the {Hm(r.EarlierFixUtc)} and {Hm(later)} fixes ({r.HistorySource})"
+            : $"fix at {Hm(r.EarlierFixUtc)} UTC ({r.HistorySource})";
+    }
 
     private static string Magnitude(Earthquake q) => "M" + Num(q.Magnitude, 1);
     private static string Wind(double? kt, DistanceUnits units) => kt is { } w ? UnitFormat.WindFromKnots(w, units) : "unknown";
