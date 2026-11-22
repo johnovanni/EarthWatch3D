@@ -149,6 +149,15 @@ licences. Their notices are in THIRD-PARTY-NOTICES-DOTNET-RUNTIME.txt, installed
 (the file is the .NET runtime's own THIRD-PARTY-NOTICES.TXT, from https://github.com/dotnet/runtime).
 
 --------------------------------------------------------------------------------
+GlobeCore (shared globe library, included as a git submodule)
+--------------------------------------------------------------------------------
+
+The globe imagery, coastlines and borders, plate boundaries and cloud imagery below were moved into GlobeCore
+(external/GlobeCore) and are embedded in the app from there. GlobeCore's own notices for them are in
+external/GlobeCore/THIRD-PARTY-NOTICES.txt; the notices for the assets are repeated in full below, so this file alone
+carries every notice the app needs.
+
+--------------------------------------------------------------------------------
 Plate boundaries: PB2002
 --------------------------------------------------------------------------------
 

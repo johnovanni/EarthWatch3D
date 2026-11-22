@@ -88,8 +88,10 @@ cd EarthWatch3D
 dotnet run --project src/EarthWatch3D.App -c Release
 ```
 
-`--recursive` also fetches the `external/AstroCore` submodule (the astronomy library). If you cloned without it,
-run `git submodule update --init`.
+`--recursive` also fetches the `external/AstroCore` submodule (the astronomy library) and `external/GlobeCore` (the
+shared globe library). If you cloned without it, run `git submodule update --init`. That is enough: the app builds
+GlobeCore against its own `external/AstroCore`, so GlobeCore's nested AstroCore need not be fetched (no `--recursive`
+needed).
 
 Run the tests with `dotnet test --filter "Category!=Perf&Category!=Network"`. The `Network` tests (for example, that every link in the About window still answers) use the internet; run them with `dotnet test --filter Category=Network`. The compose-time test is tagged `Perf`; run it in Release
 with `dotnet test -c Release --filter Category=Perf`.
@@ -158,8 +160,8 @@ dotnet build src/EarthWatch3D.App -c Release "-p:DefineConstants=TRACE%3BRELEASE
 `%3B` is an escaped `;`. Setting `DefineConstants` replaces the SDK's own list, so the command repeats `TRACE` and
 `RELEASE` (the .NET SDK has no `ExtraDefineConstants` property to add to the list instead).
 
-That build appends load and compose timings and memory use to `%TEMP%\EarthWatch3D-perf.log`, and accepts
-`--bench`, which spins the globe once (360° over 5 s) and logs the frame rate. With `--offline-samples`, the bench
+That build appends load timings and memory use to `%TEMP%\EarthWatch3D-perf.log`, and the compose timings (written by
+GlobeCore's layer host) to `%TEMP%\GlobeCore-perf.log`. It accepts `--bench`, which spins the globe once (360° over 5 s) and logs the frame rate. With `--offline-samples`, the bench
 waits until the sample events are drawn, so it measures the globe with events on it. Rebuild normally afterwards. The
 measured numbers are in [docs/perf.md](docs/perf.md).
 
@@ -168,6 +170,8 @@ measured numbers are in [docs/perf.md](docs/perf.md).
 - **Imagery:** NASA Earth Observatory, *Blue Marble: Next Generation* with topography and bathymetry (R. Stöckli, July 2004).
 - **Coastlines and borders:** [Natural Earth](https://www.naturalearthdata.com/) (public domain).
 - **Plate boundaries:** Peter Bird (2003), An updated digital model of plate boundaries, G³ 4(3):1027; GIS data by Hugo Ahlenius, Nordpil (ODC-By 1.0, https://opendatacommons.org/licenses/by/1-0/).
+- **Globe:** GlobeCore, the shared globe library (the globe mesh, layers, camera, feeds and the Earth assets) that was
+  taken out of this app (included as a git submodule).
 - **Astronomy:** AstroCore, the shared astronomy library that grew out of the author's SolarSystem3D project
   (included as a git submodule).
 - **3D:** [HelixToolkit.Wpf](https://github.com/helix-toolkit/helix-toolkit).

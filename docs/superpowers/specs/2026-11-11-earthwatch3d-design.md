@@ -97,8 +97,13 @@ C:\repos\AstroCore                     new repo: shared astronomy library (net10
                                        + new: Precession, EarthRotation, SubPoints, Terminator
   tests/AstroCore.Tests                moved Horizons accuracy tests + new tests (§10)
 
+C:\repos\GlobeCore                     shared globe library, taken out of EarthWatch3D (2026-11)
+  src/GlobeCore, GlobeCore.Wpf,        bodies, geo, image composition, feeds, stores; mesh, camera, layers, LayerHost;
+      GlobeCore.Earth                  the Earth pack (Blue Marble, Natural Earth, PB2002, GIBS clouds)
+
 C:\repos\EarthWatch3D                  new repo
   external/AstroCore                   git submodule (pinned commit)
+  external/GlobeCore                   git submodule (pinned commit; built against external/AstroCore)
   src/EarthWatch3D.Core                net10.0, no UI: events, feeds, store, lightning, geo helpers
   src/EarthWatch3D.App                 net10.0-windows WPF app (HelixToolkit.Wpf, CommunityToolkit.Mvvm)
   packaging/                           AppxManifest.xml template, MSIX logos, .appinstaller template
@@ -108,6 +113,9 @@ C:\repos\EarthWatch3D                  new repo
 
 - **.NET 10** (LTS) for everything. .NET 8 reached end of support on 2026-11-10, so a newly shipped app should not
   target it. SolarSystem3D moves to .NET 10 as part of its switch to AstroCore.
+- GlobeCore was added after this design was written: the general-purpose globe code moved out of EarthWatch3D (app
+  behaviour unchanged) so that other apps can share it. Sections below that name those classes describe code that now
+  lives in GlobeCore.
 - Both repos are created locally. Nothing is pushed to GitHub until the user asks.
 - The AstroCore code is copied from SolarSystem3D's `Astronomy/` and `Orbits/` folders: `Vector3d`, `Matrix3d`,
   `AstroTime`, `Frames`, `Conic`, `IOrbitModel`, `OrbitSummary`, `PlanetOrbit`, `LunarOrbit` and `EarthOrbit`.
